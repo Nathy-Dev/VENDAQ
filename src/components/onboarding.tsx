@@ -11,8 +11,10 @@ import {
   ShieldAlert, 
   Smartphone
 } from 'lucide-react';
-import { clsx } from 'clsx';
+import { clsx } from "clsx";
 import { useRouter } from "next/navigation";
+import { useVENDAQActions } from "@/hooks/useVENDAQ";
+import { useSession } from "next-auth/react";
 
 const features = [
   {
