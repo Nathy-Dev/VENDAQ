@@ -1,3 +1,5 @@
+@import "tailwindcss";
+
 /* Define global variables and design tokens for VENDAQ */
 :root {
   --primary: #10b981; /* Emerald 500 */
