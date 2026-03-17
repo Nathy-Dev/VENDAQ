@@ -11,10 +11,7 @@ import {
   ShieldAlert, 
   Smartphone
 } from 'lucide-react';
-import { clsx } from "clsx";
-import { useRouter } from "next/navigation";
-import { useVENDAQActions } from "@/hooks/useVENDAQ";
-import { useSession } from "next-auth/react";
+import styles from "./onboarding.module.css";
 
 const features = [
   {
@@ -74,18 +71,18 @@ export default function Onboarding({ initialStep = 0 }: OnboardingProps) {
   };
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-slate-50">
-      <div className="w-full max-w-md bg-white rounded-3xl shadow-xl overflow-hidden relative">
+    <div className={styles.onboardingContainer}>
+      <div className={styles.card}>
         {/* Progress Bar */}
-        <div className="absolute top-0 left-0 w-full h-1 bg-slate-100">
+        <div className={styles.progressBarTrack}>
           <motion.div 
-            className="h-full bg-emerald-500"
+            className={styles.progressBarFill}
             initial={{ width: "0%" }}
             animate={{ width: `${((step > 2 ? step : featureIndex + 1) / 5) * 100}%` }}
           />
         </div>
 
-        <div className="p-8">
+        <div className={styles.content}>
           <AnimatePresence mode="wait">
             {step < 3 ? (
               <motion.div 
@@ -93,10 +90,10 @@ export default function Onboarding({ initialStep = 0 }: OnboardingProps) {
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
-                className="flex flex-col items-center text-center space-y-6"
+                className="flex flex-col items-center text-center"
               >
                 <div 
-                  className="w-20 h-20 rounded-2xl flex items-center justify-center"
+                  className={styles.iconWrapper}
                   style={{ backgroundColor: `${features[featureIndex].color}20` }}
                 >
                   {React.createElement(features[featureIndex].icon, { 
@@ -104,13 +101,13 @@ export default function Onboarding({ initialStep = 0 }: OnboardingProps) {
                     style: { color: features[featureIndex].color } 
                   })}
                 </div>
-                <h1 className="text-2xl font-bold text-slate-900">{features[featureIndex].title}</h1>
-                <p className="text-slate-600 leading-relaxed">
+                <h1 className={styles.title}>{features[featureIndex].title}</h1>
+                <p className={styles.description}>
                   {features[featureIndex].description}
                 </p>
                 <button 
                   onClick={nextFeature}
-                  className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-4 rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-emerald-200"
+                  className={styles.primaryButton}
                 >
                   {featureIndex === features.length - 1 ? "Get Started" : "Next"}
                   <ArrowRight size={20} />
@@ -121,65 +118,65 @@ export default function Onboarding({ initialStep = 0 }: OnboardingProps) {
                 key="mode-selection"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                className="space-y-6"
+                style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}
               >
-                <div className="text-center space-y-2">
-                  <h1 className="text-2xl font-bold text-slate-900">Choose Your Gateway</h1>
-                  <p className="text-slate-500 text-sm">Select how VENDAQ connects to your WhatsApp</p>
+                <div className="text-center" style={{ marginBottom: '0.5rem' }}>
+                  <h1 className={styles.title} style={{ fontSize: '1.5rem' }}>Choose Your Gateway</h1>
+                  <p className={styles.description} style={{ fontSize: '0.875rem', marginBottom: '0' }}>Select how VENDAQ connects to your WhatsApp</p>
                 </div>
 
-                <div className="space-y-4">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                   <button 
                     onClick={() => setSelectedMode('unofficial')}
                     className={clsx(
-                      "w-full p-4 rounded-2xl border-2 text-left transition-all relative overflow-hidden",
-                      selectedMode === 'unofficial' ? "border-emerald-500 bg-emerald-50" : "border-slate-100 hover:border-emerald-200"
+                      styles.modeButton,
+                      selectedMode === 'unofficial' && styles.modeButtonActive
                     )}
                   >
-                    <div className="flex justify-between items-start mb-2">
-                      <div className="flex items-center gap-2 font-bold text-slate-800">
-                        <Smartphone size={20} className="text-emerald-500" />
+                    <div className={styles.modeHeader}>
+                      <div className={styles.modeTitle}>
+                        <Smartphone size={20} style={{ color: '#10b981' }} />
                         Whapi.cloud (Social)
                       </div>
-                      {selectedMode === 'unofficial' && <CheckCircle2 size={20} className="text-emerald-500" />}
+                      {selectedMode === 'unofficial' && <CheckCircle2 size={20} style={{ color: '#10b981' }} />}
                     </div>
-                    <p className="text-xs text-slate-500 leading-normal">
+                    <p className={styles.modeDesc}>
                       Best for small sellers. Supports status updates, groups, and normal WhatsApp usage.
                     </p>
-                    <div className="mt-3 flex gap-2">
-                      <span className="text-[10px] bg-slate-200 px-2 py-0.5 rounded-full text-slate-700">Unofficial</span>
-                      <span className="text-[10px] bg-amber-100 px-2 py-0.5 rounded-full text-amber-700">Risk Safeguarded</span>
+                    <div className={styles.badgeGroup}>
+                      <span className={clsx(styles.badge, styles.badgeDefault)}>Unofficial</span>
+                      <span className={clsx(styles.badge, styles.badgePrimary)} style={{ color: '#f59e0b', background: 'rgba(245, 158, 11, 0.1)' }}>Risk Safeguarded</span>
                     </div>
                   </button>
 
                   <button 
                     onClick={() => setSelectedMode('official')}
                     className={clsx(
-                      "w-full p-4 rounded-2xl border-2 text-left transition-all relative overflow-hidden",
-                      selectedMode === 'official' ? "border-emerald-500 bg-emerald-50" : "border-slate-100 hover:border-emerald-200"
+                      styles.modeButton,
+                      selectedMode === 'official' && styles.modeButtonActive
                     )}
                   >
-                    <div className="flex justify-between items-start mb-2">
-                      <div className="flex items-center gap-2 font-bold text-slate-800">
-                        <Zap size={20} className="text-emerald-500" />
+                    <div className={styles.modeHeader}>
+                      <div className={styles.modeTitle}>
+                        <Zap size={20} style={{ color: '#10b981' }} />
                         Meta Cloud API (Pro)
                       </div>
-                      {selectedMode === 'official' && <CheckCircle2 size={20} className="text-emerald-500" />}
+                      {selectedMode === 'official' && <CheckCircle2 size={20} style={{ color: '#10b981' }} />}
                     </div>
-                    <p className="text-xs text-slate-500 leading-normal">
+                    <p className={styles.modeDesc}>
                       Maximum reliability and scalability. Authorized by Meta for large-scale automation.
                     </p>
-                    <div className="mt-3 flex gap-2">
-                      <span className="text-[10px] bg-emerald-100 px-2 py-0.5 rounded-full text-emerald-700">Official</span>
-                      <span className="text-[10px] bg-blue-100 px-2 py-0.5 rounded-full text-blue-700">High Scalability</span>
+                    <div className={styles.badgeGroup}>
+                      <span className={clsx(styles.badge, styles.badgePrimary)}>Official</span>
+                      <span className={clsx(styles.badge, styles.badgePrimary)} style={{ color: '#3b82f6', background: 'rgba(59, 130, 246, 0.1)' }}>High Scalability</span>
                     </div>
                   </button>
                 </div>
 
                 {selectedMode === 'unofficial' && (
-                  <div className="p-3 bg-amber-50 border border-amber-100 rounded-xl flex gap-3">
-                    <ShieldAlert size={18} className="text-amber-500 shrink-0" />
-                    <p className="text-[10px] text-amber-800 leading-normal">
+                  <div className={styles.warningBox}>
+                    <ShieldAlert size={18} className={styles.warningIcon} />
+                    <p className={styles.warningText}>
                       <strong>Guardians enabled:</strong> We implement human-like typing delays and rate limits to keep your account safe in unofficial mode.
                     </p>
                   </div>
@@ -188,7 +185,8 @@ export default function Onboarding({ initialStep = 0 }: OnboardingProps) {
                 <button 
                   disabled={!selectedMode}
                   onClick={handleConfirmMode}
-                  className="w-full bg-slate-900 disabled:bg-slate-300 text-white font-semibold py-4 rounded-xl transition-all shadow-lg"
+                  className={styles.primaryButton}
+                  style={{ background: selectedMode ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : '#1e293b' }}
                 >
                   Confirm & Connect
                 </button>
@@ -198,14 +196,15 @@ export default function Onboarding({ initialStep = 0 }: OnboardingProps) {
                 key="connection"
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
-                className="text-center space-y-6"
+                className="text-center"
+                style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}
               >
-                <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto">
+                <div className={styles.iconWrapper} style={{ background: 'rgba(16, 185, 129, 0.1)', color: '#10b981', margin: '0 auto' }}>
                     <Smartphone size={32} />
                 </div>
-                <div className="space-y-2">
-                  <h1 className="text-2xl font-bold">Connect WhatsApp</h1>
-                  <p className="text-slate-500 text-sm">
+                <div>
+                  <h1 className={styles.title} style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>Connect WhatsApp</h1>
+                  <p className={styles.description} style={{ fontSize: '0.875rem' }}>
                     {selectedMode === 'unofficial' 
                       ? "Scan the QR code with your WhatsApp Link Device feature." 
                       : "Enter your Meta Developer tokens to establish connection."}
@@ -213,8 +212,8 @@ export default function Onboarding({ initialStep = 0 }: OnboardingProps) {
                 </div>
 
                 {/* Mock QR/Input area */}
-                <div className="aspect-square w-48 bg-slate-100 rounded-2xl mx-auto flex items-center justify-center border-2 border-dashed border-slate-200">
-                  <span className="text-slate-400 text-xs font-medium uppercase tracking-wider">
+                <div className={styles.qrContainer}>
+                  <span style={{ fontSize: '0.625rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
                     {selectedMode === 'unofficial' ? "QR Code Placeholder" : "Token Form Placeholder"}
                   </span>
                 </div>
@@ -226,14 +225,14 @@ export default function Onboarding({ initialStep = 0 }: OnboardingProps) {
                       router.push("/dashboard");
                     }, 1500);
                   }}
-                  className="w-full bg-emerald-500 text-white font-semibold py-4 rounded-xl shadow-lg"
+                  className={styles.primaryButton}
                 >
                   Verify Connection
                 </button>
                 
                 <button 
                   onClick={() => setStep(3)}
-                  className="text-slate-400 text-sm font-medium hover:text-slate-600"
+                  className={styles.backButton}
                 >
                   Go Back
                 </button>
@@ -244,10 +243,8 @@ export default function Onboarding({ initialStep = 0 }: OnboardingProps) {
       </div>
       
       {/* Background decoration */}
-      <div className="fixed top-0 left-0 w-full h-full -z-10 bg-slate-50 opacity-50">
-        <div className="absolute top-[-10%] right-[-10%] w-[50%] h-[50%] bg-emerald-100 rounded-full blur-[120px]" />
-        <div className="absolute bottom-[-10%] left-[-10%] w-[50%] h-[50%] bg-blue-50 rounded-full blur-[120px]" />
-      </div>
+      <div className={styles.bgGlow1} />
+      <div className={styles.bgGlow2} />
     </div>
   );
 }
