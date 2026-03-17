@@ -1,9 +1,9 @@
-import Onboarding from "@/components/onboarding";
+import LandingPage from "@/components/LandingPage";
 
 export default function Home() {
   return (
     <main>
-      <Onboarding />
+      <LandingPage />
     </main>
   );
 }

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { signIn } from "next-auth/react";
 import { motion } from "framer-motion";
-import { Mail, Lock, LogIn } from "lucide-react";
+import { Mail, Lock, ArrowRight } from "lucide-react";
 import Link from "next/link";
 
 export default function LoginPage() {
@@ -41,10 +41,10 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] text-white flex items-center justify-center p-4">
+    <div className="min-h-screen bg-[#020617] text-white flex items-center justify-center p-4">
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-600/10 rounded-full blur-[120px]" />
-        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-purple-600/10 rounded-full blur-[120px]" />
+        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-emerald-600/10 rounded-full blur-[120px]" />
+        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-cyan-600/8 rounded-full blur-[120px]" />
       </div>
 
       <motion.div
@@ -52,17 +52,24 @@ export default function LoginPage() {
         animate={{ opacity: 1, y: 0 }}
         className="w-full max-w-md relative z-10"
       >
-        <div className="bg-[#111111] border border-white/5 p-8 rounded-2xl shadow-2xl backdrop-blur-sm">
+        <div className="bg-[#0a0f1e] border border-white/5 p-8 rounded-2xl shadow-2xl backdrop-blur-sm">
+          {/* Logo */}
+          <Link href="/" className="block text-center mb-6">
+            <span className="text-2xl font-extrabold tracking-tight">
+              VEND<span className="text-emerald-400">AQ</span>
+            </span>
+          </Link>
+
           <div className="text-center mb-8">
             <motion.h1 
-              className="text-3xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent"
+              className="text-3xl font-bold bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: 0.2 }}
             >
               Welcome Back
             </motion.h1>
-            <p className="text-gray-400 mt-2">Sign in to manage your WHABIZZ account</p>
+            <p className="text-gray-400 mt-2">Sign in to your VENDAQ dashboard</p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -74,7 +81,7 @@ export default function LoginPage() {
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full bg-black/50 border border-white/10 rounded-xl py-3 pl-11 pr-4 focus:outline-none focus:border-blue-500/50 transition-colors"
+                  className="w-full bg-black/50 border border-white/10 rounded-xl py-3 pl-11 pr-4 focus:outline-none focus:border-emerald-500/50 transition-colors"
                   placeholder="name@example.com"
                   required
                 />
@@ -89,7 +96,7 @@ export default function LoginPage() {
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full bg-black/50 border border-white/10 rounded-xl py-3 pl-11 pr-4 focus:outline-none focus:border-blue-500/50 transition-colors"
+                  className="w-full bg-black/50 border border-white/10 rounded-xl py-3 pl-11 pr-4 focus:outline-none focus:border-emerald-500/50 transition-colors"
                   placeholder="••••••••"
                   required
                 />
@@ -109,14 +116,14 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-white text-black font-semibold py-3 rounded-xl hover:bg-gray-200 transition-colors flex items-center justify-center gap-2 group"
+              className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-3 rounded-xl transition-colors flex items-center justify-center gap-2 group shadow-lg shadow-emerald-500/20"
             >
               {loading ? (
-                <div className="w-5 h-5 border-2 border-black/20 border-t-black rounded-full animate-spin" />
+                <div className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin" />
               ) : (
                 <>
                   <span>Sign In</span>
-                  <LogIn className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                  <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                 </>
               )}
             </button>
@@ -127,7 +134,7 @@ export default function LoginPage() {
               <div className="w-full border-t border-white/5"></div>
             </div>
             <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-[#111111] px-2 text-gray-500">Or continue with</span>
+              <span className="bg-[#0a0f1e] px-2 text-gray-500">Or continue with</span>
             </div>
           </div>
 
@@ -158,7 +165,7 @@ export default function LoginPage() {
 
           <p className="text-center text-gray-500 mt-8 text-sm">
             Don&apos;t have an account?{" "}
-            <Link href="/signup" className="text-white hover:underline">
+            <Link href="/signup" className="text-emerald-400 hover:underline">
               Create one for free
             </Link>
           </p>
