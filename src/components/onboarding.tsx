@@ -12,8 +12,7 @@ import {
   Smartphone
 } from 'lucide-react';
 import { clsx } from 'clsx';
-import { useVENDAQActions } from "@/hooks/useVENDAQ";
-import { useSession } from "next-auth/react";
+import { useRouter } from "next/navigation";
 
 const features = [
   {
@@ -36,11 +35,16 @@ const features = [
   }
 ];
 
-export default function Onboarding() {
-  const [step, setStep] = useState(0); // 0-2: Features, 3: Mode Selection, 4: Connection
+interface OnboardingProps {
+  initialStep?: number;
+}
+
+export default function Onboarding({ initialStep = 0 }: OnboardingProps) {
+  const [step, setStep] = useState(initialStep); // 0-2: Features, 3: Mode Selection, 4: Connection
   const [featureIndex, setFeatureIndex] = useState(0);
   const [selectedMode, setSelectedMode] = useState<'official' | 'unofficial' | null>(null);
   
+  const router = useRouter();
   const { createOrUpdateBusiness } = useVENDAQActions();
   const { data: session } = useSession();
 
@@ -214,7 +218,12 @@ export default function Onboarding() {
                 </div>
 
                 <button 
-                  onClick={() => alert("Connecting API...")}
+                  onClick={() => {
+                    // Simulate verification and redirect to dashboard
+                    setTimeout(() => {
+                      router.push("/dashboard");
+                    }, 1500);
+                  }}
                   className="w-full bg-emerald-500 text-white font-semibold py-4 rounded-xl shadow-lg"
                 >
                   Verify Connection
