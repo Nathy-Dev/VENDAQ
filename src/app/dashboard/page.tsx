@@ -2,53 +2,92 @@
 
 import { useSession } from "next-auth/react";
 import Link from "next/link";
-import { LayoutDashboard, MessageSquare, Users, TrendingUp } from "lucide-react";
+import { LayoutDashboard, MessageSquare, Users, TrendingUp, ChevronRight, type LucideIcon } from "lucide-react";
+import styles from "./dashboard.module.css";
 
 export default function DashboardPage() {
   const { data: session } = useSession();
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white p-8">
-      <div className="max-w-6xl mx-auto space-y-8">
-        <header className="flex justify-between items-center">
+    <div className={styles.container}>
+      <div className={styles.wrapper}>
+        <header className={styles.header}>
           <div>
-            <h1 className="text-3xl font-bold">Welcome back, {session?.user?.name || "Partner"}!</h1>
-            <p className="text-slate-400">Here's what's happening with VENDAQ today.</p>
+            <h1 className={styles.welcomeTitle}>Welcome back, {session?.user?.name || "Partner"}!</h1>
+            <p className={styles.subTitle}>Here&apos;s what&apos;s happening with VENDAQ today.</p>
           </div>
-          <Link href="/" className="text-emerald-500 hover:text-emerald-400 font-medium">
+          <Link href="/" className={styles.landingLink}>
             View Landing Page
           </Link>
         </header>
 
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-          <StatCard icon={MessageSquare} label="New Inquiries" value="12" color="bg-blue-500/10 text-blue-500" />
-          <StatCard icon={Users} label="Total Customers" value="148" color="bg-emerald-500/10 text-emerald-500" />
-          <StatCard icon={TrendingUp} label="Weekly Revenue" value="₦45,000" color="bg-purple-500/10 text-purple-500" />
-          <StatCard icon={LayoutDashboard} label="Active Pipeline" value="8" color="bg-amber-500/10 text-amber-500" />
+        <div className={styles.statsGrid}>
+          <StatCard 
+            icon={MessageSquare} 
+            label="New Inquiries" 
+            value="12" 
+            color="rgba(59, 130, 246, 0.1)" 
+            iconColor="#3b82f6" 
+          />
+          <StatCard 
+            icon={Users} 
+            label="Total Customers" 
+            value="148" 
+            color="rgba(16, 185, 129, 0.1)" 
+            iconColor="#10b981" 
+          />
+          <StatCard 
+            icon={TrendingUp} 
+            label="Weekly Revenue" 
+            value="₦45,000" 
+            color="rgba(139, 92, 246, 0.1)" 
+            iconColor="#8b5cf6" 
+          />
+          <StatCard 
+            icon={LayoutDashboard} 
+            label="Active Pipeline" 
+            value="8" 
+            color="rgba(245, 158, 11, 0.1)" 
+            iconColor="#f59e0b" 
+          />
         </div>
 
-        <div className="bg-slate-900/50 border border-slate-800 rounded-3xl p-12 text-center space-y-4">
-          <div className="w-16 h-16 bg-emerald-500/10 text-emerald-500 rounded-full flex items-center justify-center mx-auto mb-4">
-            <LayoutDashboard size={32} />
+        <main className={styles.mainSection}>
+          <div className={styles.mainIconWrapper}>
+            <LayoutDashboard size={36} />
           </div>
-          <h2 className="text-2xl font-bold">Your Dashboard is ready!</h2>
-          <p className="text-slate-400 max-w-md mx-auto">
-            This is where your WhatsApp sales will be organized. We're currently setting up your real-time data sync.
+          <h2 className={styles.mainTitle}>Your Dashboard is ready!</h2>
+          <p className={styles.mainDesc}>
+            This is where your WhatsApp sales will be organized. We&apos;re currently 
+            setting up your real-time data sync with your WhatsApp messages.
           </p>
-        </div>
+          <button className={styles.actionButton}>
+            Get Started with Pipeline <ChevronRight size={18} style={{ display: 'inline', marginLeft: '4px' }} />
+          </button>
+        </main>
       </div>
     </div>
   );
 }
 
-function StatCard({ icon: Icon, label, value, color }: any) {
+interface StatCardProps {
+  icon: LucideIcon;
+  label: string;
+  value: string;
+  color: string;
+  iconColor: string;
+}
+
+function StatCard({ icon: Icon, label, value, color, iconColor }: StatCardProps) {
   return (
-    <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl space-y-2">
-      <div className={`w-10 h-10 ${color} rounded-xl flex items-center justify-center mb-2`}>
-        <Icon size={20} />
+    <div className={styles.statCard}>
+      <div className={styles.statIconWrapper} style={{ backgroundColor: color, color: iconColor }}>
+        <Icon size={22} />
       </div>
-      <div className="text-slate-400 text-sm">{label}</div>
-      <div className="text-2xl font-bold">{value}</div>
+      <div>
+        <div className={styles.statLabel}>{label}</div>
+        <div className={styles.statValue}>{value}</div>
+      </div>
     </div>
   );
 }
