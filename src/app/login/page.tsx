@@ -5,6 +5,7 @@ import { signIn } from "next-auth/react";
 import { motion } from "framer-motion";
 import { Mail, Lock, ArrowRight } from "lucide-react";
 import Link from "next/link";
+import Image from "next/image";
 import styles from "../Auth.module.css";
 
 export default function LoginPage() {
@@ -55,8 +56,17 @@ export default function LoginPage() {
         className={styles.card}
       >
         <Link href="/" className={styles.logoArea}>
-          <div className={styles.logoText}>
-            VEND<span className={styles.logoAccent}>AQ</span>
+          <div className={styles.logoGroup}>
+            <Image 
+              src="/logo.png" 
+              alt="VENDAQ Logo" 
+              width={48} 
+              height={48} 
+              className={styles.authLogo}
+            />
+            <div className={styles.logoText}>
+              VEND<span className={styles.logoAccent}>AQ</span>
+            </div>
           </div>
         </Link>
 

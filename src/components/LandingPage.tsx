@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
+import Image from "next/image";
 import {
   MessageSquare,
   Users,
@@ -277,9 +278,18 @@ export default function LandingPage() {
       {/* ===== NAVBAR ===== */}
       <nav className={styles.nav}>
         <div className={`${styles.container} ${styles.navInner}`}>
-          <span className={styles.logo}>
-            VEND<span className={styles.logoAccent}>AQ</span>
-          </span>
+          <Link href="/" className={styles.logo}>
+            <Image 
+              src="/logo.png" 
+              alt="VENDAQ Logo" 
+              width={40} 
+              height={40} 
+              className={styles.logoImg}
+            />
+            <span>
+              VEND<span className={styles.logoAccent}>AQ</span>
+            </span>
+          </Link>
 
           <ul className={styles.navLinks}>
             <li><a href="#features">Features</a></li>
@@ -751,9 +761,18 @@ export default function LandingPage() {
       <footer className={styles.footer}>
         <div className={styles.container}>
           <div className={styles.footerInner}>
-            <span className={styles.footerLogo}>
-              VEND<span className={styles.logoAccent}>AQ</span>
-            </span>
+            <Link href="/" className={styles.footerLogo}>
+              <Image 
+                src="/logo.png" 
+                alt="VENDAQ Logo" 
+                width={32} 
+                height={32} 
+                className={styles.logoImg}
+              />
+              <span>
+                VEND<span className={styles.logoAccent}>AQ</span>
+              </span>
+            </Link>
             <ul className={styles.footerLinks}>
               <li><a href="#features">Features</a></li>
               <li><a href="#how-it-works">How It Works</a></li>
