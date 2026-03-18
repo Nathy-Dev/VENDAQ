@@ -21,24 +21,34 @@ export default function Home() {
   );
 
   useEffect(() => {
-    if (status === "authenticated" && business !== undefined) {
+    if (status === "authenticated" && session?.user?.id && business !== undefined) {
       if (!business) {
         // No business found -> New user, send to onboarding
         router.push("/onboarding");
       } else if (business.whatsappStatus === "disconnected") {
         // Business exists but WA is disconnected
         router.push("/onboarding/connect");
-      } else if (business.whatsappStatus === "connected") {
-        // All good, go to dashboard
+      } else {
+        // For all other statuses (connected, pending, error), go to dashboard
         router.push("/dashboard");
       }
     }
-  }, [session, status, business, router]);
+  }, [status, business, session?.user?.id, router]);
 
-  // While loading session or business, or if authenticated (waiting for redirect), show loader
-  if (status === "loading" || status === "authenticated") {
+
+
+  // While loading session, or if authenticated and still fetching business data, show loader
+  const isBusinessLoading = status === "authenticated" && session?.user?.id && business === undefined;
+  
+  if (status === "loading" || isBusinessLoading) {
     return <Loader />;
   }
+
+  // Fallback: If authenticated, keep showing loader until useEffect triggers redirect
+  if (status === "authenticated") {
+    return <Loader />;
+  }
+
 
 
   return (

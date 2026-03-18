@@ -22,7 +22,7 @@ export default function DashboardPage() {
   );
 
   useEffect(() => {
-    if (sessionStatus === "authenticated" && business !== undefined) {
+    if (sessionStatus === "authenticated" && session?.user?.id && business !== undefined) {
       if (!business) {
         router.push("/onboarding");
       } else if (business.whatsappStatus === "disconnected") {
@@ -31,11 +31,15 @@ export default function DashboardPage() {
     } else if (sessionStatus === "unauthenticated") {
       router.push("/login");
     }
-  }, [sessionStatus, business, router]);
+  }, [sessionStatus, business, session?.user?.id, router]);
 
-  if (sessionStatus === "loading" || (sessionStatus === "authenticated" && business === undefined)) {
+
+  const isBusinessLoading = sessionStatus === "authenticated" && session?.user?.id && business === undefined;
+
+  if (sessionStatus === "loading" || isBusinessLoading) {
     return <Loader />;
   }
+
 
 
   if (sessionStatus === "unauthenticated") {
