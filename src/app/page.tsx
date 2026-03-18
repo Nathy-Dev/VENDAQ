@@ -6,8 +6,10 @@ import { api } from "../../convex/_generated/api";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import LandingPage from "@/components/LandingPage";
-import authStyles from "./Auth.module.css";
 
+
+
+import Loader from "@/components/Loader";
 
 export default function Home() {
   const { data: session, status } = useSession();
@@ -33,23 +35,11 @@ export default function Home() {
     }
   }, [session, status, business, router]);
 
-  // While loading session or business, or if not authenticated, show landing page
-  // We avoid showing the full landing page to authenticated users while waiting for redirection results
-  if (status === "loading" || (status === "authenticated" && business === undefined)) {
-    return (
-      <div className={authStyles.authPage}>
-        <div className={authStyles.backgroundGlow}>
-          <div className={authStyles.glow1} />
-          <div className={authStyles.glow2} />
-        </div>
-        <div className={authStyles.spinner} style={{ width: '40px', height: '40px', borderWidth: '3px' }} />
-      </div>
-    );
+  // While loading session or business, or if authenticated (waiting for redirect), show loader
+  if (status === "loading" || status === "authenticated") {
+    return <Loader />;
   }
 
-  if (status === "authenticated") {
-    return null;
-  }
 
   return (
     <main>

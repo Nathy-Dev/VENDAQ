@@ -10,7 +10,8 @@ import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { LayoutDashboard, MessageSquare, Users, TrendingUp, ChevronRight, type LucideIcon } from "lucide-react";
 import styles from "./dashboard.module.css";
-import authStyles from "../Auth.module.css";
+import Loader from "@/components/Loader";
+
 
 export default function DashboardPage() {
   const { data: session, status: sessionStatus } = useSession();
@@ -33,16 +34,9 @@ export default function DashboardPage() {
   }, [sessionStatus, business, router]);
 
   if (sessionStatus === "loading" || (sessionStatus === "authenticated" && business === undefined)) {
-    return (
-      <div className={authStyles.authPage}>
-        <div className={authStyles.backgroundGlow}>
-          <div className={authStyles.glow1} />
-          <div className={authStyles.glow2} />
-        </div>
-        <div className={authStyles.spinner} style={{ width: '40px', height: '40px', borderWidth: '3px' }} />
-      </div>
-    );
+    return <Loader />;
   }
+
 
   if (sessionStatus === "unauthenticated") {
     return null;
