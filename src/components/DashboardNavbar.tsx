@@ -1,0 +1,118 @@
+"use client";
+
+import React, { useState, useRef, useEffect } from "react";
+import Link from "next/link";
+import Image from "next/image";
+import { useSession, signOut } from "next-auth/react";
+import { 
+  User, 
+  Settings, 
+  LogOut, 
+  Bell,
+  LayoutDashboard
+} from "lucide-react";
+import styles from "./DashboardNavbar.module.css";
+
+export default function DashboardNavbar() {
+  const { data: session } = useSession();
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // Close menu when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setIsMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const handleLogout = () => {
+    signOut({ callbackUrl: "/login" });
+  };
+
+  const userInitial = session?.user?.name?.[0] || session?.user?.email?.[0] || "U";
+
+  return (
+    <nav className={styles.navbar}>
+      <div className={styles.container}>
+        {/* Logo Section */}
+        <Link href="/dashboard" className={styles.logoArea}>
+          <Image 
+            src="/logo.png" 
+            alt="VENDAQ Logo" 
+            width={32} 
+            height={32} 
+            className={styles.logoImg}
+          />
+          <span>
+            VEND<span className={styles.logoAccent}>AQ</span>
+          </span>
+        </Link>
+
+        {/* Actions Section */}
+        <div className={styles.navActions}>
+          <button className={styles.avatarBtn} style={{ background: 'transparent', border: 'none', color: '#94a3b8', width: 'auto', height: 'auto', marginRight: '0.5rem' }}>
+            <Bell size={20} />
+          </button>
+          
+          <div className={styles.userMenuWrapper} ref={menuRef}>
+            <button 
+              className={styles.avatarBtn}
+              onClick={() => setIsMenuOpen(!isMenuOpen)}
+              aria-label="User menu"
+            >
+              {session?.user?.image ? (
+                <Image 
+                  src={session.user.image} 
+                  alt="Avatar" 
+                  width={44} 
+                  height={44} 
+                  className={styles.avatarImg}
+                />
+              ) : (
+                <span style={{ fontWeight: 700, fontSize: '1rem' }}>{userInitial}</span>
+              )}
+            </button>
+
+            {isMenuOpen && (
+              <div className={styles.dropdown}>
+                <div className={styles.userInfo}>
+                  <span className={styles.userName}>{session?.user?.name || "User"}</span>
+                  <span className={styles.userEmail}>{session?.user?.email || ""}</span>
+                </div>
+                
+                <Link href="/dashboard" className={styles.menuItem} onClick={() => setIsMenuOpen(false)}>
+                  <LayoutDashboard size={18} className={styles.menuIcon} />
+                  Dashboard
+                </Link>
+                
+                <Link href="/profile" className={styles.menuItem} onClick={() => setIsMenuOpen(false)}>
+                  <User size={18} className={styles.menuIcon} />
+                  Profile Settings
+                </Link>
+                
+                <Link href="/settings" className={styles.menuItem} onClick={() => setIsMenuOpen(false)}>
+                  <Settings size={18} className={styles.menuIcon} />
+                  Account Settings
+                </Link>
+                
+                <div className={styles.divider} />
+                
+                <button 
+                  onClick={handleLogout}
+                  className={`${styles.menuItem} ${styles.logoutBtn}`}
+                >
+                  <LogOut size={18} />
+                  Log Out
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </nav>
+  );
+}

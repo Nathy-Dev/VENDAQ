@@ -2,10 +2,8 @@
 
 import { useSession } from "next-auth/react";
 import { useQuery } from "convex/react";
-import Link from "next/link";
-
-
 import { api } from "../../../convex/_generated/api";
+
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { LayoutDashboard, MessageSquare, Users, TrendingUp, ChevronRight, type LucideIcon } from "lucide-react";
@@ -54,10 +52,8 @@ export default function DashboardPage() {
             <h1 className={styles.welcomeTitle}>Welcome back, {session?.user?.name || "Partner"}!</h1>
             <p className={styles.subTitle}>Here&apos;s what&apos;s happening with VENDAQ today.</p>
           </div>
-          <Link href="/" className={styles.landingLink}>
-            View Landing Page
-          </Link>
         </header>
+
 
         <div className={styles.statsGrid}>
           <StatCard 
