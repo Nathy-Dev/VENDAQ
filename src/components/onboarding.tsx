@@ -9,11 +9,13 @@ import {
   ArrowRight, 
   CheckCircle2, 
   ShieldAlert, 
-  Smartphone
+  Smartphone,
+  ChevronLeft
 } from 'lucide-react';
 import styles from "./onboarding.module.css";
 import { clsx } from "clsx";
 import { useRouter } from "next/navigation";
+import Link from 'next/link';
 import { useVENDAQActions } from "@/hooks/useVENDAQ";
 import { useSession } from "next-auth/react";
 import { useQuery } from "convex/react";
@@ -108,6 +110,20 @@ export default function Onboarding({ initialStep = 0 }: OnboardingProps) {
 
   return (
     <div className={styles.onboardingContainer}>
+      {/* Breadcrumb / Exit Link */}
+      {existingBusiness && (
+        <motion.div 
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className={styles.breadcrumb}
+        >
+          <Link href="/dashboard" className={styles.breadcrumbLink}>
+            <ChevronLeft size={16} />
+            Back to Dashboard
+          </Link>
+        </motion.div>
+      )}
+
       <div className={styles.card}>
         {/* Progress Bar */}
         <div className={styles.progressBarTrack}>

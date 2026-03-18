@@ -11,6 +11,26 @@
   overflow: hidden;
 }
 
+.breadcrumb {
+  margin-bottom: 1.5rem;
+  z-index: 20;
+}
+
+.breadcrumbLink {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #64748b;
+  text-decoration: none;
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.breadcrumbLink:hover {
+  color: #10b981;
+}
+
 .card {
   width: 100%;
   max-width: 28rem;
