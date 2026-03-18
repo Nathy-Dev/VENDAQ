@@ -1,7 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import { makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } from '@whiskeysockets/baileys';
+import { makeWASocket, useMultiFileAuthState as getMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
 import pino from 'pino';
 import fs from 'fs';
@@ -61,7 +61,7 @@ async function startSession(businessId: string) {
     // Path for this specific business's auth state
     const sessionPath = path.join(SESSIONS_DIR, `session-${businessId}`);
     
-    const { state, saveCreds } = await useMultiFileAuthState(sessionPath);
+    const { state, saveCreds } = await getMultiFileAuthState(sessionPath);
     
     // Fetch the latest version to avoid 405 errors
     const { version, isLatest } = await fetchLatestBaileysVersion();
@@ -132,12 +132,39 @@ async function startSession(businessId: string) {
 
     sock.ev.on('creds.update', saveCreds);
 
-    // TODO: Handle incoming messages
+    // Handle incoming messages
     sock.ev.on('messages.upsert', async (m) => {
-        console.log(`[Worker] Received message for ${businessId}`);
+        if (m.type !== 'notify') return;
+        
+        for (const msg of m.messages) {
+           // Skip if no message content or if it's a protocol message
+           const content = msg.message?.conversation || 
+                          msg.message?.extendedTextMessage?.text || 
+                          msg.message?.imageMessage?.caption;
+                          
+           if (!content) continue;
+
+           const sender = msg.key.remoteJid?.split('@')[0] || "unknown";
+           const isGroup = msg.key.remoteJid?.endsWith('@g.us');
+           
+           if (isGroup) continue; // Skip group messages for now
+
+           console.log(`[Worker] New message from ${sender}: ${content.substring(0, 30)}...`);
+
+           // Forward to backend
+           await updateBackend({
+               action: 'newMessage',
+               businessId,
+               sender,
+               content,
+               timestamp: (msg.messageTimestamp as number) * 1000 || Date.now(),
+               fromMe: msg.key.fromMe
+           });
+        }
     });
 
     activeSockets[businessId] = sock;
+
     return { success: true, message: `Session starting for ${businessId}` };
 }
 

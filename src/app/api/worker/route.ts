@@ -30,6 +30,20 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: true });
     }
 
+    if (action === 'newMessage') {
+        const { sender, content, timestamp, fromMe } = body;
+        await fetchMutation(api.whatsapp.receiveMessage, {
+            businessId: businessId as Id<"businesses">,
+            sender,
+            content,
+            timestamp: timestamp || Date.now(),
+            fromMe: !!fromMe,
+        });
+        return NextResponse.json({ success: true });
+    }
+
+
+
     return NextResponse.json({ error: "Invalid action payload" }, { status: 400 });
   } catch (error: any) {
     console.error("Worker Webhook Error:", error);

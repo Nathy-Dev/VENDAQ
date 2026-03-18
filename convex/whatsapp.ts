@@ -43,3 +43,52 @@ export const getBusinessQR = query({
     };
   },
 });
+// Called by the worker to sync a new incoming message
+export const receiveMessage = mutation({
+  args: {
+    businessId: v.id("businesses"),
+    sender: v.string(), // Phone number
+    content: v.string(),
+    timestamp: v.number(),
+    fromMe: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    // 1. Find or create the customer
+    let customer = await ctx.db
+      .query("customers")
+      .withIndex("by_business_phone", (q) => 
+        q.eq("businessId", args.businessId).eq("phone", args.sender)
+      )
+      .unique();
+
+    if (!customer) {
+      const customerId = await ctx.db.insert("customers", {
+        businessId: args.businessId,
+        phone: args.sender,
+        name: args.sender, 
+        totalValue: 0,
+        lastInteraction: args.timestamp,
+        tags: ["new-lead"],
+      });
+      customer = await ctx.db.get(customerId);
+    } else {
+        await ctx.db.patch(customer._id, {
+            lastInteraction: args.timestamp,
+        });
+    }
+
+    if (!customer) return;
+
+    // 2. Insert the interaction
+    await ctx.db.insert("interactions", {
+      businessId: args.businessId,
+      customerId: customer._id,
+      role: args.fromMe ? "owner" : "customer",
+      content: args.content,
+      timestamp: args.timestamp,
+    });
+    
+    return { success: true };
+  },
+});
+
