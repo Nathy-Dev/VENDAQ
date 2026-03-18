@@ -16,6 +16,9 @@ import { clsx } from "clsx";
 import { useRouter } from "next/navigation";
 import { useVENDAQActions } from "@/hooks/useVENDAQ";
 import { useSession } from "next-auth/react";
+import { useQuery } from "convex/react";
+import { api } from "../../convex/_generated/api";
+import QRCode from "react-qr-code";
 
 const features = [
   {
@@ -51,6 +54,22 @@ export default function Onboarding({ initialStep = 0 }: OnboardingProps) {
   const { createOrUpdateBusiness } = useVENDAQActions();
   const { data: session } = useSession();
 
+  // Query Convex for QR code and status
+  const businessId = session?.user?.id; // Assuming user ID is 1:1 with business owner ID for MVP
+  // Get business details to get the actual business ID for the Convex query
+  const existingBusiness = useQuery(api.businesses.getBusiness, { ownerId: businessId || "" });
+  
+  const qrData = useQuery(api.whatsapp.getBusinessQR, 
+    existingBusiness ? { businessId: existingBusiness._id } : "skip"
+  );
+
+  // Auto-redirect when connected
+  React.useEffect(() => {
+    if (qrData?.status === "connected") {
+        router.push("/dashboard");
+    }
+  }, [qrData?.status, router]);
+
   const nextFeature = () => {
     if (featureIndex < features.length - 1) {
       setFeatureIndex(featureIndex + 1);
@@ -64,7 +83,7 @@ export default function Onboarding({ initialStep = 0 }: OnboardingProps) {
     
     const ownerId = session?.user?.id || "anonymous";
     
-    await createOrUpdateBusiness({
+    const newBusinessId = await createOrUpdateBusiness({
       name: "My Business",
       ownerId,
       onboardingStep: 4,
@@ -72,6 +91,19 @@ export default function Onboarding({ initialStep = 0 }: OnboardingProps) {
     });
     
     setStep(4);
+
+    // If unofficial, ping the local worker to start generating a QR code
+    if (selectedMode === "unofficial" && newBusinessId) {
+        try {
+            await fetch("http://localhost:3005/session/start", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ businessId: newBusinessId })
+            });
+        } catch (e) {
+            console.error("Failed to start worker session", e);
+        }
+    }
   };
 
   return (
@@ -215,24 +247,28 @@ export default function Onboarding({ initialStep = 0 }: OnboardingProps) {
                   </p>
                 </div>
 
-                {/* Mock QR/Input area */}
-                <div className={styles.qrContainer}>
-                  <span style={{ fontSize: '0.625rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
-                    {selectedMode === 'unofficial' ? "QR Code Placeholder" : "Token Form Placeholder"}
-                  </span>
+                {/* Render actual QR or Error/Loading state */}
+                <div className={styles.qrContainer} style={{ background: qrData?.qrCode ? 'white' : undefined, padding: qrData?.qrCode ? '1rem' : undefined }}>
+                  {selectedMode === 'unofficial' ? (
+                     qrData?.qrCode ? (
+                        <QRCode value={qrData.qrCode} size={200} />
+                     ) : (
+                         <span style={{ fontSize: '0.875rem', color: '#64748b' }}>
+                            {qrData?.status === 'pending' ? 'Generating fresh QR...' : 'Waiting for worker...'}
+                         </span>
+                     )
+                  ) : (
+                     <span style={{ fontSize: '0.625rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+                        Token Form Placeholder
+                     </span>
+                  )}
                 </div>
 
-                <button 
-                  onClick={() => {
-                    // Simulate verification and redirect to dashboard
-                    setTimeout(() => {
-                      router.push("/dashboard");
-                    }, 1500);
-                  }}
-                  className={styles.primaryButton}
-                >
-                  Verify Connection
-                </button>
+                <div style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    <div style={{ fontSize: '0.875rem', color: '#94a3b8' }}>
+                         Status: <strong style={{ color: qrData?.status === 'connected' ? '#10b981' : '#f59e0b'}}>{qrData?.status || "disconnected"}</strong>
+                    </div>
+                </div>
                 
                 <button 
                   onClick={() => setStep(3)}

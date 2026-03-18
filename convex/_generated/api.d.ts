@@ -10,8 +10,10 @@
 
 import type * as auth from "../auth.js";
 import type * as businesses from "../businesses.js";
+import type * as research from "../research.js";
 import type * as safeguards from "../safeguards.js";
 import type * as users from "../users.js";
+import type * as whatsapp from "../whatsapp.js";
 
 import type {
   ApiFromModules,
@@ -22,8 +24,10 @@ import type {
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   businesses: typeof businesses;
+  research: typeof research;
   safeguards: typeof safeguards;
   users: typeof users;
+  whatsapp: typeof whatsapp;
 }>;
 
 /**

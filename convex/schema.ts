@@ -6,8 +6,10 @@ export default defineSchema({
     name: v.string(),
     ownerId: v.string(), // Clerk user ID or similar
     whatsappMode: v.optional(v.union(v.literal("official"), v.literal("unofficial"))),
-    whatsappStatus: v.union(v.literal("disconnected"), v.literal("connected"), v.literal("error")),
+    whatsappStatus: v.union(v.literal("disconnected"), v.literal("connected"), v.literal("error"), v.literal("pending")),
     connectionDetails: v.optional(v.any()), // Tokens or Whapi instance details
+    qrCode: v.optional(v.string()), // Base64 QR code for Unofficlal mode
+    workerSessionId: v.optional(v.string()), // ID of the worker owning this connection
     industry: v.optional(v.string()),
     onboardingStep: v.number(),
   }).index("by_owner", ["ownerId"]),

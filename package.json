@@ -19,6 +19,7 @@
     "next-auth": "^5.0.0-beta.30",
     "react": "19.2.3",
     "react-dom": "19.2.3",
+    "react-qr-code": "^2.0.18",
     "tailwind-merge": "^3.5.0",
     "tailwindcss": "^4.2.1"
   },

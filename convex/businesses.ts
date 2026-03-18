@@ -45,7 +45,7 @@ export const createOrUpdateBusiness = mutation({
 export const updateConnectionStatus = mutation({
   args: {
     businessId: v.id("businesses"),
-    status: v.union(v.literal("disconnected"), v.literal("connected"), v.literal("error")),
+    status: v.union(v.literal("disconnected"), v.literal("connected"), v.literal("error"), v.literal("pending")),
     connectionDetails: v.optional(v.any()),
   },
   handler: async (ctx, args) => {
