@@ -16,13 +16,14 @@
 
 .container {
   width: 100%;
-  max-width: 80rem;
+  max-width: 1200px;
   margin: 0 auto;
   padding: 0 1.5rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
+
 
 .logoArea {
   display: flex;
@@ -159,7 +160,68 @@
   color: #ef4444;
 }
 
-/* Mobile-first adjustments */
+.inboxOverlay {
+  position: fixed;
+  top: calc(4.5rem + 1rem);
+  right: 1.5rem;
+  width: 400px;
+  height: calc(100vh - 4.5rem - 2.5rem);
+  background: #111b21;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 1rem;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+  animation: slideIn 0.3s ease-out;
+  z-index: 1100;
+}
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.inboxHeader {
+  padding: 1rem 1.25rem;
+  background: #202c33;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.inboxHeaderTitle {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: #e9edef;
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+.closeInboxBtn {
+  background: transparent;
+  border: none;
+  color: #8696a0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.closeInboxBtn:hover {
+  color: #e9edef;
+  transform: rotate(90deg);
+}
+
+.inboxContent {
+  flex: 1;
+  overflow: hidden;
+}
+
+/* Mobile adjustments */
 @media (max-width: 640px) {
   .dropdown {
     width: 14rem;
@@ -177,4 +239,14 @@
     from { transform: translateY(100%); }
     to { transform: translateY(0); }
   }
+
+  .inboxOverlay {
+    top: 0;
+    right: 0;
+    width: 100%;
+    height: 100%;
+    border-radius: 0;
+    z-index: 2000;
+  }
 }
+

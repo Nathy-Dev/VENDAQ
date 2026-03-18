@@ -9,14 +9,29 @@ import {
   Settings, 
   LogOut, 
   Bell,
-  LayoutDashboard
+  LayoutDashboard,
+  MessageSquare,
+  X
 } from "lucide-react";
+import { useQuery } from "convex/react";
+import { api } from "../../convex/_generated/api";
+import MessageInbox from "./MessageInbox";
+import { ChatThread } from "@/types";
 import styles from "./DashboardNavbar.module.css";
 
 export default function DashboardNavbar() {
   const { data: session } = useSession();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isInboxOpen, setIsInboxOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  const business = useQuery(api.businesses.getBusiness, 
+    session?.user?.id ? { ownerId: session.user.id } : "skip"
+  );
+
+  const chats = useQuery(api.interactions.getRecentChats,
+    business ? { businessId: business._id } : "skip"
+  ) as ChatThread[] | undefined;
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -54,6 +69,15 @@ export default function DashboardNavbar() {
 
         {/* Actions Section */}
         <div className={styles.navActions}>
+          <button 
+            className={styles.avatarBtn} 
+            style={{ background: 'transparent', border: 'none', color: isInboxOpen ? '#10b981' : '#94a3b8', width: 'auto', height: 'auto', marginRight: '0.5rem' }}
+            onClick={() => setIsInboxOpen(!isInboxOpen)}
+            aria-label="Open messages"
+          >
+            <MessageSquare size={20} />
+          </button>
+
           <button className={styles.avatarBtn} style={{ background: 'transparent', border: 'none', color: '#94a3b8', width: 'auto', height: 'auto', marginRight: '0.5rem' }}>
             <Bell size={20} />
           </button>
@@ -113,6 +137,27 @@ export default function DashboardNavbar() {
           </div>
         </div>
       </div>
+
+      {/* Message Inbox Overlay */}
+      {isInboxOpen && (
+        <div className={styles.inboxOverlay}>
+          <div className={styles.inboxHeader}>
+            <div className={styles.inboxHeaderTitle}>
+              <MessageSquare size={20} className={styles.logoAccent} />
+              <span>WhatsApp Messages</span>
+            </div>
+            <button 
+              className={styles.closeInboxBtn}
+              onClick={() => setIsInboxOpen(false)}
+            >
+              <X size={24} />
+            </button>
+          </div>
+          <div className={styles.inboxContent}>
+            <MessageInbox chats={chats} isLoading={chats === undefined} />
+          </div>
+        </div>
+      )}
     </nav>
   );
 }

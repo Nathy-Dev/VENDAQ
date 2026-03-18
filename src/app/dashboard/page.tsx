@@ -121,11 +121,8 @@ export default function DashboardPage() {
             </div>
             <LeadPipeline orders={orders} isLoading={orders === undefined} />
           </div>
-          <div className="flex flex-col gap-6">
-            <h3 className="text-sm font-bold text-slate-500 uppercase tracking-widest px-1">Recent Activity</h3>
-            <MessageInbox chats={chats} isLoading={chats === undefined} />
-          </div>
         </div>
+
 
       </div>
     </div>
