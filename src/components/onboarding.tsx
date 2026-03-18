@@ -95,7 +95,7 @@ export default function Onboarding({ initialStep = 0 }: OnboardingProps) {
     // If unofficial, ping the local worker to start generating a QR code
     if (selectedMode === "unofficial" && newBusinessId) {
         try {
-            await fetch("http://localhost:3005/session/start", {
+            await fetch("https://vendaq-production.up.railway.app/session/start", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ businessId: newBusinessId })
