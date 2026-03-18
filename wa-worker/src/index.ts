@@ -14,8 +14,13 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const PORT = process.env.PORT || 3001;
-const SESSIONS_DIR = path.join(__dirname, '../sessions');
+const PORT = process.env.PORT || 3005;
+const SESSIONS_DIR = process.env.SESSIONS_PATH || path.join(__dirname, '../sessions');
+
+// Health Check for Render/Fly.io
+app.get('/', (req, res) => {
+    res.json({ status: 'active', service: 'wa-worker' });
+});
 // The Convex HTTP actions endpoint format: <CONVEX_URL>/api/mutation_name
 // Since we don't have HTTP actions setup yet, we will use a workaround or we need to setup HTTP actions in Convex.
 // Wait, Convex mutations can be called directly if we use the convex client, but in a raw node script it's easier to use fetch with HTTP Actions.
