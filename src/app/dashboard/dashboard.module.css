@@ -111,7 +111,7 @@
 
 @media (min-width: 1280px) {
   .dashboardGrid {
-    grid-template-columns: 3fr 1.2fr;
+    grid-template-columns: 1fr;
     gap: 2.5rem;
     align-items: flex-start;
   }

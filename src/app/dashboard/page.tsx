@@ -9,7 +9,6 @@ import { useEffect } from "react";
 import { LayoutDashboard, MessageSquare, Users, TrendingUp, type LucideIcon } from "lucide-react";
 import styles from "./dashboard.module.css";
 import Loader from "@/components/Loader";
-import MessageInbox from "@/components/MessageInbox";
 import LeadPipeline from "@/components/LeadPipeline";
 import { ChatThread, PooledOrders } from "@/types";
 
@@ -89,11 +88,11 @@ export default function DashboardPage() {
           />
         </div>
 
-        {!isBusinessLoading && (!business || business.whatsappStatus === "disconnected") && (
+        {(!business || business.whatsappStatus !== "connected") && (
           <div className={styles.connectBanner}>
             <div className={styles.connectInfo}>
               <h3 className={styles.connectTitle}>
-                {!business ? "Welcome to VENDAQ! Connect your WhatsApp" : "WhatsApp Disconnected"}
+                {!business ? "Welcome to VENDAQ! Connect your WhatsApp" : business.whatsappStatus === "error" ? "Connection Error" : "WhatsApp Not Connected"}
               </h3>
               <p className={styles.connectDesc}>
                 {!business 

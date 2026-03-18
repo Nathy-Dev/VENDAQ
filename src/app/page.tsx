@@ -25,8 +25,8 @@ export default function Home() {
       if (!business) {
         // No business found -> New user, send to onboarding
         router.push("/onboarding");
-      } else if (business.whatsappStatus === "disconnected") {
-        // Business exists but WA is disconnected
+      } else if (business.whatsappStatus !== "connected") {
+        // Business exists but WA is not connected (disconnected, pending, error)
         router.push("/onboarding/connect");
       } else {
         // For all other statuses (connected, pending, error), go to dashboard
