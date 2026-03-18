@@ -27,7 +27,7 @@ app.get('/', (req, res) => {
 // Let's actually create the fetch calls to a standard Next.js API route as a proxy, OR set up Convex HTTP actions. 
 // Actually, setting up Convex HTTP actions is best practices for external webhooks. Let's use a placeholder URL for now and we will create a Next.js API route to proxy to Convex.
 // Wait, the client is already running on localhost:3000. It's much easier to just create an API route in Next.js.
-const NEXT_JS_URL = 'http://localhost:3000/api/worker';
+const NEXT_JS_URL = process.env.NEXT_JS_URL || 'http://localhost:3000/api/worker';
 
 // Ensure sessions directory exists
 if (!fs.existsSync(SESSIONS_DIR)) {
