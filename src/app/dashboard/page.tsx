@@ -89,20 +89,27 @@ export default function DashboardPage() {
           />
         </div>
 
-        {business?.whatsappStatus === "disconnected" && (
+        {!isBusinessLoading && (!business || business.whatsappStatus === "disconnected") && (
           <div className={styles.connectBanner}>
             <div className={styles.connectInfo}>
-              <h3 className={styles.connectTitle}>WhatsApp Disconnected</h3>
-              <p className={styles.connectDesc}>Connect your WhatsApp to start capturing leads and managing your pipeline automatically.</p>
+              <h3 className={styles.connectTitle}>
+                {!business ? "Welcome to VENDAQ! Connect your WhatsApp" : "WhatsApp Disconnected"}
+              </h3>
+              <p className={styles.connectDesc}>
+                {!business 
+                  ? "Finalize your setup to start capturing leads and managing your pipeline automatically."
+                  : "Reconnect your WhatsApp to continue syncing your messages and leads."}
+              </p>
             </div>
             <button 
-              onClick={() => router.push("/onboarding/connect")}
+              onClick={() => router.push("/onboarding")}
               className={styles.connectButton}
             >
-              Connect Now
+              Get Started
             </button>
           </div>
         )}
+
 
         <div className={styles.dashboardGrid}>
           <div className="flex flex-col gap-6">
