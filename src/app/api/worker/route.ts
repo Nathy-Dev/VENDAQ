@@ -42,6 +42,19 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: true });
     }
 
+    if (action === 'syncHistory') {
+        const { history } = body;
+        console.log(`[Next.js Proxy] Received heavy history sync for ${businessId}: ${history?.length || 0} items`);
+        
+        // We can chunk this if it's too large, but for now let's pass it through
+        await fetchMutation(api.whatsapp.syncHistory, {
+            businessId: businessId as Id<"businesses">,
+            history: history || [],
+        });
+        
+        return NextResponse.json({ success: true, count: history?.length || 0 });
+    }
+
 
 
     return NextResponse.json({ error: "Invalid action payload" }, { status: 400 });

@@ -132,6 +132,70 @@ async function startSession(businessId: string) {
 
     sock.ev.on('creds.update', saveCreds);
 
+    // Handle historical sync (like WhatsApp Web)
+    sock.ev.on('messaging-history.set', async ({ chats, contacts, messages }) => {
+        console.log(`[Worker] Received history sync: ${chats.length} chats, ${contacts.length} contacts, ${messages.length} messages`);
+        
+        const syncData: any[] = [];
+        const contactMap = new Map();
+        contacts.forEach(c => contactMap.set(c.id, c.name || c.verifiedName || c.publicName));
+
+        // Process each chat to find its last message
+        for (const chat of chats) {
+            const remoteJid = chat.id;
+            if (remoteJid.endsWith('@g.us')) continue; // Skip groups for now
+            
+            const sender = remoteJid.split('@')[0];
+            const name = contactMap.get(remoteJid) || chat.name;
+            
+            // Find the latest message for this chat in the synced messages
+            const chatMessages = messages.filter(m => m.key.remoteJid === remoteJid);
+            const latestMsg = chatMessages.length > 0 
+                ? chatMessages[chatMessages.length - 1] 
+                : null;
+            
+            let content = "";
+            let timestamp = Date.now();
+            let fromMe = false;
+
+            if (latestMsg) {
+                content = latestMsg.message?.conversation || 
+                          latestMsg.message?.extendedTextMessage?.text || 
+                          latestMsg.message?.imageMessage?.caption || 
+                          "[Media/Other]";
+                timestamp = (latestMsg.messageTimestamp as number) * 1000 || Date.now();
+                fromMe = !!latestMsg.key.fromMe;
+            } else if (chat.lastMessageRecvTimestamp) {
+                // Fallback if no message content but we have a timestamp
+                content = "Existing conversation";
+                timestamp = (chat.lastMessageRecvTimestamp as number) * 1000;
+            } else {
+                continue; // No useful data for this chat
+            }
+
+            syncData.push({
+                sender,
+                content,
+                timestamp,
+                fromMe,
+                name
+            });
+        }
+
+        if (syncData.length > 0) {
+            console.log(`[Worker] Sending ${syncData.length} historical chat entries to backend`);
+            // Send in chunks of 25 to avoid payload limits
+            for (let i = 0; i < syncData.length; i += 25) {
+                const chunk = syncData.slice(i, i + 25);
+                await updateBackend({
+                    action: 'syncHistory',
+                    businessId,
+                    history: chunk
+                });
+            }
+        }
+    });
+
     // Handle incoming messages
     sock.ev.on('messages.upsert', async (m) => {
         if (m.type !== 'notify') return;

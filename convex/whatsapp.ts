@@ -92,3 +92,74 @@ export const receiveMessage = mutation({
   },
 });
 
+export const syncHistory = mutation({
+  args: {
+    businessId: v.id("businesses"),
+    history: v.array(v.object({
+      sender: v.string(),
+      content: v.string(),
+      timestamp: v.number(),
+      fromMe: v.optional(v.boolean()),
+      name: v.optional(v.string()), // Optional contact name
+    })),
+  },
+  handler: async (ctx, args) => {
+    console.log(`[Convex] Syncing history for business ${args.businessId}, ${args.history.length} items`);
+    
+    for (const item of args.history) {
+      // 1. Find or create the customer
+      let customer = await ctx.db
+        .query("customers")
+        .withIndex("by_business_phone", (q) => 
+          q.eq("businessId", args.businessId).eq("phone", item.sender)
+        )
+        .unique();
+
+      if (!customer) {
+        const customerId = await ctx.db.insert("customers", {
+          businessId: args.businessId,
+          phone: item.sender,
+          name: item.name || item.sender, 
+          totalValue: 0,
+          lastInteraction: item.timestamp,
+          tags: ["imported"],
+        });
+        customer = await ctx.db.get(customerId);
+      } else {
+          // Update last interaction if this one is newer
+          if (item.timestamp > customer.lastInteraction) {
+            await ctx.db.patch(customer._id, {
+                lastInteraction: item.timestamp,
+                name: item.name || customer.name, // Update name if we just got a better one
+            });
+          }
+      }
+
+      if (!customer) continue;
+
+      // 2. Insert the interaction (idempotency check by timestamp and content for now)
+      // In a real app, we'd use a unique message ID from Baileys
+      const existing = await ctx.db
+        .query("interactions")
+        .withIndex("by_customer", q => q.eq("customerId", customer!._id))
+        .filter(q => q.and(
+            q.eq(q.field("timestamp"), item.timestamp),
+            q.eq(q.field("content"), item.content)
+        ))
+        .first();
+
+      if (!existing) {
+        await ctx.db.insert("interactions", {
+          businessId: args.businessId,
+          customerId: customer._id,
+          role: item.fromMe ? "owner" : "customer",
+          content: item.content,
+          timestamp: item.timestamp,
+        });
+      }
+    }
+    
+    return { success: true, count: args.history.length };
+  },
+});
+
