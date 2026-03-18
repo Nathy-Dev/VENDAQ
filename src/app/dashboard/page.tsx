@@ -6,9 +6,12 @@ import { api } from "../../../convex/_generated/api";
 
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
-import { LayoutDashboard, MessageSquare, Users, TrendingUp, ChevronRight, type LucideIcon } from "lucide-react";
+import { LayoutDashboard, MessageSquare, Users, TrendingUp, type LucideIcon } from "lucide-react";
 import styles from "./dashboard.module.css";
 import Loader from "@/components/Loader";
+import MessageInbox from "@/components/MessageInbox";
+import LeadPipeline from "@/components/LeadPipeline";
+import { ChatThread, PooledOrders } from "@/types";
 
 
 export default function DashboardPage() {
@@ -18,6 +21,15 @@ export default function DashboardPage() {
   const business = useQuery(api.businesses.getBusiness, 
     session?.user?.id ? { ownerId: session.user.id } : "skip"
   );
+
+  const chats = useQuery(api.interactions.getRecentChats,
+    business ? { businessId: business._id } : "skip"
+  ) as ChatThread[] | undefined;
+
+  const orders = useQuery(api.orders.getOrdersByBusiness,
+    business ? { businessId: business._id } : "skip"
+  ) as PooledOrders | undefined;
+
 
   useEffect(() => {
     if (sessionStatus === "authenticated" && session?.user?.id && business !== undefined) {
@@ -31,14 +43,11 @@ export default function DashboardPage() {
     }
   }, [sessionStatus, business, session?.user?.id, router]);
 
-
   const isBusinessLoading = sessionStatus === "authenticated" && session?.user?.id && business === undefined;
 
   if (sessionStatus === "loading" || isBusinessLoading) {
     return <Loader />;
   }
-
-
 
   if (sessionStatus === "unauthenticated") {
     return null;
@@ -54,55 +63,52 @@ export default function DashboardPage() {
           </div>
         </header>
 
-
         <div className={styles.statsGrid}>
           <StatCard 
             icon={MessageSquare} 
-            label="New Inquiries" 
-            value="12" 
+            label="Daily Inquiries" 
+            value={chats?.length.toString() || "0"} 
             color="rgba(59, 130, 246, 0.1)" 
             iconColor="#3b82f6" 
           />
           <StatCard 
             icon={Users} 
-            label="Total Customers" 
-            value="148" 
+            label="Customers" 
+            value={chats?.length.toString() || "0"} // Simplified for now
             color="rgba(16, 185, 129, 0.1)" 
             iconColor="#10b981" 
           />
           <StatCard 
             icon={TrendingUp} 
             label="Weekly Revenue" 
-            value="₦45,000" 
+            value="₦0" 
             color="rgba(139, 92, 246, 0.1)" 
             iconColor="#8b5cf6" 
           />
           <StatCard 
             icon={LayoutDashboard} 
             label="Active Pipeline" 
-            value="8" 
+            value={((orders?.pending.length || 0) + (orders?.awaiting_payment.length || 0)).toString()} 
             color="rgba(245, 158, 11, 0.1)" 
             iconColor="#f59e0b" 
           />
         </div>
 
-        <main className={styles.mainSection}>
-          <div className={styles.mainIconWrapper}>
-            <LayoutDashboard size={36} />
+        <div className={styles.dashboardGrid}>
+          <div className="flex flex-col gap-4">
+            <h3 className="text-sm font-bold text-slate-500 uppercase tracking-widest px-1">Pipeline</h3>
+            <LeadPipeline orders={orders} isLoading={orders === undefined} />
           </div>
-          <h2 className={styles.mainTitle}>Your Dashboard is ready!</h2>
-          <p className={styles.mainDesc}>
-            This is where your WhatsApp sales will be organized. We&apos;re currently 
-            setting up your real-time data sync with your WhatsApp messages.
-          </p>
-          <button className={styles.actionButton}>
-            Get Started with Pipeline <ChevronRight size={18} style={{ display: 'inline', marginLeft: '4px' }} />
-          </button>
-        </main>
+          <div className="flex flex-col gap-4">
+            <h3 className="text-sm font-bold text-slate-500 uppercase tracking-widest px-1">Recent Activity</h3>
+            <MessageInbox chats={chats} isLoading={chats === undefined} />
+          </div>
+        </div>
       </div>
     </div>
   );
 }
+
 
 interface StatCardProps {
   icon: LucideIcon;

@@ -63,7 +63,9 @@ export default defineSchema({
     content: v.string(),
     timestamp: v.number(),
     intent: v.optional(v.string()),
-  }).index("by_customer", ["customerId"]),
+  }).index("by_business", ["businessId"])
+    .index("by_customer", ["customerId"]),
+
 
   users: defineTable({
     name: v.optional(v.string()),

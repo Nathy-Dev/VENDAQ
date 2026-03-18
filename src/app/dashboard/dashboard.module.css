@@ -101,56 +101,15 @@
   font-weight: 800;
 }
 
-.mainSection {
-  background: rgba(15, 23, 42, 0.4);
-  backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.03);
-  border-radius: 2rem;
-  padding: 4rem 2rem;
-  text-align: center;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1.5rem;
+.dashboardGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 2rem;
 }
 
-.mainIconWrapper {
-  width: 4.5rem;
-  height: 4.5rem;
-  background: rgba(16, 185, 129, 0.1);
-  color: #10b981;
-  border-radius: 1.25rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 0.5rem;
-  box-shadow: 0 0 20px rgba(16, 185, 129, 0.2);
-}
-
-.mainTitle {
-  font-size: 2rem;
-  font-weight: 800;
-  letter-spacing: -0.025em;
-}
-
-.mainDesc {
-  color: #94a3b8;
-  max-width: 32rem;
-  line-height: 1.6;
-}
-
-.actionButton {
-  margin-top: 1rem;
-  background: #10b981;
-  color: white;
-  padding: 0.75rem 2rem;
-  border-radius: 0.75rem;
-  font-weight: 700;
-  transition: all 0.2s;
-  cursor: pointer;
-}
-
-.actionButton:hover {
-  background: #059669;
-  transform: scale(1.02);
+@media (min-width: 1280px) {
+  .dashboardGrid {
+    grid-template-columns: 2fr 1fr;
+    align-items: flex-start;
+  }
 }
