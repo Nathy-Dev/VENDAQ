@@ -1,6 +1,10 @@
 "use client";
 
+import { useSession } from "next-auth/react";
 import { useQuery } from "convex/react";
+import Link from "next/link";
+
+
 import { api } from "../../../convex/_generated/api";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
