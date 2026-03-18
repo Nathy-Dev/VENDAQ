@@ -22,7 +22,7 @@ export default function SignupPage() {
   const router = useRouter();
 
   const handleGoogleSignIn = () => {
-    signIn("google", { callbackUrl: "/" });
+    signIn("google", { callbackUrl: "/dashboard" });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -42,7 +42,7 @@ export default function SignupPage() {
       if (result?.error) {
         setError("Account created, but login failed. Please try logging in.");
       } else {
-        router.push("/");
+        router.push("/dashboard");
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "An error occurred during signup.";

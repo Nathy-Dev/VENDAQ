@@ -29,7 +29,7 @@ export default function LoginPage() {
       if (result?.error) {
         setError("Invalid email or password");
       } else {
-        window.location.href = "/";
+        window.location.href = "/dashboard";
       }
     } catch {
       setError("An error occurred. Please try again.");
@@ -39,7 +39,7 @@ export default function LoginPage() {
   };
 
   const handleGoogleSignIn = () => {
-    signIn("google", { callbackUrl: "/" });
+    signIn("google", { callbackUrl: "/dashboard" });
   };
 
   return (

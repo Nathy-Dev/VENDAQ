@@ -1,12 +1,48 @@
 "use client";
 
-import { useSession } from "next-auth/react";
-import Link from "next/link";
+import { useQuery } from "convex/react";
+import { api } from "../../../convex/_generated/api";
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
 import { LayoutDashboard, MessageSquare, Users, TrendingUp, ChevronRight, type LucideIcon } from "lucide-react";
 import styles from "./dashboard.module.css";
+import authStyles from "../Auth.module.css";
 
 export default function DashboardPage() {
-  const { data: session } = useSession();
+  const { data: session, status: sessionStatus } = useSession();
+  const router = useRouter();
+
+  const business = useQuery(api.businesses.getBusiness, 
+    session?.user?.id ? { ownerId: session.user.id } : "skip"
+  );
+
+  useEffect(() => {
+    if (sessionStatus === "authenticated" && business !== undefined) {
+      if (!business) {
+        router.push("/onboarding");
+      } else if (business.whatsappStatus === "disconnected") {
+        router.push("/onboarding/connect");
+      }
+    } else if (sessionStatus === "unauthenticated") {
+      router.push("/login");
+    }
+  }, [sessionStatus, business, router]);
+
+  if (sessionStatus === "loading" || (sessionStatus === "authenticated" && business === undefined)) {
+    return (
+      <div className={authStyles.authPage}>
+        <div className={authStyles.backgroundGlow}>
+          <div className={authStyles.glow1} />
+          <div className={authStyles.glow2} />
+        </div>
+        <div className={authStyles.spinner} style={{ width: '40px', height: '40px', borderWidth: '3px' }} />
+      </div>
+    );
+  }
+
+  if (sessionStatus === "unauthenticated") {
+    return null;
+  }
 
   return (
     <div className={styles.container}>
