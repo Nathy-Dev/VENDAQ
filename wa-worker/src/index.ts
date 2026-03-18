@@ -48,10 +48,12 @@ async function updateBackend(body: any) {
         
         if (!response.ok) {
             const errorText = await response.text();
-            console.error(`[Worker] Failed to sync with backend. Status: ${response.status}`, errorText);
+            console.error(`[Worker DEBUG] Failed to sync ${body.action} with backend. Status: ${response.status}`, errorText);
+        } else {
+            console.log(`[Worker DEBUG] Successfully synced ${body.action} with backend.`);
         }
     } catch (e: any) {
-        console.error('[Worker] Failed to connect to backend:', e.message);
+        console.error('[Worker DEBUG] Failed to connect to backend:', e.message);
     }
 }
 
@@ -134,7 +136,17 @@ async function startSession(businessId: string) {
 
     // Handle historical sync (like WhatsApp Web)
     sock.ev.on('messaging-history.set', async ({ chats, contacts, messages }) => {
-        console.log(`[Worker] Received history sync: ${chats.length} chats, ${contacts.length} contacts, ${messages.length} messages`);
+        console.log(`[Worker DEBUG] Received history sync: ${chats.length} chats, ${contacts.length} contacts, ${messages.length} messages`);
+        
+        if (chats.length === 0) {
+            console.log(`[Worker DEBUG] No chats found in history sync.`);
+        } else {
+            console.log(`[Worker DEBUG] First chat raw sample:`, JSON.stringify(chats[0]).substring(0, 200));
+        }
+
+        if (messages.length > 0) {
+            console.log(`[Worker DEBUG] First message raw sample:`, JSON.stringify(messages[0]).substring(0, 200));
+        }
         
         const syncData: any[] = [];
         const contactMap = new Map();
@@ -173,6 +185,7 @@ async function startSession(businessId: string) {
                 continue; // No useful data for this chat
             }
 
+            console.log(`[Worker DEBUG] Found ${latestMsg ? 'real message' : 'timestamp fallback'} for chat ${sender}`);
             syncData.push({
                 sender,
                 content,
@@ -181,6 +194,8 @@ async function startSession(businessId: string) {
                 name
             });
         }
+
+        console.log(`[Worker DEBUG] Total chats processed: ${chats.length}, Valid sync entries: ${syncData.length}`);
 
         if (syncData.length > 0) {
             console.log(`[Worker] Sending ${syncData.length} historical chat entries to backend`);
