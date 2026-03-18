@@ -1,0 +1,6 @@
+wa-worker
+node_modules
+.next
+.env
+.env.local
+.vercel
