@@ -1,7 +1,8 @@
 "use client";
 
 import React from "react";
-import { MessageSquare, User as UserIcon, Search, MoreVertical } from "lucide-react";
+import { MessageSquare, User as UserIcon, Search, MoreVertical, ShieldAlert } from "lucide-react";
+
 import styles from "./MessageInbox.module.css";
 import { formatDistanceToNow } from "date-fns";
 import Image from "next/image";
@@ -51,11 +52,22 @@ export default function MessageInbox({ chats, isLoading }: MessageInboxProps) {
       <div className={styles.chatList}>
         {!chats || chats.length === 0 ? (
           <div className={styles.emptyState}>
-            <MessageSquare size={48} className={styles.inboxIcon} />
-            <p>No messages yet.</p>
-            <p style={{ fontSize: '0.8rem' }}>Once your WhatsApp is connected, your messages will appear here.</p>
+            <div className={styles.inboxIcon}>
+              <MessageSquare size={80} strokeWidth={1} />
+            </div>
+            <h2 className={styles.emptyTitle}>WhatsApp for VENDAQ</h2>
+            <p className={styles.emptyDesc}>
+              Connect your phone to sync your messages. VENDAQ keeps your chats safe and organized.
+            </p>
+            <div style={{ marginTop: '1rem', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '1rem', width: '100%' }}>
+              <p style={{ fontSize: '0.7rem', color: '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+                <ShieldAlert size={12} /> End-to-end encrypted sync
+              </p>
+
+            </div>
           </div>
         ) : (
+
           chats.map((chat) => (
             <div key={chat._id} className={styles.ChatItem}>
               <div className={styles.avatar}>

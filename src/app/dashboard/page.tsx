@@ -32,16 +32,11 @@ export default function DashboardPage() {
 
 
   useEffect(() => {
-    if (sessionStatus === "authenticated" && session?.user?.id && business !== undefined) {
-      if (!business) {
-        router.push("/onboarding");
-      } else if (business.whatsappStatus === "disconnected") {
-        router.push("/onboarding/connect");
-      }
-    } else if (sessionStatus === "unauthenticated") {
+    if (sessionStatus === "unauthenticated") {
       router.push("/login");
     }
-  }, [sessionStatus, business, session?.user?.id, router]);
+  }, [sessionStatus, router]);
+
 
   const isBusinessLoading = sessionStatus === "authenticated" && session?.user?.id && business === undefined;
 
@@ -74,7 +69,7 @@ export default function DashboardPage() {
           <StatCard 
             icon={Users} 
             label="Customers" 
-            value={chats?.length.toString() || "0"} // Simplified for now
+            value={chats?.length.toString() || "0"} 
             color="rgba(16, 185, 129, 0.1)" 
             iconColor="#10b981" 
           />
@@ -94,16 +89,37 @@ export default function DashboardPage() {
           />
         </div>
 
+        {business?.whatsappStatus === "disconnected" && (
+          <div className={styles.connectBanner}>
+            <div className={styles.connectInfo}>
+              <h3 className={styles.connectTitle}>WhatsApp Disconnected</h3>
+              <p className={styles.connectDesc}>Connect your WhatsApp to start capturing leads and managing your pipeline automatically.</p>
+            </div>
+            <button 
+              onClick={() => router.push("/onboarding/connect")}
+              className={styles.connectButton}
+            >
+              Connect Now
+            </button>
+          </div>
+        )}
+
         <div className={styles.dashboardGrid}>
-          <div className="flex flex-col gap-4">
-            <h3 className="text-sm font-bold text-slate-500 uppercase tracking-widest px-1">Pipeline</h3>
+          <div className="flex flex-col gap-6">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-slate-500 uppercase tracking-widest px-1">Lead Pipeline</h3>
+              {business?.whatsappStatus === "connected" && (
+                <span className="text-[10px] bg-emerald-500/10 text-emerald-500 px-2 py-1 rounded-full font-bold">LIVE SYNC ACTIVE</span>
+              )}
+            </div>
             <LeadPipeline orders={orders} isLoading={orders === undefined} />
           </div>
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-6">
             <h3 className="text-sm font-bold text-slate-500 uppercase tracking-widest px-1">Recent Activity</h3>
             <MessageInbox chats={chats} isLoading={chats === undefined} />
           </div>
         </div>
+
       </div>
     </div>
   );

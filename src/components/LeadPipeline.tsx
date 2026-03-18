@@ -64,22 +64,10 @@ export default function LeadPipeline({ orders, isLoading }: LeadPipelineProps) {
               ))
             )}
             
-            <button style={{ 
-              marginTop: 'auto', 
-              padding: '0.5rem', 
-              borderRadius: '8px', 
-              border: '1px dashed rgba(255,255,255,0.05)',
-              color: '#64748b',
-              fontSize: '0.75rem',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '0.5rem',
-              background: 'transparent',
-              cursor: 'pointer'
-            }}>
+            <button className={styles.addButton}>
               <Plus size={14} /> Add Lead
             </button>
+
           </div>
         </div>
       ))}

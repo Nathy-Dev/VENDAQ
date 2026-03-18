@@ -172,12 +172,12 @@ export default function Onboarding({ initialStep = 0 }: OnboardingProps) {
                     <div className={styles.modeHeader}>
                       <div className={styles.modeTitle}>
                         <Smartphone size={20} style={{ color: '#10b981' }} />
-                        Whapi.cloud (Social)
+                        VENDAQ Standard
                       </div>
                       {selectedMode === 'unofficial' && <CheckCircle2 size={20} style={{ color: '#10b981' }} />}
                     </div>
                     <p className={styles.modeDesc}>
-                      Best for small sellers. Supports status updates, groups, and normal WhatsApp usage.
+                      Quick QR-based connection. Perfect for individual sellers and small teams using their existing WhatsApp.
                     </p>
                     <div className={styles.badgeGroup}>
                       <span className={clsx(styles.badge, styles.badgeDefault)}>Unofficial</span>
@@ -186,21 +186,22 @@ export default function Onboarding({ initialStep = 0 }: OnboardingProps) {
                   </button>
 
                   <button 
-                    onClick={() => setSelectedMode('official')}
+                    disabled
                     className={clsx(
                       styles.modeButton,
-                      selectedMode === 'official' && styles.modeButtonActive
+                      styles.modeButtonDisabled
                     )}
                   >
+
                     <div className={styles.modeHeader}>
                       <div className={styles.modeTitle}>
-                        <Zap size={20} style={{ color: '#10b981' }} />
-                        Meta Cloud API (Pro)
+                        <Zap size={20} style={{ color: '#64748b' }} />
+                        Meta Cloud API
                       </div>
-                      {selectedMode === 'official' && <CheckCircle2 size={20} style={{ color: '#10b981' }} />}
+                      <span className={clsx(styles.badge, styles.badgeDefault)} style={{ fontSize: '0.65rem', background: 'rgba(255,255,255,0.05)' }}>Coming Soon</span>
                     </div>
-                    <p className={styles.modeDesc}>
-                      Maximum reliability and scalability. Authorized by Meta for large-scale automation.
+                    <p className={styles.modeDesc} style={{ color: '#475569' }}>
+                      Official enterprise scaling via Meta. Optimized for high-volume automated notifications.
                     </p>
                     <div className={styles.badgeGroup}>
                       <span className={clsx(styles.badge, styles.badgePrimary)}>Official</span>

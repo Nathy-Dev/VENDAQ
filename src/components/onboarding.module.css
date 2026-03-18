@@ -231,3 +231,14 @@
   opacity: 0.1;
   border-radius: 9999px;
 }
+.modeButtonDisabled {
+  opacity: 0.5 !important;
+  cursor: not-allowed !important;
+  border-color: rgba(255, 255, 255, 0.05) !important;
+  background: rgba(15, 23, 42, 0.2) !important;
+}
+
+.modeButtonDisabled:hover {
+  transform: none !important;
+  border-color: rgba(255, 255, 255, 0.05) !important;
+}
