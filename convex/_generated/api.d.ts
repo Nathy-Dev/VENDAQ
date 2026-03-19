@@ -10,6 +10,7 @@
 
 import type * as auth from "../auth.js";
 import type * as businesses from "../businesses.js";
+import type * as http from "../http.js";
 import type * as interactions from "../interactions.js";
 import type * as orders from "../orders.js";
 import type * as safeguards from "../safeguards.js";
@@ -26,6 +27,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   businesses: typeof businesses;
+  http: typeof http;
   interactions: typeof interactions;
   orders: typeof orders;
   safeguards: typeof safeguards;
