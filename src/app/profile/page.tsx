@@ -1,7 +1,5 @@
 "use client";
 
-import { useQuery } from "convex/react";
-import { api } from "../../convex/_generated/api";
 import { useSession } from "next-auth/react";
 import { User, Mail, Shield, Building } from "lucide-react";
 
