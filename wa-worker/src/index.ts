@@ -73,7 +73,9 @@ async function startSession(businessId: string) {
         version,
         auth: state,
         logger: pino({ level: 'info' }) as any, // Re-enabled logs for debugging
-        browser: ["VENDAQ", "Chrome", "114.0.5735.199"]
+        browser: ["VENDAQ", "Chrome", "114.0.5735.199"],
+        syncFullHistory: true,
+        shouldSyncHistoryMessage: () => true
     });
 
     sock.ev.on('connection.update', async (update) => {
@@ -150,18 +152,17 @@ async function startSession(businessId: string) {
         
         const syncData: any[] = [];
         const contactMap = new Map();
-        contacts.forEach(c => contactMap.set(c.id, c.name || c.verifiedName || c.publicName));
+        contacts.forEach(c => contactMap.set(c.id, c.name || c.verifiedName || (c as any).publicName));
 
-        // Process each chat to find its last message
         for (const chat of chats) {
             const remoteJid = chat.id;
-            if (remoteJid.endsWith('@g.us')) continue; // Skip groups for now
+            if (!remoteJid || remoteJid.endsWith('@g.us')) continue; // Skip groups for now
             
             const sender = remoteJid.split('@')[0];
             const name = contactMap.get(remoteJid) || chat.name;
             
             // Find the latest message for this chat in the synced messages
-            const chatMessages = messages.filter(m => m.key.remoteJid === remoteJid);
+            const chatMessages = messages.filter(m => m.key && m.key.remoteJid === remoteJid);
             const latestMsg = chatMessages.length > 0 
                 ? chatMessages[chatMessages.length - 1] 
                 : null;

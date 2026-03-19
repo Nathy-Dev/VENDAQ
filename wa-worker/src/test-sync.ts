@@ -37,7 +37,7 @@ async function testSync() {
             })
         });
 
-        const result = await response.json();
+        const result = await response.json() as any;
         console.log("Sync Result:", result);
         
         if (response.ok) {
