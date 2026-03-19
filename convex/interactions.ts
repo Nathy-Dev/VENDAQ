@@ -7,6 +7,7 @@ export const getChatMessages = query({
     customerId: v.id("customers")
   },
   handler: async (ctx, args) => {
+    console.log(`[Convex] Fetching messages for customer ${args.customerId} in business ${args.businessId}`);
     return await ctx.db
       .query("interactions")
       .withIndex("by_customer", (q) => q.eq("customerId", args.customerId))

@@ -16,10 +16,12 @@ interface MessageThreadProps {
 }
 
 export default function MessageThread({ chat, businessId, onBack }: MessageThreadProps) {
-  const messages = useQuery(api.interactions.getChatMessages, {
-    businessId: businessId as Id<"businesses">,
-    customerId: chat._id
-  });
+  const messages = useQuery(api.interactions.getChatMessages, 
+    businessId && chat._id ? {
+      businessId: businessId as Id<"businesses">,
+      customerId: chat._id
+    } : "skip"
+  );
 
   const scrollRef = useRef<HTMLDivElement>(null);
 
