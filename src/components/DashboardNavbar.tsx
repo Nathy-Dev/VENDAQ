@@ -16,6 +16,7 @@ import {
 import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import MessageInbox from "./MessageInbox";
+import MessageThread from "./MessageThread";
 import { ChatThread } from "@/types";
 import styles from "./DashboardNavbar.module.css";
 
@@ -23,6 +24,7 @@ export default function DashboardNavbar() {
   const { data: session } = useSession();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isInboxOpen, setIsInboxOpen] = useState(false);
+  const [selectedChat, setSelectedChat] = useState<ChatThread | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
   const business = useQuery(api.businesses.getBusiness, 
@@ -154,7 +156,19 @@ export default function DashboardNavbar() {
             </button>
           </div>
           <div className={styles.inboxContent}>
-            <MessageInbox chats={chats} isLoading={chats === undefined} />
+            {selectedChat ? (
+                <MessageThread 
+                  chat={selectedChat} 
+                  businessId={business?._id || ""} 
+                  onBack={() => setSelectedChat(null)} 
+                />
+            ) : (
+                <MessageInbox 
+                  chats={chats} 
+                  isLoading={chats === undefined} 
+                  onSelectChat={(chat) => setSelectedChat(chat)}
+                />
+            )}
           </div>
         </div>
       )}

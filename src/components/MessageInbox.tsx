@@ -12,10 +12,11 @@ import { ChatThread } from "@/types";
 interface MessageInboxProps {
   chats: ChatThread[] | undefined;
   isLoading: boolean;
+  onSelectChat?: (chat: ChatThread) => void;
 }
 
 
-export default function MessageInbox({ chats, isLoading }: MessageInboxProps) {
+export default function MessageInbox({ chats, isLoading, onSelectChat }: MessageInboxProps) {
   if (isLoading) {
     return (
       <div className={styles.inboxContainer}>
@@ -69,7 +70,11 @@ export default function MessageInbox({ chats, isLoading }: MessageInboxProps) {
         ) : (
 
           chats.map((chat) => (
-            <div key={chat._id} className={styles.ChatItem}>
+            <div 
+                key={chat._id} 
+                className={styles.ChatItem}
+                onClick={() => onSelectChat?.(chat)}
+            >
               <div className={styles.avatar}>
                 {chat.image ? (
                   <Image 

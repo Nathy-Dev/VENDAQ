@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Bell, Lock, Globe, Smartphone, Moon, Sun, ChevronRight } from "lucide-react";
+import { Bell, Lock, Globe, Smartphone, Moon, ChevronRight } from "lucide-react";
 
 const SETTINGS_GROUPS = [
   {

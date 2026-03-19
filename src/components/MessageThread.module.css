@@ -1,0 +1,133 @@
+.threadContainer {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    background: #0b141a; /* WhatsApp Dark Mode Background */
+    position: relative;
+}
+
+.threadHeader {
+    padding: 10px 16px;
+    background: #202c33;
+    display: flex;
+    items-center: center;
+    gap: 15px;
+    border-left: 1px solid rgba(255,255,255,0.1);
+}
+
+.backBtn {
+    background: transparent;
+    border: none;
+    color: #aebac1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: #6a7175;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.userInfo {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.userName {
+    color: #e9edef;
+    font-weight: 500;
+    font-size: 1rem;
+}
+
+.userStatus {
+    color: #8696a0;
+    font-size: 0.75rem;
+}
+
+.messagesList {
+    flex: 1;
+    padding: 20px 5%;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    background-image: url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png');
+    background-blend-mode: overlay;
+    background-color: #0b141a;
+}
+
+.messageRow {
+    display: flex;
+    margin-bottom: 2px;
+    max-width: 85%;
+}
+
+.incoming {
+    align-self: flex-start;
+}
+
+.outgoing {
+    align-self: flex-end;
+}
+
+.messageBubble {
+    padding: 6px 10px 8px;
+    border-radius: 8px;
+    position: relative;
+    font-size: 0.9rem;
+    line-height: 1.4;
+    box-shadow: 0 1px 0.5px rgba(0,0,0,0.13);
+}
+
+.incoming .messageBubble {
+    background: #202c33;
+    color: #e9edef;
+    border-top-left-radius: 0;
+}
+
+.outgoing .messageBubble {
+    background: #005c4b;
+    color: #e9edef;
+    border-top-right-radius: 0;
+}
+
+.messageTime {
+    font-size: 0.65rem;
+    color: rgba(233, 237, 239, 0.6);
+    text-align: right;
+    margin-top: 2px;
+    margin-left: 8px;
+}
+
+.inputArea {
+    padding: 10px 16px;
+    background: #202c33;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.inputField {
+    flex: 1;
+    background: #2a3942;
+    border: none;
+    border-radius: 8px;
+    padding: 9px 12px;
+    color: #d1d7db;
+    font-size: 0.95rem;
+}
+
+.sendBtn {
+    background: transparent;
+    border: none;
+    color: #8696a0;
+    cursor: pointer;
+}

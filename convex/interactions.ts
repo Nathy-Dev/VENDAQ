@@ -1,15 +1,18 @@
 import { v } from "convex/values";
 import { query } from "./_generated/server";
 
-export const getInteractions = query({
-  args: { businessId: v.id("businesses") },
+export const getChatMessages = query({
+  args: { 
+    businessId: v.id("businesses"),
+    customerId: v.id("customers")
+  },
   handler: async (ctx, args) => {
     return await ctx.db
       .query("interactions")
-      .withIndex("by_business", (q) => q.eq("businessId", args.businessId))
-      .order("desc")
-      .take(50);
-
+      .withIndex("by_customer", (q) => q.eq("customerId", args.customerId))
+      .filter(q => q.eq(q.field("businessId"), args.businessId))
+      .order("asc")
+      .collect();
   },
 });
 
