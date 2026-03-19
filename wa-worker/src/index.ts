@@ -23,7 +23,7 @@ app.get('/', (req, res) => {
 });
 // Configuration for Backend (Direct Convex HTTP Actions or Next.js Proxy)
 // The Convex HTTP actions endpoint format: https://<deployment-name>.convex.site/api/worker
-const CONVEX_SITE_URL = process.env.CONVEX_SITE_URL || 'https://rugged-bee-971.eu-west-1.convex.site';
+const CONVEX_SITE_URL = process.env.CONVEX_SITE_URL || 'https://original-sparrow-842.eu-west-1.convex.site';
 const NEXT_JS_URL = process.env.NEXT_JS_URL || 'http://localhost:3000/api/worker';
 
 const BACKEND_URL = process.env.NODE_ENV === 'production' || !!process.env.RAILWAY_ENVIRONMENT 
