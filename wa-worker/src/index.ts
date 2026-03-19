@@ -21,13 +21,16 @@ const SESSIONS_DIR = process.env.SESSIONS_PATH || path.join(__dirname, '../sessi
 app.get('/', (req, res) => {
     res.json({ status: 'active', service: 'wa-worker' });
 });
-// The Convex HTTP actions endpoint format: <CONVEX_URL>/api/mutation_name
-// Since we don't have HTTP actions setup yet, we will use a workaround or we need to setup HTTP actions in Convex.
-// Wait, Convex mutations can be called directly if we use the convex client, but in a raw node script it's easier to use fetch with HTTP Actions.
-// Let's actually create the fetch calls to a standard Next.js API route as a proxy, OR set up Convex HTTP actions. 
-// Actually, setting up Convex HTTP actions is best practices for external webhooks. Let's use a placeholder URL for now and we will create a Next.js API route to proxy to Convex.
-// Wait, the client is already running on localhost:3000. It's much easier to just create an API route in Next.js.
+// Configuration for Backend (Direct Convex HTTP Actions or Next.js Proxy)
+// The Convex HTTP actions endpoint format: https://<deployment-name>.convex.site/api/worker
+const CONVEX_SITE_URL = process.env.CONVEX_SITE_URL || 'https://rugged-bee-971.eu-west-1.convex.site';
 const NEXT_JS_URL = process.env.NEXT_JS_URL || 'http://localhost:3000/api/worker';
+
+const BACKEND_URL = process.env.NODE_ENV === 'production' || !!process.env.RAILWAY_ENVIRONMENT 
+    ? `${CONVEX_SITE_URL}/api/worker` 
+    : NEXT_JS_URL;
+
+console.log(`[Worker] Using backend for sync: ${BACKEND_URL}`);
 
 // Ensure sessions directory exists
 if (!fs.existsSync(SESSIONS_DIR)) {
@@ -40,7 +43,7 @@ const activeSockets: Record<string, any> = {};
 // Helper to update backend
 async function updateBackend(body: any) {
     try {
-        const response = await fetch(NEXT_JS_URL, {
+        const response = await fetch(BACKEND_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body)
