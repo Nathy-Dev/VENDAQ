@@ -69,20 +69,20 @@ export default function SignupPage() {
           <div className={styles.logoGroup}>
             <Image 
               src="/logo.png" 
-              alt="VENDAQ Logo" 
+              alt="MERXAGE Logo" 
               width={48} 
               height={48} 
               className={styles.authLogo}
             />
             <div className={styles.logoText}>
-              VEND<span className={styles.logoAccent}>AQ</span>
+              MERX<span className={styles.logoAccent}>AGE</span>
             </div>
           </div>
         </Link>
 
         <div className={styles.header}>
           <h1 className={styles.title}>Create Account</h1>
-          <p className={styles.subtitle}>Join VENDAQ and automate your WhatsApp sales</p>
+          <p className={styles.subtitle}>Join MERXAGE and automate your WhatsApp sales</p>
         </div>
 
         <form onSubmit={handleSubmit} className={styles.form}>

@@ -53,7 +53,7 @@ export default function DashboardPage() {
         <header className={styles.header}>
           <div>
             <h1 className={styles.welcomeTitle}>Welcome back, {session?.user?.name || "Partner"}!</h1>
-            <p className={styles.subTitle}>Here&apos;s what&apos;s happening with VENDAQ today.</p>
+            <p className={styles.subTitle}>Here&apos;s what&apos;s happening with MERXAGE today.</p>
           </div>
         </header>
 
@@ -92,7 +92,7 @@ export default function DashboardPage() {
           <div className={styles.connectBanner}>
             <div className={styles.connectInfo}>
               <h3 className={styles.connectTitle}>
-                {!business ? "Welcome to VENDAQ! Connect your WhatsApp" : business.whatsappStatus === "error" ? "Connection Error" : "WhatsApp Not Connected"}
+                {!business ? "Welcome to MERXAGE! Connect your WhatsApp" : business.whatsappStatus === "error" ? "Connection Error" : "WhatsApp Not Connected"}
               </h3>
               <p className={styles.connectDesc}>
                 {!business 

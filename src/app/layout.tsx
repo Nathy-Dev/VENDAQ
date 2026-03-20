@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "VENDAQ - WhatsApp Conversation OS",
-  description: "Transform chaotic WhatsApp chats into structured business operations.",
+  title: "MERXAGE - WhatsApp Business OS",
+  description: "Scale your commerce with WhatsApp-first business operations.",
 };
 
 export default function RootLayout({

@@ -19,7 +19,7 @@ async function testSync() {
         },
         {
             sender: "2349876543210",
-            content: "Is this VENDAQ?",
+            content: "Is this MERXAGE?",
             timestamp: Date.now() - 1000 * 60 * 30,
             fromMe: false,
             name: "Prospective Customer"

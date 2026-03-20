@@ -3,7 +3,7 @@
 import { useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 
-export function useVENDAQActions() {
+export function useMERXAGEActions() {
   const createOrUpdateBusiness = useMutation(api.businesses.createOrUpdateBusiness);
   const updateStatus = useMutation(api.businesses.updateConnectionStatus);
 

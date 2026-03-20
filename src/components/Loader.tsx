@@ -23,7 +23,7 @@ export default function Loader() {
         @keyframes spin {
           to { transform: rotate(360deg); }
         }
-        .vendaq-spinner {
+        .merxage-spinner {
           width: 48px;
           height: 48px;
           border: 4px solid rgba(16, 185, 129, 0.1);
@@ -32,7 +32,7 @@ export default function Loader() {
           animation: spin 1s linear infinite;
           box-shadow: 0 0 20px rgba(16, 185, 129, 0.2);
         }
-        .vendaq-loader-text {
+        .merxage-loader-text {
           font-family: sans-serif;
           font-weight: 600;
           letter-spacing: 0.05em;
@@ -41,8 +41,8 @@ export default function Loader() {
           text-transform: uppercase;
         }
       `}</style>
-      <div className="vendaq-spinner" />
-      <div className="vendaq-loader-text">VENDAQ</div>
+      <div className="merxage-spinner" />
+      <div className="merxage-loader-text">MERXAGE</div>
     </div>
   );
 }

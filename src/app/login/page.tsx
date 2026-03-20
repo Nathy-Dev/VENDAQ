@@ -59,20 +59,20 @@ export default function LoginPage() {
           <div className={styles.logoGroup}>
             <Image 
               src="/logo.png" 
-              alt="VENDAQ Logo" 
+              alt="MERXAGE Logo" 
               width={48} 
               height={48} 
               className={styles.authLogo}
             />
             <div className={styles.logoText}>
-              VEND<span className={styles.logoAccent}>AQ</span>
+              MERX<span className={styles.logoAccent}>AGE</span>
             </div>
           </div>
         </Link>
 
         <div className={styles.header}>
           <h1 className={styles.title}>Welcome Back</h1>
-          <p className={styles.subtitle}>Sign in to your VENDAQ dashboard</p>
+          <p className={styles.subtitle}>Sign in to your MERXAGE dashboard</p>
         </div>
 
         <form onSubmit={handleSubmit} className={styles.form}>

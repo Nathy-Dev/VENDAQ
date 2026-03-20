@@ -59,13 +59,13 @@ export default function DashboardNavbar() {
         <Link href="/dashboard" className={styles.logoArea}>
           <Image 
             src="/logo.png" 
-            alt="VENDAQ Logo" 
+            alt="MERXAGE Logo" 
             width={32} 
             height={32} 
             className={styles.logoImg}
           />
           <span>
-            VEND<span className={styles.logoAccent}>AQ</span>
+            MERX<span className={styles.logoAccent}>AGE</span>
           </span>
         </Link>
 
