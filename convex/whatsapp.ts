@@ -59,6 +59,7 @@ export const receiveMessage = mutation({
     messageType: v.optional(v.union(v.literal("text"), v.literal("image"), v.literal("video"), v.literal("audio"), v.literal("document"), v.literal("location"))),
     mediaId: v.optional(v.string()),
     fileName: v.optional(v.string()),
+    name: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     // 1. Find or create the customer (or group)
@@ -73,7 +74,7 @@ export const receiveMessage = mutation({
       const customerId = await ctx.db.insert("customers", {
         businessId: args.businessId,
         phone: args.sender,
-        name: args.sender, 
+        name: args.name || args.sender, 
         isGroup: args.isGroup,
         groupMetadata: args.groupMetadata,
         totalValue: 0,
@@ -84,6 +85,7 @@ export const receiveMessage = mutation({
     } else {
         const patchData: any = { lastInteraction: args.timestamp };
         if (args.groupMetadata) patchData.groupMetadata = args.groupMetadata;
+        if (args.name && customer.name === customer.phone) patchData.name = args.name;
         await ctx.db.patch(customer._id, patchData);
     }
 

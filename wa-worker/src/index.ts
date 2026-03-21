@@ -201,6 +201,25 @@ async function startSession(businessId: string) {
 
     sock.ev.on('creds.update', saveCreds);
 
+    sock.ev.on('contacts.upsert', async (contacts) => {
+        for (const contact of contacts) {
+            const name = contact.name || contact.verifiedName || (contact as any).publicName || (contact as any).notify;
+            if (name && contact.id) {
+                console.log(`[Worker] Updating contact name for ${contact.id}: ${name}`);
+                await updateBackend({
+                    action: 'receiveMessage', // use receiveMessage to update/create customer
+                    businessId,
+                    sender: contact.id,
+                    content: "Contact updated",
+                    timestamp: Date.now(),
+                    fromMe: false,
+                    isGroup: contact.id.endsWith('@g.us'),
+                    name: name
+                });
+            }
+        }
+    });
+
     // Handle historical sync (like WhatsApp Web)
     sock.ev.on('messaging-history.set', async ({ chats, contacts, messages }) => {
         console.log(`[Worker DEBUG] Received history sync: ${chats.length} chats, ${contacts.length} contacts, ${messages.length} messages`);
