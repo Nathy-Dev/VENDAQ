@@ -114,24 +114,27 @@ export default function Onboarding({ initialStep = 0 }: OnboardingProps) {
   };
 
   const handleRequestPairingCode = async () => {
-    console.log("[Onboarding] Requesting pairing code for:", phoneNumber);
+    console.log("[Onboarding] Starting handleRequestPairingCode. Business ID:", existingBusiness?._id);
     if (!phoneNumber) return;
     if (!existingBusiness) {
-        console.error("[Onboarding] Business not found yet. Query may still be loading.");
-        alert("Business profile is still loading. Please wait a moment and try again.");
+        console.error("[Onboarding] Business not found yet.");
+        alert("Business profile is still loading. Please wait a moment.");
         return;
     }
     
     setIsGeneratingCode(true);
     try {
-        await requestPairingCode({
+        console.log("[Onboarding] Calling requestPairingCodeAction...");
+        const result = await requestPairingCode({
             businessId: existingBusiness._id,
             phone: phoneNumber
         });
-        // The worker will push the code to Convex, and qrData will update
+        console.log("[Onboarding] Action returned successfully. Result:", result);
     } catch (e) {
-        console.error("Failed to request pairing code", e);
+        console.error("[Onboarding] Action failed:", e);
+        alert(`Failed to request pairing code: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
+        console.log("[Onboarding] Function finished (finally)");
         setIsGeneratingCode(false);
     }
   };
