@@ -6,7 +6,21 @@ import { useSession } from "next-auth/react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 
-const SETTINGS_GROUPS = [
+type SettingsItem = {
+  id: string;
+  label: string;
+  icon: JSX.Element;
+  color: string;
+  bg: string;
+  right?: string;
+};
+
+type SettingsGroup = {
+  title: string;
+  items: SettingsItem[];
+};
+
+const SETTINGS_GROUPS: SettingsGroup[] = [
   {
     title: "Account",
     items: [
