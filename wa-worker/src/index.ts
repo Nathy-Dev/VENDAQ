@@ -424,13 +424,25 @@ app.post('/message/send', async (req, res) => {
     
     try {
         // Ensure ID is properly formatted for WhatsApp
-        const jid = to.includes('@') ? to : `${to}@s.whatsapp.net`;
+        // 1. Strip '+' if present
+        const cleanTo = to.startsWith('+') ? to.substring(1) : to;
         
-        console.log(`[Worker] Sending message to ${jid} from ${businessId}: ${content.substring(0, 30)}...`);
+        // 2. Add suffix if not present
+        const jid = cleanTo.includes('@') ? cleanTo : `${cleanTo}@s.whatsapp.net`;
+        
+        if (!sock.user) {
+            return res.status(503).json({ error: 'WhatsApp session is active but not fully connected' });
+        }
+        
+        console.log(`[Worker] Attempting to send message to JID: "${jid}"`);
+        console.log(`[Worker] Content: "${content.substring(0, 50)}${content.length > 50 ? '...' : ''}"`);
         
         const result = await sock.sendMessage(jid, { text: content });
         
-        res.json({ success: true, messageId: result.key.id });
+        console.log(`[Worker] Message sent successfully. Baileys result ID: ${result?.key?.id}`);
+        console.log(`[Worker] Full result key:`, JSON.stringify(result?.key));
+        
+        res.json({ success: true, messageId: result?.key?.id });
     } catch (error: unknown) {
         console.error(`[Worker] Error sending message for ${businessId}:`, error);
         res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
