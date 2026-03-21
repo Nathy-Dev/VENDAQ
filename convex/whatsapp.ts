@@ -330,7 +330,7 @@ export const requestPairingCodeAction = action({
     businessId: v.id("businesses"),
     phone: v.string(),
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<string> => {
     const workerUrl = process.env.WHATSAPP_WORKER_URL || "http://localhost:3005";
     
     try {
@@ -347,6 +347,9 @@ export const requestPairingCodeAction = action({
             const errorText = await response.text();
             throw new Error(`Worker rejected pairing request: ${errorText}`);
         }
+        
+        const data = await response.json();
+        return data.code;
     } catch (e) {
         throw new Error(`Failed to reach WhatsApp worker. Error: ${e instanceof Error ? e.message : String(e)}`);
     }
