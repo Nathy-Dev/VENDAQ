@@ -22,9 +22,11 @@ export default function MessageInbox({ chats, isLoading, onSelectChat }: Message
   if (isLoading) {
     return (
       <div className={styles.inboxContainer}>
-        <div className={styles.header}>
-          <div className={styles.headerTitle}>Messages</div>
-        </div>
+        <nav className={styles.tabs}>
+            <div className={`${styles.tabItem} animate-pulse`}>Chats</div>
+            <div className={`${styles.tabItem} animate-pulse`}>Status</div>
+            <div className={`${styles.tabItem} animate-pulse`}>Groups</div>
+        </nav>
         <div className={styles.emptyState}>
           <div className="animate-pulse flex space-y-4 flex-col w-full">
             {[1, 2, 3, 4].map((i) => (
@@ -50,16 +52,6 @@ export default function MessageInbox({ chats, isLoading, onSelectChat }: Message
 
   return (
     <div className={styles.inboxContainer}>
-      <header className={styles.header}>
-        <div className={styles.headerTitle}>
-            {activeTab === "chats" ? "Chats" : activeTab === "status" ? "Status" : "Groups"}
-        </div>
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: '1rem', color: '#8696a0' }}>
-            <Search size={20} />
-            <MoreVertical size={20} />
-        </div>
-      </header>
-
       <nav className={styles.tabs}>
           <button 
             className={`${styles.tabItem} ${activeTab === "chats" ? styles.activeTab : ""}`}
@@ -129,7 +121,13 @@ export default function MessageInbox({ chats, isLoading, onSelectChat }: Message
                     {formatDistanceToNow(chat.lastMessageTimestamp, { addSuffix: false })}
                   </span>
                 </div>
-                <div className={styles.lastMessage}>{chat.lastMessage}</div>
+                <div className={styles.lastMessage}>
+                  {chat.lastMessageType === "image" && "📷 "}
+                  {chat.lastMessageType === "video" && "🎥 "}
+                  {chat.lastMessageType === "audio" && "🎤 "}
+                  {chat.lastMessageType === "document" && "📄 "}
+                  {chat.lastMessage}
+                </div>
               </div>
             </div>
           ))
