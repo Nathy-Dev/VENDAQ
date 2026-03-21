@@ -6,6 +6,7 @@ import { MoreHorizontal, Plus, Flame, Zap, Wind } from "lucide-react";
 import styles from "./LeadPipeline.module.css";
 import { formatDistanceToNow } from "date-fns";
 import { PooledOrders, Order } from "@/types";
+import { formatDisplayName } from "@/utils/format";
 
 interface LeadPipelineProps {
   orders: PooledOrders | undefined;
@@ -93,7 +94,7 @@ export default function LeadPipeline({ orders, isLoading }: LeadPipelineProps) {
                           {temp === "warm" && <Zap size={14} className="text-amber-500" />}
                           {temp === "cold" && <Wind size={14} className="text-blue-400" />}
                           <span className={styles.customerName}>
-                            Customer {order.customerId.substring(0, 5)}
+                            {formatDisplayName(order.customerName, order.customerPhone)}
                           </span>
                        </div>
                        <MoreHorizontal size={14} className="text-slate-500 cursor-pointer" />

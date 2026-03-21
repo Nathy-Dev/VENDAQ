@@ -27,7 +27,13 @@ http.route({
               sender: args.sender,
               content: args.content,
               timestamp: args.timestamp,
-              fromMe: args.fromMe
+              fromMe: args.fromMe,
+              isGroup: args.isGroup,
+              groupMetadata: args.groupMetadata,
+              messageType: args.messageType,
+              mediaId: args.mediaId,
+              fileName: args.fileName,
+              name: args.name,
           });
           break;
         case 'updateQRCode':
@@ -57,6 +63,14 @@ http.route({
               mediaId: args.mediaId,
               mediaType: args.mediaType,
               timestamp: args.timestamp,
+          });
+          break;
+        case 'updateContactName':
+          await ctx.runMutation(api.interactions.updateCustomerName, {
+              businessId: args.businessId,
+              phone: args.phone,
+              name: args.name,
+              isGroup: args.isGroup,
           });
           break;
         default:

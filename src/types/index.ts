@@ -34,6 +34,8 @@ export interface Order {
   _id: Id<"orders">;
   businessId: Id<"businesses">;
   customerId: Id<"customers">;
+  customerName?: string;
+  customerPhone: string;
   totalAmount: number;
   status: "pending" | "awaiting_payment" | "processing" | "shipped" | "delivered" | "cancelled";
   createdAt: number;

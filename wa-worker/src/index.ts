@@ -218,14 +218,11 @@ async function startSession(businessId: string, pairingNumber?: string) {
             if (name && contact.id) {
                 console.log(`[Worker] Updating contact name for ${contact.id}: ${name}`);
                 await updateBackend({
-                    action: 'receiveMessage', // use receiveMessage to update/create customer
+                    action: 'updateContactName',
                     businessId,
-                    sender: contact.id,
-                    content: "Contact updated",
-                    timestamp: Date.now(),
-                    fromMe: false,
+                    phone: contact.id,
+                    name: name,
                     isGroup: contact.id.endsWith('@g.us'),
-                    name: name
                 });
             }
         }
@@ -384,6 +381,9 @@ async function startSession(businessId: string, pairingNumber?: string) {
                }
            }
 
+           // Extract the best available display name
+           const contactName = msg.pushName || (isGroup ? undefined : undefined);
+
            // Forward to backend
            await updateBackend({
                action: 'newMessage',
@@ -396,7 +396,8 @@ async function startSession(businessId: string, pairingNumber?: string) {
                groupMetadata,
                messageType,
                mediaId,
-               fileName: msg.message?.documentMessage?.fileName
+               fileName: msg.message?.documentMessage?.fileName,
+               name: contactName
            });
         }
     });

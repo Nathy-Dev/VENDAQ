@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { query } from "./_generated/server";
+import { query, mutation } from "./_generated/server";
 
 export const getChatMessages = query({
   args: { 
@@ -57,5 +57,44 @@ export const getMediaUrl = query({
   args: { mediaId: v.string() },
   handler: async (ctx, args) => {
     return await ctx.storage.getUrl(args.mediaId);
+  },
+});
+
+// Dedicated mutation to update a customer's display name without creating fake messages
+export const updateCustomerName = mutation({
+  args: {
+    businessId: v.id("businesses"),
+    phone: v.string(),
+    name: v.string(),
+    isGroup: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const customer = await ctx.db
+      .query("customers")
+      .withIndex("by_business_phone", (q) =>
+        q.eq("businessId", args.businessId).eq("phone", args.phone)
+      )
+      .unique();
+
+    if (customer) {
+      // Only update if the new name is better than the existing one
+      const isCurrentNameBad = !customer.name || customer.name === customer.phone || customer.name.includes('@');
+      const isNewNameGood = args.name && !args.name.includes('@') && args.name !== args.phone;
+
+      if (isCurrentNameBad && isNewNameGood) {
+        await ctx.db.patch(customer._id, { name: args.name });
+      }
+    } else {
+      // Create the customer record with the known name
+      await ctx.db.insert("customers", {
+        businessId: args.businessId,
+        phone: args.phone,
+        name: args.name,
+        isGroup: args.isGroup,
+        totalValue: 0,
+        lastInteraction: Date.now(),
+        tags: [args.isGroup ? "group" : "contact"],
+      });
+    }
   },
 });
