@@ -271,8 +271,8 @@ export const sendMessageAction = action({
     // 2. Notify Worker
     // Note: In a real app, the worker URL would be in an environment variable
     // For local dev, we assume the worker is reachable. 
-    // If running in Convex production, this would need a public URL or a tunnel.
     const workerUrl = process.env.WHATSAPP_WORKER_URL || "http://localhost:3005";
+    console.log(`[Convex Action] Attempting to notify worker at: ${workerUrl}/message/send`);
     
     try {
         const response = await fetch(`${workerUrl}/message/send`, {
@@ -287,10 +287,12 @@ export const sendMessageAction = action({
 
         if (!response.ok) {
             const errorText = await response.text();
-            console.error(`[Convex Action] Worker failed to send message: ${errorText}`);
+            console.error(`[Convex Action] Worker failed to send message. Status: ${response.status}, Error: ${errorText}`);
+            throw new Error(`Worker rejected the message: ${errorText}`);
         }
     } catch (e) {
         console.error("[Convex Action] Failed to connect to worker:", e);
+        throw new Error(`Failed to reach WhatsApp worker at ${workerUrl}. Ensure the worker is running and the URL is correct.`);
     }
 
     return messageId;

@@ -10,7 +10,7 @@
     padding: 10px 16px;
     background: #202c33;
     display: flex;
-    items-center: center;
+    align-items: center;
     gap: 15px;
     border-left: 1px solid rgba(255,255,255,0.1);
 }
@@ -99,12 +99,27 @@
     border-top-right-radius: 0;
 }
 
+.messageFooter {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 4px;
+    margin-top: 2px;
+}
+
 .messageTime {
     font-size: 0.65rem;
     color: rgba(233, 237, 239, 0.6);
-    text-align: right;
-    margin-top: 2px;
-    margin-left: 8px;
+}
+
+.statusIcon {
+    display: flex;
+    align-items: center;
+    color: rgba(233, 237, 239, 0.6);
+}
+
+.optimistic {
+    opacity: 0.7;
 }
 
 .inputArea {

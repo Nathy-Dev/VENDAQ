@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useRef, useEffect } from "react";
-import { ArrowLeft, Send, User as UserIcon, MoreVertical, Smile, Paperclip } from "lucide-react";
+import { ArrowLeft, Send, User as UserIcon, MoreVertical, Smile, Paperclip, Check, CheckCheck, AlertCircle, Loader2 } from "lucide-react";
 import Image from "next/image";
 import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
@@ -25,6 +25,7 @@ interface OptimisticMessage {
   timestamp: number;
   messageType: "text";
   isOptimistic: boolean;
+  status: "sending" | "sent" | "failed";
   mediaId?: string;
   fileName?: string;
 }
@@ -64,7 +65,8 @@ export default function MessageThread({ chat, businessId, onBack }: MessageThrea
         content,
         timestamp: Date.now(),
         messageType: "text",
-        isOptimistic: true
+        isOptimistic: true,
+        status: "sending"
     };
     setOptimisticMessages(prev => [...prev, optimisticMsg]);
     setInputValue("");
@@ -75,17 +77,18 @@ export default function MessageThread({ chat, businessId, onBack }: MessageThrea
             customerId: chat._id,
             content,
         });
+        
+        // Mark as sent
+        setOptimisticMessages(prev => prev.map(m => m._id === tempId ? { ...m, status: "sent" } : m));
+        
         // Remove optimistic message once real one (hopefully) arrives via sync
-        // Actually, mutation-driven re-renders will handle this if we match IDs,
-        // but for actions, we just wait a bit or wait for query to update.
         setTimeout(() => {
             setOptimisticMessages(prev => prev.filter(m => m._id !== tempId));
-        }, 2000); 
+        }, 5000); 
     } catch (error) {
         console.error("Failed to send message:", error);
-        // Mark as failed or remove
-        setOptimisticMessages(prev => prev.filter(m => m._id !== tempId));
-        setInputValue(content); // Restore input on failure
+        // Mark as failed
+        setOptimisticMessages(prev => prev.map(m => m._id === tempId ? { ...m, status: "failed" } : m));
     } finally {
         setIsSending(false);
     }
@@ -144,8 +147,21 @@ export default function MessageThread({ chat, businessId, onBack }: MessageThrea
                    <MessageMedia mediaId={msg.mediaId} type={msg.messageType} fileName={('fileName' in msg ? msg.fileName : undefined)} />
                  )}
                  <div className={styles.messageContent}>{msg.content}</div>
-                 <div className={styles.messageTime}>
-                   {format(new Date(msg.timestamp), "HH:mm")}
+                 <div className={styles.messageFooter}>
+                    <div className={styles.messageTime}>
+                        {format(new Date(msg.timestamp), "HH:mm")}
+                    </div>
+                    {msg.role === "owner" && (
+                        <div className={styles.statusIcon}>
+                            {'isOptimistic' in msg ? (
+                                msg.status === "sending" ? <Loader2 size={12} className="animate-spin" /> :
+                                msg.status === "failed" ? <AlertCircle size={12} color="#ef4444" /> :
+                                <Check size={12} />
+                            ) : (
+                                <CheckCheck size={12} color="#53bdeb" />
+                            )}
+                        </div>
+                    )}
                  </div>
                </div>
              </div>

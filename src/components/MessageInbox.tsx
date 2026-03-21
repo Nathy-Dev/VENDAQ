@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { MessageSquare, User as UserIcon, Search, MoreVertical, ShieldAlert } from "lucide-react";
+import { MessageSquare, User as UserIcon, ShieldAlert } from "lucide-react";
 
 import styles from "./MessageInbox.module.css";
 import { formatDistanceToNow } from "date-fns";
@@ -78,7 +78,7 @@ export default function MessageInbox({ chats, isLoading, onSelectChat }: Message
 
       <div className={styles.chatList}>
         {activeTab === "status" ? (
-             <StatusView chats={chats} />
+             <StatusView />
         ) : !filteredChats || filteredChats.length === 0 ? (
           <div className={styles.emptyState}>
             <div className={styles.inboxIcon}>
@@ -140,7 +140,7 @@ export default function MessageInbox({ chats, isLoading, onSelectChat }: Message
   );
 }
 
-function StatusView({ chats }: { chats: ChatThread[] | undefined }) {
+function StatusView() {
     // In a real implementation, we would query the 'statuses' table
     // For now, let's show a placeholder
     return (
