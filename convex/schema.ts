@@ -17,7 +17,12 @@ export default defineSchema({
   customers: defineTable({
     businessId: v.id("businesses"),
     name: v.optional(v.string()),
-    phone: v.string(), // International format
+    phone: v.string(), // International format or Group JID
+    isGroup: v.optional(v.boolean()),
+    groupMetadata: v.optional(v.object({
+      owner: v.optional(v.string()),
+      participants: v.array(v.string()),
+    })),
     totalValue: v.number(),
     lastInteraction: v.number(),
     tags: v.array(v.string()),
@@ -63,8 +68,23 @@ export default defineSchema({
     content: v.string(),
     timestamp: v.number(),
     intent: v.optional(v.string()),
+    // Media support
+    messageType: v.union(v.literal("text"), v.literal("image"), v.literal("video"), v.literal("audio"), v.literal("document"), v.literal("location")),
+    mediaUrl: v.optional(v.string()),
+    mediaId: v.optional(v.string()), // Convex storage ID
+    fileName: v.optional(v.string()),
   }).index("by_business", ["businessId"])
     .index("by_customer", ["customerId"]),
+
+  statuses: defineTable({
+    businessId: v.id("businesses"),
+    sender: v.string(),
+    content: v.optional(v.string()),
+    mediaId: v.optional(v.string()),
+    mediaType: v.optional(v.string()),
+    timestamp: v.number(),
+    expiresAt: v.number(),
+  }).index("by_business", ["businessId"]),
 
 
   users: defineTable({

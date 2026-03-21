@@ -61,6 +61,9 @@ export default function MessageThread({ chat, businessId, onBack }: MessageThrea
                className={`${styles.messageRow} ${msg.role === "owner" ? styles.outgoing : styles.incoming}`}
              >
                <div className={styles.messageBubble}>
+                 {msg.mediaId && (
+                   <MessageMedia mediaId={msg.mediaId} type={msg.messageType} fileName={msg.fileName} />
+                 )}
                  <div className={styles.messageContent}>{msg.content}</div>
                  <div className={styles.messageTime}>
                    {format(new Date(msg.timestamp), "HH:mm")}
@@ -88,4 +91,40 @@ export default function MessageThread({ chat, businessId, onBack }: MessageThrea
       </footer>
     </div>
   );
+}
+
+function MessageMedia({ mediaId, type, fileName }: { mediaId: string, type: string, fileName?: string }) {
+    const url = useQuery(api.interactions.getMediaUrl, { mediaId });
+    
+    if (!url) return <div className={styles.mediaPlaceholder}>Loading media...</div>;
+
+    if (type === "image") {
+        return (
+            <div className={styles.mediaContainer}>
+                <img src={url} alt="Shared media" className={styles.mediaImage} />
+            </div>
+        );
+    }
+
+    if (type === "video") {
+        return (
+            <div className={styles.mediaContainer}>
+                <video src={url} controls className={styles.mediaVideo} />
+            </div>
+        );
+    }
+
+    if (type === "audio") {
+        return (
+            <div className={styles.mediaContainer}>
+                <audio src={url} controls className={styles.mediaAudio} />
+            </div>
+        );
+    }
+
+    return (
+        <a href={url} target="_blank" rel="noopener noreferrer" className={styles.fileLink}>
+            <Paperclip size={16} /> {fileName || "Download file"}
+        </a>
+    );
 }

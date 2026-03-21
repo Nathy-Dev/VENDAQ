@@ -17,6 +17,8 @@ interface MessageInboxProps {
 
 
 export default function MessageInbox({ chats, isLoading, onSelectChat }: MessageInboxProps) {
+  const [activeTab, setActiveTab] = React.useState<"chats" | "status" | "groups">("chats");
+
   if (isLoading) {
     return (
       <div className={styles.inboxContainer}>
@@ -40,36 +42,67 @@ export default function MessageInbox({ chats, isLoading, onSelectChat }: Message
     );
   }
 
+  const filteredChats = chats?.filter(chat => {
+      if (activeTab === "chats") return !chat.isGroup;
+      if (activeTab === "groups") return chat.isGroup;
+      return false;
+  });
+
   return (
     <div className={styles.inboxContainer}>
       <header className={styles.header}>
-        <div className={styles.headerTitle}>Messages</div>
+        <div className={styles.headerTitle}>
+            {activeTab === "chats" ? "Chats" : activeTab === "status" ? "Status" : "Groups"}
+        </div>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: '1rem', color: '#8696a0' }}>
             <Search size={20} />
             <MoreVertical size={20} />
         </div>
       </header>
 
+      <nav className={styles.tabs}>
+          <button 
+            className={`${styles.tabItem} ${activeTab === "chats" ? styles.activeTab : ""}`}
+            onClick={() => setActiveTab("chats")}
+          >
+              Chats
+          </button>
+          <button 
+            className={`${styles.tabItem} ${activeTab === "status" ? styles.activeTab : ""}`}
+            onClick={() => setActiveTab("status")}
+          >
+              Status
+          </button>
+          <button 
+            className={`${styles.tabItem} ${activeTab === "groups" ? styles.activeTab : ""}`}
+            onClick={() => setActiveTab("groups")}
+          >
+              Groups
+          </button>
+      </nav>
+
       <div className={styles.chatList}>
-        {!chats || chats.length === 0 ? (
+        {activeTab === "status" ? (
+             <StatusView chats={chats} />
+        ) : !filteredChats || filteredChats.length === 0 ? (
           <div className={styles.emptyState}>
             <div className={styles.inboxIcon}>
               <MessageSquare size={80} strokeWidth={1} />
             </div>
-            <h2 className={styles.emptyTitle}>WhatsApp for PIPELIXR</h2>
+            <h2 className={styles.emptyTitle}>
+                {activeTab === "groups" ? "No Groups Found" : "WhatsApp for PIPELIXR"}
+            </h2>
             <p className={styles.emptyDesc}>
-              Connect your phone to sync your messages. PIPELIXR keeps your chats safe and organized.
+              {activeTab === "groups" ? "Syncing your groups... please wait." : "Connect your phone to sync your messages. PIPELIXR keeps your chats safe and organized."}
             </p>
             <div style={{ marginTop: '1rem', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '1rem', width: '100%' }}>
               <p style={{ fontSize: '0.7rem', color: '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
                 <ShieldAlert size={12} /> End-to-end encrypted sync
               </p>
-
             </div>
           </div>
         ) : (
-
-          chats.map((chat) => (
+          filteredChats.map((chat) => (
             <div 
                 key={chat._id} 
                 className={styles.ChatItem}
@@ -104,4 +137,28 @@ export default function MessageInbox({ chats, isLoading, onSelectChat }: Message
       </div>
     </div>
   );
+}
+
+function StatusView({ chats }: { chats: ChatThread[] | undefined }) {
+    // In a real implementation, we would query the 'statuses' table
+    // For now, let's show a placeholder
+    return (
+        <div className={styles.statusView}>
+             <div className={styles.myStatus}>
+                  <div className={styles.avatar}>
+                      <UserIcon size={24} color="#e9edef" />
+                  </div>
+                  <div className={styles.chatInfo}>
+                      <div className={styles.customerName}>My Status</div>
+                      <div className={styles.lastMessage}>Tap to add status update</div>
+                  </div>
+             </div>
+             <div className={styles.recentUpdates}>
+                  <div className={styles.statusHeader}>RECENT UPDATES</div>
+                  <div className={styles.emptyState} style={{ padding: '2rem' }}>
+                      <p style={{ color: '#8696a0', fontSize: '0.9rem' }}>No recent updates from your contacts.</p>
+                  </div>
+             </div>
+        </div>
+    );
 }

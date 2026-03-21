@@ -1,7 +1,15 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import { makeWASocket, useMultiFileAuthState as getMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } from '@whiskeysockets/baileys';
+import { 
+    makeWASocket, 
+    useMultiFileAuthState as getMultiFileAuthState, 
+    DisconnectReason, 
+    fetchLatestBaileysVersion,
+    downloadMediaMessage,
+    WA_DEFAULT_EPHEMERAL,
+    proto
+} from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
 import pino from 'pino';
 import fs from 'fs';
@@ -52,11 +60,66 @@ async function updateBackend(body: any) {
         if (!response.ok) {
             const errorText = await response.text();
             console.error(`[Worker DEBUG] Failed to sync ${body.action} with backend. Status: ${response.status}`, errorText);
+            return null;
         } else {
             console.log(`[Worker DEBUG] Successfully synced ${body.action} with backend.`);
+            try {
+                return await response.json();
+            } catch (e) {
+                return null;
+            }
         }
     } catch (e: any) {
         console.error('[Worker DEBUG] Failed to connect to backend:', e.message);
+        return null;
+    }
+}
+
+async function uploadMedia(businessId: string, message: proto.IWebMessageInfo) {
+    const messageType = Object.keys(message.message || {})[0];
+    if (!['imageMessage', 'videoMessage', 'audioMessage', 'documentMessage'].includes(messageType)) return null;
+
+    try {
+        console.log(`[Worker] Downloading media of type: ${messageType}`);
+        const buffer = await downloadMediaMessage(
+            message,
+            'buffer',
+            {},
+            { 
+                logger: pino({ level: 'silent' }) as any,
+                reuploadRequest: (activeSockets[businessId] as any).updateMediaMessage
+            }
+        ) as Buffer;
+
+        // 1. Get upload URL from Convex
+        const urlResponse = await updateBackend({
+            action: 'generateUploadUrl',
+            businessId
+        });
+
+        if (!urlResponse || !urlResponse.uploadUrl) {
+            console.error("[Worker] Failed to get upload URL");
+            return null;
+        }
+
+        // 2. Upload to Convex
+        const uploadResponse = await fetch(urlResponse.uploadUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': message.message?.[messageType as keyof proto.IMessage]?.mimetype || 'application/octet-stream' },
+            body: buffer
+        });
+
+        if (!uploadResponse.ok) {
+            console.error("[Worker] Failed to upload media to Convex");
+            return null;
+        }
+
+        const { storageId } = await uploadResponse.json();
+        console.log(`[Worker] Media uploaded successfully: ${storageId}`);
+        return storageId;
+    } catch (error) {
+        console.error("[Worker] Error uploading media:", error);
+        return null;
     }
 }
 
@@ -101,16 +164,9 @@ async function startSession(businessId: string) {
             const errorReason = (lastDisconnect?.error as Boom)?.output?.statusCode;
             const shouldReconnect = errorReason !== DisconnectReason.loggedOut;
             console.log(`[Worker] Connection closed for ${businessId}: ${shouldReconnect ? 'reconnecting' : 'logged out'}, Reason: ${errorReason}`);
-            console.error("[Worker Baileys Error]:", lastDisconnect?.error);
             
             delete activeSockets[businessId];
             
-            // Force delete corrupted session on 401 or 500 errors to prevent infinite loops
-            if (errorReason === 401 || errorReason === 500 || errorReason === 440) {
-                 console.log(`[Worker] Destroying corrupted session folder for ${businessId}`);
-                 fs.rmSync(sessionPath, { recursive: true, force: true });
-            }
-
             // Reconnect if not explicitly logged out
             if (shouldReconnect) {
                 setTimeout(() => startSession(businessId), 5000);
@@ -123,8 +179,9 @@ async function startSession(businessId: string) {
                 });
 
                 // Clean up session files if logged out to force re-scan
-                fs.rmSync(sessionPath, { recursive: true, force: true });
-                console.log(`[Worker] Deleted session files for ${businessId}`);
+                if (fs.existsSync(sessionPath)) {
+                    fs.rmSync(sessionPath, { recursive: true, force: true });
+                }
             }
         } else if (connection === 'open') {
             console.log(`[Worker] Connection opened for business: ${businessId}`);
@@ -143,24 +200,15 @@ async function startSession(businessId: string) {
     sock.ev.on('messaging-history.set', async ({ chats, contacts, messages }) => {
         console.log(`[Worker DEBUG] Received history sync: ${chats.length} chats, ${contacts.length} contacts, ${messages.length} messages`);
         
-        if (chats.length === 0) {
-            console.log(`[Worker DEBUG] No chats found in history sync.`);
-        } else {
-            console.log(`[Worker DEBUG] First chat raw sample:`, JSON.stringify(chats[0]).substring(0, 200));
-        }
-
-        if (messages.length > 0) {
-            console.log(`[Worker DEBUG] First message raw sample:`, JSON.stringify(messages[0]).substring(0, 200));
-        }
-        
         const syncData: any[] = [];
         const contactMap = new Map();
         contacts.forEach(c => contactMap.set(c.id, c.name || c.verifiedName || (c as any).publicName));
 
         for (const chat of chats) {
             const remoteJid = chat.id;
-            if (!remoteJid || remoteJid.endsWith('@g.us')) continue; // Skip groups for now
+            if (!remoteJid) continue;
             
+            const isGroup = remoteJid.endsWith('@g.us');
             const sender = remoteJid.split('@')[0];
             const name = contactMap.get(remoteJid) || chat.name;
             
@@ -173,37 +221,41 @@ async function startSession(businessId: string) {
             let content = "";
             let timestamp = Date.now();
             let fromMe = false;
+            let messageType: string = "text";
 
             if (latestMsg) {
                 content = latestMsg.message?.conversation || 
                           latestMsg.message?.extendedTextMessage?.text || 
                           latestMsg.message?.imageMessage?.caption || 
-                          "[Media/Other]";
+                          latestMsg.message?.videoMessage?.caption ||
+                          "[Media]";
+                
+                if (latestMsg.message?.imageMessage) messageType = "image";
+                else if (latestMsg.message?.videoMessage) messageType = "video";
+                else if (latestMsg.message?.audioMessage) messageType = "audio";
+                else if (latestMsg.message?.documentMessage) messageType = "document";
+
                 timestamp = (latestMsg.messageTimestamp as number) * 1000 || Date.now();
                 fromMe = !!latestMsg.key.fromMe;
             } else if (chat.lastMessageRecvTimestamp) {
-                // Fallback if no message content but we have a timestamp
                 content = "Existing conversation";
                 timestamp = (chat.lastMessageRecvTimestamp as number) * 1000;
             } else {
-                continue; // No useful data for this chat
+                continue;
             }
 
-            console.log(`[Worker DEBUG] Found ${latestMsg ? 'real message' : 'timestamp fallback'} for chat ${sender}`);
             syncData.push({
-                sender,
+                sender: remoteJid, // Store full JID
                 content,
                 timestamp,
                 fromMe,
-                name
+                name,
+                isGroup,
+                messageType
             });
         }
 
-        console.log(`[Worker DEBUG] Total chats processed: ${chats.length}, Valid sync entries: ${syncData.length}`);
-
         if (syncData.length > 0) {
-            console.log(`[Worker] Sending ${syncData.length} historical chat entries to backend`);
-            // Send in chunks of 25 to avoid payload limits
             for (let i = 0; i < syncData.length; i += 25) {
                 const chunk = syncData.slice(i, i + 25);
                 await updateBackend({
@@ -220,28 +272,78 @@ async function startSession(businessId: string) {
         if (m.type !== 'notify') return;
         
         for (const msg of m.messages) {
-           // Skip if no message content or if it's a protocol message
-           const content = msg.message?.conversation || 
+           const remoteJid = msg.key.remoteJid;
+           if (!remoteJid) continue;
+
+           // Handle Status
+           if (remoteJid === 'status@broadcast') {
+               console.log(`[Worker] New status from ${msg.pushName || msg.key.participant}`);
+               const mediaId = await uploadMedia(businessId, msg);
+               const content = msg.message?.conversation || 
+                               msg.message?.extendedTextMessage?.text || 
+                               msg.message?.imageMessage?.caption || 
+                               msg.message?.videoMessage?.caption;
+               
+               await updateBackend({
+                   action: 'syncStatus',
+                   businessId,
+                   sender: msg.pushName || msg.key.participant || "Unknown",
+                   content,
+                   mediaId,
+                   mediaType: Object.keys(msg.message || {})[0],
+                   timestamp: (msg.messageTimestamp as number) * 1000 || Date.now()
+               });
+               continue;
+           }
+
+           const isGroup = remoteJid.endsWith('@g.us');
+           let content = msg.message?.conversation || 
                           msg.message?.extendedTextMessage?.text || 
-                          msg.message?.imageMessage?.caption;
-                          
-           if (!content) continue;
+                          msg.message?.imageMessage?.caption ||
+                          msg.message?.videoMessage?.caption;
+            
+           let messageType = "text";
+           if (msg.message?.imageMessage) messageType = "image";
+           else if (msg.message?.videoMessage) messageType = "video";
+           else if (msg.message?.audioMessage) messageType = "audio";
+           else if (msg.message?.documentMessage) messageType = "document";
 
-           const sender = msg.key.remoteJid?.split('@')[0] || "unknown";
-           const isGroup = msg.key.remoteJid?.endsWith('@g.us');
-           
-           if (isGroup) continue; // Skip group messages for now
+           if (!content && messageType === "text") continue;
+           if (!content) content = `[${messageType}]`;
 
-           console.log(`[Worker] New message from ${sender}: ${content.substring(0, 30)}...`);
+           console.log(`[Worker] New message from ${remoteJid}: ${content.substring(0, 30)}...`);
+
+           let mediaId = undefined;
+           if (messageType !== "text") {
+               mediaId = await uploadMedia(businessId, msg);
+           }
+
+           let groupMetadata = undefined;
+           if (isGroup) {
+               try {
+                   const metadata = await sock.groupMetadata(remoteJid);
+                   groupMetadata = {
+                       owner: metadata.owner,
+                       participants: metadata.participants.map(p => p.id)
+                   };
+               } catch (e) {
+                   console.error(`[Worker] Failed to fetch group metadata for ${remoteJid}`);
+               }
+           }
 
            // Forward to backend
            await updateBackend({
                action: 'newMessage',
                businessId,
-               sender,
+               sender: remoteJid,
                content,
                timestamp: (msg.messageTimestamp as number) * 1000 || Date.now(),
-               fromMe: msg.key.fromMe
+               fromMe: msg.key.fromMe,
+               isGroup,
+               groupMetadata,
+               messageType,
+               mediaId,
+               fileName: msg.message?.documentMessage?.fileName
            });
         }
     });

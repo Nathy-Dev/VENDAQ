@@ -43,10 +43,19 @@ export const getRecentChats = query({
             ...customer,
             lastMessage: lastInteraction.content,
             lastMessageTimestamp: lastInteraction.timestamp,
+            lastMessageType: lastInteraction.messageType,
+            lastMediaId: lastInteraction.mediaId,
           });
         }
       }
 
       return results.sort((a, b) => b.lastMessageTimestamp - a.lastMessageTimestamp);
     },
+});
+
+export const getMediaUrl = query({
+  args: { mediaId: v.string() },
+  handler: async (ctx, args) => {
+    return await ctx.storage.getUrl(args.mediaId);
+  },
 });

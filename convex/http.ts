@@ -43,6 +43,22 @@ http.route({
               status: args.status
           });
           break;
+        case 'generateUploadUrl':
+          const uploadUrl = await ctx.runMutation(api.whatsapp.generateUploadUrl, {});
+          return new Response(JSON.stringify({ uploadUrl }), { 
+              status: 200,
+              headers: { "Content-Type": "application/json" }
+          });
+        case 'syncStatus':
+          await ctx.runMutation(api.whatsapp.syncStatus, {
+              businessId: args.businessId,
+              sender: args.sender,
+              content: args.content,
+              mediaId: args.mediaId,
+              mediaType: args.mediaType,
+              timestamp: args.timestamp,
+          });
+          break;
         default:
           return new Response(JSON.stringify({ error: "Unknown action" }), { status: 400 });
       }
