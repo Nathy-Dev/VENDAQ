@@ -7,6 +7,7 @@ import styles from "./MessageInbox.module.css";
 import { formatDistanceToNow } from "date-fns";
 import Image from "next/image";
 import { ChatThread } from "@/types";
+import { formatDisplayName } from "@/utils/format";
 
 
 interface MessageInboxProps {
@@ -16,7 +17,9 @@ interface MessageInboxProps {
 }
 
 
+
 export default function MessageInbox({ chats, isLoading, onSelectChat }: MessageInboxProps) {
+// ... items as before
   const [activeTab, setActiveTab] = React.useState<"chats" | "status" | "groups">("chats");
 
   if (isLoading) {
@@ -116,16 +119,16 @@ export default function MessageInbox({ chats, isLoading, onSelectChat }: Message
 
               <div className={styles.chatInfo}>
                 <div className={styles.chatTop}>
-                  <span className={styles.customerName}>{chat.name || chat.phone}</span>
+                  <span className={styles.customerName}>{formatDisplayName(chat.name, chat.phone)}</span>
                   <span className={styles.timestamp}>
                     {formatDistanceToNow(chat.lastMessageTimestamp, { addSuffix: false })}
                   </span>
                 </div>
                 <div className={styles.lastMessage}>
-                  {chat.lastMessageType === "image" && "📷 "}
-                  {chat.lastMessageType === "video" && "🎥 "}
-                  {chat.lastMessageType === "audio" && "🎤 "}
-                  {chat.lastMessageType === "document" && "📄 "}
+                  {chat.lastMessageType === "image" || (chat.lastMessage === "[Media]" && !chat.lastMessageType) ? "📷 " : 
+                   chat.lastMessageType === "video" ? "🎥 " :
+                   chat.lastMessageType === "audio" ? "🎤 " :
+                   chat.lastMessageType === "document" ? "📄 " : ""}
                   {chat.lastMessage}
                 </div>
               </div>

@@ -207,14 +207,19 @@ async function startSession(businessId: string) {
         
         const syncData: any[] = [];
         const contactMap = new Map();
-        contacts.forEach(c => contactMap.set(c.id, c.name || c.verifiedName || (c as any).publicName));
+        contacts.forEach(c => {
+            const id = c.id.split('@')[0];
+            contactMap.set(id, c.name || c.verifiedName || (c as any).publicName || (c as any).notify);
+            contactMap.set(c.id, c.name || c.verifiedName || (c as any).publicName || (c as any).notify);
+        });
 
         for (const chat of chats) {
             const remoteJid = chat.id;
             if (!remoteJid) continue;
             
             const isGroup = remoteJid.endsWith('@g.us');
-            const name = contactMap.get(remoteJid) || chat.name;
+            const idKey = remoteJid.split('@')[0];
+            const name = contactMap.get(remoteJid) || contactMap.get(idKey) || chat.name || (isGroup ? "Group Chat" : idKey);
             
             // Find the latest message for this chat in the synced messages
             const chatMessages = messages.filter(m => m.key && m.key.remoteJid === remoteJid);

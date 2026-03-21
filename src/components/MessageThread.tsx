@@ -8,6 +8,7 @@ import { ChatThread } from "@/types";
 import { Id } from "../../convex/_generated/dataModel";
 import { format } from "date-fns";
 import styles from "./MessageThread.module.css";
+import { formatDisplayName } from "@/utils/format";
 
 interface MessageThreadProps {
   chat: ChatThread;
@@ -41,7 +42,7 @@ export default function MessageThread({ chat, businessId, onBack }: MessageThrea
            <UserIcon size={24} color="#e9edef" />
         </div>
         <div className={styles.userInfo}>
-           <div className={styles.userName}>{chat.name || chat.phone}</div>
+           <div className={styles.userName}>{formatDisplayName(chat.name, chat.phone)}</div>
            <div className={styles.userStatus}>online</div>
         </div>
         <div style={{ color: '#8696a0', display: 'flex', gap: '1.2rem' }}>
