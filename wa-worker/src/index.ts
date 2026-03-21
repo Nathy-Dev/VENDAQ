@@ -463,7 +463,13 @@ app.post("/pairing/request", async (req, res) => {
         if (!sock) throw new Error("Failed to initialize socket");
 
         console.log(`[Worker] Requesting code from Baileys...`);
-        const code = await sock.requestPairingCode(phone.replace(/\D/g, ''));
+        // Add a timeout for the Baileys request itself
+        const codePromise = sock.requestPairingCode(phone.replace(/\D/g, ''));
+        const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error("Baileys pairing code request timed out")), 15000)
+        );
+
+        const code = await Promise.race([codePromise, timeoutPromise]) as string;
         console.log(`[Worker] Generated pairing code: ${code}`);
 
         // Sync to backend anyway for permanence
