@@ -227,9 +227,19 @@ async function startSession(businessId: string) {
         const syncData: any[] = [];
         const contactMap = new Map();
         contacts.forEach(c => {
-            const id = c.id.split('@')[0];
-            contactMap.set(id, c.name || c.verifiedName || (c as any).publicName || (c as any).notify);
-            contactMap.set(c.id, c.name || c.verifiedName || (c as any).publicName || (c as any).notify);
+            const name = c.name || c.verifiedName || (c as any).publicName || (c as any).notify;
+            if (name) {
+                contactMap.set(c.id, name);
+                contactMap.set(c.id.split('@')[0], name);
+            }
+        });
+
+        // Also try to get names from messages (pushName)
+        messages.forEach(m => {
+            if (m.key.remoteJid && m.pushName) {
+                contactMap.set(m.key.remoteJid, m.pushName);
+                contactMap.set(m.key.remoteJid.split('@')[0], m.pushName);
+            }
         });
 
         for (const chat of chats) {

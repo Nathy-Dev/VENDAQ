@@ -87,7 +87,15 @@ export const receiveMessage = mutation({
     } else {
         const patchData: any = { lastInteraction: args.timestamp };
         if (args.groupMetadata) patchData.groupMetadata = args.groupMetadata;
-        if (args.name && customer.name === customer.phone) patchData.name = args.name;
+        
+        // Update name if we have a new one and the current one is just a phone number/JID
+        const isCurrentNameJid = customer.name?.includes('@') || customer.name === customer.phone;
+        const isNewNameBetter = args.name && !args.name.includes('@') && args.name !== args.sender;
+        
+        if (isNewNameBetter && (isCurrentNameJid || customer.name === "Group Chat")) {
+            patchData.name = args.name;
+        }
+        
         await ctx.db.patch(customer._id, patchData);
     }
 
