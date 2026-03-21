@@ -59,14 +59,11 @@ export default function DashboardNavbar() {
         <Link href="/dashboard" className={styles.logoArea}>
           <Image 
             src="/logo.png" 
-            alt="PIPELIXR Logo" 
-            width={32} 
-            height={32} 
+            alt="Logo" 
+            width={36} 
+            height={36} 
             className={styles.logoImg}
           />
-          <span>
-            PIPE<span className={styles.logoAccent}>LIXR</span>
-          </span>
         </Link>
 
         {/* Actions Section */}

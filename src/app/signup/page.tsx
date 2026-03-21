@@ -69,14 +69,11 @@ export default function SignupPage() {
           <div className={styles.logoGroup}>
             <Image 
               src="/logo.png" 
-              alt="PIPELIXR Logo" 
-              width={48} 
-              height={48} 
+              alt="Logo" 
+              width={56} 
+              height={56} 
               className={styles.authLogo}
             />
-            <div className={styles.logoText}>
-              PIPE<span className={styles.logoAccent}>LIXR</span>
-            </div>
           </div>
         </Link>
 

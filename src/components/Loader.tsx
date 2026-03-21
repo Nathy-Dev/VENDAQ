@@ -42,7 +42,6 @@ export default function Loader() {
         }
       `}</style>
       <div className="pipelixr-spinner" />
-      <div className="pipelixr-loader-text">PIPELIXR</div>
     </div>
   );
 }

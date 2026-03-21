@@ -281,14 +281,11 @@ export default function LandingPage() {
           <Link href="/" className={styles.logo}>
             <Image 
               src="/logo.png" 
-              alt="PIPELIXR Logo" 
-              width={40} 
-              height={40} 
+              alt="Logo" 
+              width={44} 
+              height={44} 
               className={styles.logoImg}
             />
-            <span>
-              PIPE<span className={styles.logoAccent}>LIXR</span>
-            </span>
           </Link>
 
           <ul className={styles.navLinks}>
@@ -764,14 +761,11 @@ export default function LandingPage() {
             <Link href="/" className={styles.footerLogo}>
               <Image 
                 src="/logo.png" 
-                alt="PIPELIXR Logo" 
-                width={32} 
-                height={32} 
+                alt="Logo" 
+                width={36} 
+                height={36} 
                 className={styles.logoImg}
               />
-              <span>
-                PIPE<span className={styles.logoAccent}>LIXR</span>
-              </span>
             </Link>
             <ul className={styles.footerLinks}>
               <li><a href="#features">Features</a></li>
