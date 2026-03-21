@@ -55,3 +55,15 @@ export const updateConnectionStatus = mutation({
     });
   },
 });
+
+export const updateBusinessDetails = mutation({
+  args: {
+    businessId: v.id("businesses"),
+    name: v.optional(v.string()),
+    industry: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const { businessId, ...updates } = args;
+    await ctx.db.patch(businessId, updates);
+  },
+});
