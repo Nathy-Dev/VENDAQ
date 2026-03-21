@@ -228,6 +228,81 @@
   color: #94a3b8;
 }
 
+.linkToggle {
+    display: flex;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 0.75rem;
+    padding: 0.25rem;
+    margin-bottom: 1rem;
+}
+
+.toggleBtn {
+    flex: 1;
+    padding: 0.625rem;
+    border-radius: 0.625rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    border: none;
+    background: transparent;
+    color: #94a3b8;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.toggleBtnActive {
+    background: #1e293b;
+    color: #10b981;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+.phoneInputContainer {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    text-align: left;
+}
+
+.phoneInput {
+    background: #1e293b;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 0.75rem;
+    padding: 1rem;
+    color: white;
+    font-size: 1rem;
+    width: 100%;
+}
+
+.phoneInput:focus {
+    outline: none;
+    border-color: #10b981;
+    box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
+}
+
+.pairingCodeBox {
+    background: #1e293b;
+    border: 2px solid #10b981;
+    border-radius: 1rem;
+    padding: 2rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+}
+
+.codeChar {
+    font-size: 2rem;
+    font-weight: 800;
+    color: #10b981;
+    font-family: monospace;
+    letter-spacing: 0.1em;
+}
+
+.helpText {
+    font-size: 0.75rem;
+    color: #64748b;
+    line-height: 1.5;
+}
+
 .bgGlow1 {
   position: absolute;
   top: -10%;

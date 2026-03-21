@@ -18,7 +18,7 @@ import { useRouter } from "next/navigation";
 import Link from 'next/link';
 import { usePipelixrActions } from "@/hooks/usePipelixr";
 import { useSession } from "next-auth/react";
-import { useQuery } from "convex/react";
+import { useQuery, useAction } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import QRCode from "react-qr-code";
 
@@ -51,9 +51,13 @@ export default function Onboarding({ initialStep = 0 }: OnboardingProps) {
   const [step, setStep] = useState(initialStep); // 0-2: Features, 3: Mode Selection, 4: Connection
   const [featureIndex, setFeatureIndex] = useState(0);
   const [selectedMode, setSelectedMode] = useState<'official' | 'unofficial' | null>(null);
+  const [usePairingCode, setUsePairingCode] = useState(false);
+  const [phoneNumber, setPhoneNumber] = useState("");
+  const [isGeneratingCode, setIsGeneratingCode] = useState(false);
   
   const router = useRouter();
   const { createOrUpdateBusiness } = usePipelixrActions();
+  const requestPairingCode = useAction(api.whatsapp.requestPairingCodeAction);
   const { data: session } = useSession();
 
   // Query Convex for QR code and status
@@ -106,6 +110,21 @@ export default function Onboarding({ initialStep = 0 }: OnboardingProps) {
         } catch (e) {
             console.error("Failed to start worker session", e);
         }
+    }
+  };
+
+  const handleRequestPairingCode = async () => {
+    if (!phoneNumber || !existingBusiness) return;
+    setIsGeneratingCode(true);
+    try {
+        await requestPairingCode({
+            businessId: existingBusiness._id,
+            phone: phoneNumber
+        });
+    } catch (e) {
+        console.error("Failed to request pairing code", e);
+    } finally {
+        setIsGeneratingCode(false);
     }
   };
 
@@ -265,22 +284,69 @@ export default function Onboarding({ initialStep = 0 }: OnboardingProps) {
                   </p>
                 </div>
 
-                {/* Render actual QR or Error/Loading state */}
-                <div className={styles.qrContainer} style={{ background: qrData?.qrCode ? 'white' : undefined, padding: qrData?.qrCode ? '1rem' : undefined }}>
-                  {selectedMode === 'unofficial' ? (
-                     qrData?.qrCode ? (
-                        <QRCode value={qrData.qrCode} size={200} />
-                     ) : (
-                         <span style={{ fontSize: '0.875rem', color: '#64748b' }}>
-                            {qrData?.status === 'pending' ? 'Generating fresh QR...' : 'Waiting for worker...'}
-                         </span>
-                     )
-                  ) : (
-                     <span style={{ fontSize: '0.625rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
-                        Token Form Placeholder
-                     </span>
-                  )}
+                <div className={styles.linkToggle}>
+                    <button 
+                        className={clsx(styles.toggleBtn, !usePairingCode && styles.toggleBtnActive)}
+                        onClick={() => setUsePairingCode(false)}
+                    >
+                        QR Code
+                    </button>
+                    <button 
+                        className={clsx(styles.toggleBtn, usePairingCode && styles.toggleBtnActive)}
+                        onClick={() => setUsePairingCode(true)}
+                    >
+                        Phone Number
+                    </button>
                 </div>
+
+                {!usePairingCode ? (
+                    <div className={styles.qrContainer} style={{ background: qrData?.qrCode ? 'white' : undefined, padding: qrData?.qrCode ? '1rem' : undefined }}>
+                        {qrData?.qrCode ? (
+                            <QRCode value={qrData.qrCode} size={200} />
+                        ) : (
+                            <span style={{ fontSize: '0.875rem', color: '#64748b' }}>
+                                {qrData?.status === 'pending' ? 'Generating fresh QR...' : 'Waiting for worker...'}
+                            </span>
+                        )}
+                    </div>
+                ) : (
+                    <div className={styles.phoneInputContainer}>
+                        {!qrData?.pairingCode ? (
+                            <>
+                                <input 
+                                    className={styles.phoneInput}
+                                    placeholder="Phone: +234..."
+                                    value={phoneNumber}
+                                    onChange={(e) => setPhoneNumber(e.target.value)}
+                                />
+                                <button 
+                                    className={styles.primaryButton}
+                                    disabled={!phoneNumber || isGeneratingCode}
+                                    onClick={handleRequestPairingCode}
+                                >
+                                    {isGeneratingCode ? "Generating..." : "Generate Pairing Code"}
+                                </button>
+                                <p className={styles.helpText}> Enter the full phone number (with +) of the account you want to link.</p>
+                            </>
+                        ) : (
+                            <>
+                                <div className={styles.pairingCodeBox}>
+                                    <span className={styles.codeChar}>{qrData.pairingCode}</span>
+                                </div>
+                                <p className={styles.helpText} style={{ textAlign: 'center', marginTop: '1rem' }}>
+                                    Open WhatsApp on your phone → Settings → Linked Devices → Link with phone number instead → Enter this code.
+                                </p>
+                                <button 
+                                    className={styles.backButton}
+                                    style={{ marginTop: '0.5rem' }}
+                                    onClick={() => setPhoneNumber("")} // This will let them restart
+                                >
+                                    Use a different number
+                                </button>
+                            </>
+                        )}
+                    </div>
+                )}
 
                 <div style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                     <div style={{ fontSize: '0.875rem', color: '#94a3b8' }}>

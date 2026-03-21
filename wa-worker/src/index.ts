@@ -424,6 +424,36 @@ app.get("/", (req, res) => {
     res.send("PIPELIXR WhatsApp Worker is running");
 });
 
+// Pairing code request
+app.post("/pairing/request", async (req, res) => {
+    const { businessId, phone } = req.body;
+    if (!businessId || !phone) {
+        return res.status(400).json({ error: "Missing businessId or phone" });
+    }
+
+    const sock = activeSockets[businessId];
+    if (!sock) {
+        return res.status(404).json({ error: "Session not found. Start session first." });
+    }
+
+    try {
+        console.log(`[Worker] Generating pairing code for ${businessId} with phone ${phone}`);
+        const code = await sock.requestPairingCode(phone.replace(/\D/g, ''));
+        
+        // Post code back to Convex
+        await updateBackend({
+            action: 'updatePairingCode',
+            businessId,
+            pairingCode: code
+        });
+
+        res.json({ success: true, code });
+    } catch (error) {
+        console.error(`[Worker] Pairing error for ${businessId}:`, error);
+        res.status(500).json({ error: String(error) });
+    }
+});
+
 // Outgoing message endpoint
 app.post('/message/send', async (req, res) => {
     const { businessId, to, content } = req.body;

@@ -9,6 +9,7 @@ export default defineSchema({
     whatsappStatus: v.union(v.literal("disconnected"), v.literal("connected"), v.literal("error"), v.literal("pending")),
     connectionDetails: v.optional(v.any()), // Tokens or Whapi instance details
     qrCode: v.optional(v.string()), // Base64 QR code for Unofficlal mode
+    pairingCode: v.optional(v.string()), // 8-char code for link-by-phone
     workerSessionId: v.optional(v.string()), // ID of the worker owning this connection
     industry: v.optional(v.string()),
     onboardingStep: v.number(),

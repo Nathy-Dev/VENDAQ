@@ -34,6 +34,19 @@ export const updateConnectionStatus = mutation({
   },
 });
 
+export const updatePairingCode = mutation({
+  args: {
+    businessId: v.id("businesses"),
+    pairingCode: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.businessId, {
+      pairingCode: args.pairingCode,
+      whatsappStatus: "pending", 
+    });
+  },
+});
+
 // Called by the Onboarding Frontend to stream the QR code
 export const getBusinessQR = query({
   args: { businessId: v.id("businesses") },
@@ -41,6 +54,7 @@ export const getBusinessQR = query({
     const business = await ctx.db.get(args.businessId);
     return {
         qrCode: business?.qrCode,
+        pairingCode: business?.pairingCode,
         status: business?.whatsappStatus,
     };
   },
@@ -308,5 +322,33 @@ export const sendMessageAction = action({
     }
 
     return messageId;
+  },
+});
+
+export const requestPairingCodeAction = action({
+  args: {
+    businessId: v.id("businesses"),
+    phone: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const workerUrl = process.env.WHATSAPP_WORKER_URL || "http://localhost:3005";
+    
+    try {
+        const response = await fetch(`${workerUrl}/pairing/request`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                businessId: args.businessId,
+                phone: args.phone,
+            }),
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Worker rejected pairing request: ${errorText}`);
+        }
+    } catch (e) {
+        throw new Error(`Failed to reach WhatsApp worker. Error: ${e instanceof Error ? e.message : String(e)}`);
+    }
   },
 });

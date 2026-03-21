@@ -25,19 +25,34 @@ export async function POST(req: Request) {
     if (action === 'updateStatus' && status) {
       await fetchMutation(api.whatsapp.updateConnectionStatus, {
         businessId: businessId as Id<"businesses">,
-        status: status as any, // "connected" | "disconnected" | "error"
+        status: status as "connected" | "disconnected" | "error",
       });
       return NextResponse.json({ success: true });
     }
 
+    if (action === 'updatePairingCode') {
+        const { pairingCode } = body;
+        await fetchMutation(api.whatsapp.updatePairingCode, {
+            businessId: businessId as Id<"businesses">,
+            pairingCode,
+        });
+        return NextResponse.json({ success: true });
+    }
+
     if (action === 'newMessage') {
-        const { sender, content, timestamp, fromMe } = body;
+        const { sender, content, timestamp, fromMe, isGroup, groupMetadata, messageType, mediaId, fileName, name } = body;
         await fetchMutation(api.whatsapp.receiveMessage, {
             businessId: businessId as Id<"businesses">,
             sender,
             content,
             timestamp: timestamp || Date.now(),
             fromMe: !!fromMe,
+            isGroup,
+            groupMetadata,
+            messageType,
+            mediaId,
+            fileName,
+            name
         });
         return NextResponse.json({ success: true });
     }
@@ -58,8 +73,9 @@ export async function POST(req: Request) {
 
 
     return NextResponse.json({ error: "Invalid action payload" }, { status: 400 });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
     console.error("Worker Webhook Error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
