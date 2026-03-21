@@ -93,7 +93,7 @@ export default function MessageThread({ chat, businessId, onBack }: MessageThrea
   );
 }
 
-function MessageMedia({ mediaId, type, fileName }: { mediaId: string, type: string, fileName?: string }) {
+function MessageMedia({ mediaId, type, fileName }: { mediaId: string, type?: string, fileName?: string }) {
     const url = useQuery(api.interactions.getMediaUrl, { mediaId });
     
     if (!url) return <div className={styles.mediaPlaceholder}>Loading media...</div>;
