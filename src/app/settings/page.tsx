@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { Bell, Shield, Building, Moon, ChevronRight, Save, Store, Factory } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { useQuery, useMutation } from "convex/react";
@@ -9,7 +9,7 @@ import { api } from "../../../convex/_generated/api";
 type SettingsItem = {
   id: string;
   label: string;
-  icon: JSX.Element;
+  icon: React.ReactNode;
   color: string;
   bg: string;
   right?: string;
