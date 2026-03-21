@@ -15,7 +15,7 @@ type SettingsItem = {
   right?: string;
 };
 
-const SETTINGS_GROUPS = [
+const SETTINGS_GROUPS: { title: string; items: SettingsItem[] }[] = [
   {
     title: "Account",
     items: [
