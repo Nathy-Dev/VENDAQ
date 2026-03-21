@@ -156,19 +156,8 @@ async function startSession(businessId: string, pairingNumber?: string) {
     });
 
     if (pairingNumber && !state.creds.registered) {
-        setTimeout(async () => {
-            try {
-                const code = await sock.requestPairingCode(pairingNumber.replace(/\D/g, ''));
-                console.log(`[Worker] Generated pairing code for ${businessId}: ${code}`);
-                await updateBackend({
-                    action: 'updatePairingCode',
-                    businessId,
-                    pairingCode: code
-                });
-            } catch (e) {
-                console.error(`[Worker] Failed to generate pairing code for ${businessId}:`, e);
-            }
-        }, 3000); // Give it a moment to initialize
+        // We will handle this in the request handler for immediate feedback
+        console.log(`[Worker] Socket ready for pairing request: ${businessId}`);
     }
 
     sock.ev.on('connection.update', async (update) => {
@@ -467,9 +456,24 @@ app.post("/pairing/request", async (req, res) => {
 
     try {
         console.log(`[Worker] Initiating fresh pairing for ${businessId} with phone ${phone}`);
-        // This will clean the session and request the code
         await startSession(businessId, phone);
-        res.json({ success: true, message: "Pairing initiated. Code will be synced shortly." });
+        
+        // Wait a small bit for socket to be ready
+        const sock = activeSockets[businessId];
+        if (!sock) throw new Error("Failed to initialize socket");
+
+        console.log(`[Worker] Requesting code from Baileys...`);
+        const code = await sock.requestPairingCode(phone.replace(/\D/g, ''));
+        console.log(`[Worker] Generated pairing code: ${code}`);
+
+        // Sync to backend anyway for permanence
+        await updateBackend({
+            action: 'updatePairingCode',
+            businessId,
+            pairingCode: code
+        });
+
+        res.json({ success: true, code });
     } catch (error) {
         console.error(`[Worker] Pairing initiation error for ${businessId}:`, error);
         res.status(500).json({ error: String(error) });
