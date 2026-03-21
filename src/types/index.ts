@@ -15,6 +15,7 @@ export interface Customer {
   phone: string;
   totalValue: number;
   image?: string;
+  isGroup?: boolean;
 }
 
 export interface Interaction {
@@ -24,6 +25,9 @@ export interface Interaction {
   role: "customer" | "system" | "owner";
   content: string;
   timestamp: number;
+  messageType?: "text" | "image" | "video" | "audio" | "document" | "location";
+  mediaId?: string;
+  fileName?: string;
 }
 
 export interface Order {
@@ -38,6 +42,8 @@ export interface Order {
 export interface ChatThread extends Customer {
   lastMessage: string;
   lastMessageTimestamp: number;
+  lastMessageType?: string;
+  lastMediaId?: string;
 }
 
 export interface PooledOrders {
