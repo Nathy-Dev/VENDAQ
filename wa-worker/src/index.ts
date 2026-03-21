@@ -76,7 +76,7 @@ async function startSession(businessId: string) {
         version,
         auth: state,
         logger: pino({ level: 'info' }) as any, // Re-enabled logs for debugging
-        browser: ["MERXAGE", "Chrome", "114.0.5735.199"],
+        browser: ["PIPELIXR", "Chrome", "114.0.5735.199"],
         syncFullHistory: true,
         shouldSyncHistoryMessage: () => true
     });

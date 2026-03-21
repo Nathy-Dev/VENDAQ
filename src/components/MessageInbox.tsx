@@ -56,9 +56,9 @@ export default function MessageInbox({ chats, isLoading, onSelectChat }: Message
             <div className={styles.inboxIcon}>
               <MessageSquare size={80} strokeWidth={1} />
             </div>
-            <h2 className={styles.emptyTitle}>WhatsApp for MERXAGE</h2>
+            <h2 className={styles.emptyTitle}>WhatsApp for PIPELIXR</h2>
             <p className={styles.emptyDesc}>
-              Connect your phone to sync your messages. MERXAGE keeps your chats safe and organized.
+              Connect your phone to sync your messages. PIPELIXR keeps your chats safe and organized.
             </p>
             <div style={{ marginTop: '1rem', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '1rem', width: '100%' }}>
               <p style={{ fontSize: '0.7rem', color: '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>

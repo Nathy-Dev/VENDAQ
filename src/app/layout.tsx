@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "MERXAGE - WhatsApp Business OS",
+  title: "PIPELIXR - WhatsApp Business OS",
   description: "Scale your commerce with WhatsApp-first business operations.",
 };
 

@@ -86,7 +86,7 @@ const solutionSteps = [
   {
     num: 2,
     title: "Auto Lead Created",
-    desc: "MERXAGE instantly captures name, phone, and interest.",
+    desc: "PIPELIXR instantly captures name, phone, and interest.",
     icon: Users,
   },
   {
@@ -130,7 +130,7 @@ const features = [
   },
   {
     title: "Follow-Up Automation",
-    desc: "Customer went silent? MERXAGE sends the perfect nudge at the right time. Recover revenue you never knew you were losing.",
+    desc: "Customer went silent? PIPELIXR sends the perfect nudge at the right time. Recover revenue you never knew you were losing.",
     icon: Clock,
     color: "#f59e0b",
   },
@@ -148,7 +148,7 @@ const features = [
   },
   {
     title: "Offline-Resilient Sync",
-    desc: "Network drops? MERXAGE queues every action and syncs the moment you reconnect. Nothing is ever lost.",
+    desc: "Network drops? PIPELIXR queues every action and syncs the moment you reconnect. Nothing is ever lost.",
     icon: WifiOff,
     color: "#ec4899",
   },
@@ -163,7 +163,7 @@ const howItWorks = [
   {
     num: 2,
     title: "AI Auto-Organizes",
-    desc: "MERXAGE reads your incoming chats, creates leads, tags intent, and builds your sales pipeline automatically.",
+    desc: "PIPELIXR reads your incoming chats, creates leads, tags intent, and builds your sales pipeline automatically.",
   },
   {
     num: 3,
@@ -281,13 +281,13 @@ export default function LandingPage() {
           <Link href="/" className={styles.logo}>
             <Image 
               src="/logo.png" 
-              alt="MERXAGE Logo" 
+              alt="PIPELIXR Logo" 
               width={40} 
               height={40} 
               className={styles.logoImg}
             />
             <span>
-              MERX<span className={styles.logoAccent}>AGE</span>
+              PIPE<span className={styles.logoAccent}>LIXR</span>
             </span>
           </Link>
 
@@ -352,7 +352,7 @@ export default function LandingPage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.3 }}
           >
-            MERXAGE turns your messy WhatsApp chats into a structured sales pipeline.
+            PIPELIXR turns your messy WhatsApp chats into a structured sales pipeline.
             Auto-capture leads, track orders, follow up automatically, and get paid —
             all without leaving WhatsApp.
           </motion.p>
@@ -382,7 +382,7 @@ export default function LandingPage() {
               <span className={styles.mockDot} style={{ background: "#ef4444" }} />
               <span className={styles.mockDot} style={{ background: "#f59e0b" }} />
               <span className={styles.mockDot} style={{ background: "#10b981" }} />
-              <span className={styles.mockTitle}>MERXAGE — Sales Pipeline</span>
+              <span className={styles.mockTitle}>PIPELIXR — Sales Pipeline</span>
             </div>
             <div className={styles.pipelineGrid}>
               {pipelineData.map((col) => (
@@ -455,7 +455,7 @@ export default function LandingPage() {
             variants={fadeIn}
           >
             <span className={styles.sectionLabel}>The Solution</span>
-            <h2 className={styles.sectionTitle}>MERXAGE Turns Chaos Into Pipeline</h2>
+            <h2 className={styles.sectionTitle}>PIPELIXR Turns Chaos Into Pipeline</h2>
             <p className={styles.sectionSub}>
               Same WhatsApp. Completely different outcome. Every message is
               automatically structured, tracked, and acted on.
@@ -537,7 +537,7 @@ export default function LandingPage() {
             <span className={styles.sectionLabel}>How It Works</span>
             <h2 className={styles.sectionTitle}>Up and Running in 3 Steps</h2>
             <p className={styles.sectionSub}>
-              No complicated setup. No learning curve. Connect, and MERXAGE handles the
+              No complicated setup. No learning curve. Connect, and PIPELIXR handles the
               rest.
             </p>
           </motion.div>
@@ -574,7 +574,7 @@ export default function LandingPage() {
             <span className={styles.sectionLabel}>Built For You</span>
             <h2 className={styles.sectionTitle}>Built for Your Industry</h2>
             <p className={styles.sectionSub}>
-              MERXAGE adapts to the way your specific business works — not the other way
+              PIPELIXR adapts to the way your specific business works — not the other way
               around.
             </p>
           </motion.div>
@@ -616,7 +616,7 @@ export default function LandingPage() {
             <span className={styles.sectionLabel}>The Opportunity</span>
             <h2 className={styles.sectionTitle}>The Market Is Massive</h2>
             <p className={styles.sectionSub}>
-              WhatsApp is the operating system of African business. MERXAGE is the
+              WhatsApp is the operating system of African business. PIPELIXR is the
               upgrade.
             </p>
           </motion.div>
@@ -672,7 +672,7 @@ export default function LandingPage() {
               <div className={styles.pricingPrice}>
                 Free <span className={styles.pricingPriceSuffix}>forever</span>
               </div>
-              <p className={styles.pricingDesc}>Perfect to get started and experience the power of MERXAGE.</p>
+              <p className={styles.pricingDesc}>Perfect to get started and experience the power of PIPELIXR.</p>
               <ul className={styles.pricingFeatures}>
                 {[
                   "50 customer profiles",
@@ -764,13 +764,13 @@ export default function LandingPage() {
             <Link href="/" className={styles.footerLogo}>
               <Image 
                 src="/logo.png" 
-                alt="MERXAGE Logo" 
+                alt="PIPELIXR Logo" 
                 width={32} 
                 height={32} 
                 className={styles.logoImg}
               />
               <span>
-                MERX<span className={styles.logoAccent}>AGE</span>
+                PIPE<span className={styles.logoAccent}>LIXR</span>
               </span>
             </Link>
             <ul className={styles.footerLinks}>
@@ -782,7 +782,7 @@ export default function LandingPage() {
             </ul>
           </div>
           <div className={styles.footerBottom}>
-            © {new Date().getFullYear()} MERXAGE. All rights reserved. Built for African business.
+            © {new Date().getFullYear()} PIPELIXR. All rights reserved. Built for African business.
           </div>
         </div>
       </footer>

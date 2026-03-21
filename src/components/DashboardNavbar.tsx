@@ -59,13 +59,13 @@ export default function DashboardNavbar() {
         <Link href="/dashboard" className={styles.logoArea}>
           <Image 
             src="/logo.png" 
-            alt="MERXAGE Logo" 
+            alt="PIPELIXR Logo" 
             width={32} 
             height={32} 
             className={styles.logoImg}
           />
           <span>
-            MERX<span className={styles.logoAccent}>AGE</span>
+            PIPE<span className={styles.logoAccent}>LIXR</span>
           </span>
         </Link>
 

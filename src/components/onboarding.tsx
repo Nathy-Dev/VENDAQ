@@ -16,7 +16,7 @@ import styles from "./onboarding.module.css";
 import { clsx } from "clsx";
 import { useRouter } from "next/navigation";
 import Link from 'next/link';
-import { useMERXAGEActions } from "@/hooks/useMERXAGE";
+import { usePipelixrActions } from "@/hooks/usePipelixr";
 import { useSession } from "next-auth/react";
 import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
@@ -25,7 +25,7 @@ import QRCode from "react-qr-code";
 const features = [
   {
     title: "Say Goodbye to Chat Chaos",
-    description: "MERXAGE automatically captures leads from your WhatsApp messages. No more lost customers in buried threads.",
+    description: "PIPELIXR automatically captures leads from your WhatsApp messages. No more lost customers in buried threads.",
     icon: MessageSquare,
     color: "#10b981"
   },
@@ -53,7 +53,7 @@ export default function Onboarding({ initialStep = 0 }: OnboardingProps) {
   const [selectedMode, setSelectedMode] = useState<'official' | 'unofficial' | null>(null);
   
   const router = useRouter();
-  const { createOrUpdateBusiness } = useMERXAGEActions();
+  const { createOrUpdateBusiness } = usePipelixrActions();
   const { data: session } = useSession();
 
   // Query Convex for QR code and status
@@ -175,7 +175,7 @@ export default function Onboarding({ initialStep = 0 }: OnboardingProps) {
               >
                 <div className="text-center" style={{ marginBottom: '0.5rem' }}>
                   <h1 className={styles.title} style={{ fontSize: '1.5rem' }}>Choose Your Gateway</h1>
-                  <p className={styles.description} style={{ fontSize: '0.875rem', marginBottom: '0' }}>Select how MERXAGE connects to your WhatsApp</p>
+                  <p className={styles.description} style={{ fontSize: '0.875rem', marginBottom: '0' }}>Select how PIPELIXR connects to your WhatsApp</p>
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
@@ -189,7 +189,7 @@ export default function Onboarding({ initialStep = 0 }: OnboardingProps) {
                     <div className={styles.modeHeader}>
                       <div className={styles.modeTitle}>
                         <Smartphone size={20} style={{ color: '#10b981' }} />
-                        MERXAGE Standard
+                        PIPELIXR Standard
                       </div>
                       {selectedMode === 'unofficial' && <CheckCircle2 size={20} style={{ color: '#10b981' }} />}
                     </div>
