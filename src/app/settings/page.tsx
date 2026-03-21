@@ -24,15 +24,15 @@ const SETTINGS_GROUPS: SettingsGroup[] = [
   {
     title: "Account",
     items: [
-      { id: "business", label: "Business Profile", icon: <Building size={18} />, color: "text-slate-400", bg: "bg-slate-800/40" },
-      { id: "notifications", label: "Notifications", icon: <Bell size={18} />, color: "text-slate-400", bg: "bg-slate-800/40" },
-      { id: "security", label: "Security", icon: <Shield size={18} />, color: "text-slate-400", bg: "bg-slate-800/40" },
+      { id: "business", label: "Business Profile", icon: <Building size={18} />, color: "text-slate-600 dark:text-slate-400", bg: "bg-slate-100 dark:bg-slate-800/40" },
+      { id: "notifications", label: "Notifications", icon: <Bell size={18} />, color: "text-slate-600 dark:text-slate-400", bg: "bg-slate-100 dark:bg-slate-800/40" },
+      { id: "security", label: "Security", icon: <Shield size={18} />, color: "text-slate-600 dark:text-slate-400", bg: "bg-slate-100 dark:bg-slate-800/40" },
     ]
   },
   {
     title: "App",
     items: [
-      { id: "theme", label: "Appearance", icon: <Moon size={18} />, color: "text-slate-400", bg: "bg-slate-800/40", right: "Dark" },
+      { id: "theme", label: "Appearance", icon: <Moon size={18} />, color: "text-slate-600 dark:text-slate-400", bg: "bg-slate-100 dark:bg-slate-800/40", right: "Dark" },
     ]
   }
 ];
@@ -80,16 +80,16 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="p-8 max-w-4xl mx-auto text-slate-200">
-      <h1 className="text-3xl font-bold mb-3 text-white">Settings</h1>
-      <p className="text-slate-400 mb-8 font-medium">Manage your workspace and business preferences.</p>
+    <div className="p-8 max-w-4xl mx-auto text-slate-800 dark:text-slate-200">
+      <h1 className="text-3xl font-bold mb-3 text-slate-900 dark:text-white">Settings</h1>
+      <p className="text-slate-500 dark:text-slate-400 mb-8 font-medium">Manage your workspace and business preferences.</p>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
         {/* Sidebar */}
         <aside className="md:col-span-1 space-y-8">
           {SETTINGS_GROUPS.map((group) => (
             <div key={group.title}>
-              <h2 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-4 px-2">{group.title}</h2>
+              <h2 className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-4 px-2">{group.title}</h2>
               <div className="space-y-1">
                 {group.items.map((item) => (
                   <button
@@ -97,22 +97,24 @@ export default function SettingsPage() {
                     onClick={() => setActiveTab(item.id)}
                     className={`w-full flex items-center justify-between p-3 rounded-xl transition-all duration-200 group ${
                       activeTab === item.id 
-                        ? "bg-slate-800/80 text-white font-semibold shadow-inner border border-emerald-500/20" 
-                        : "hover:bg-slate-800/40 text-slate-400 border border-transparent"
+                        ? "bg-white dark:bg-slate-800/80 text-emerald-600 dark:text-white font-semibold shadow-sm border border-slate-200 dark:border-emerald-500/20" 
+                        : "hover:bg-slate-50 dark:hover:bg-slate-800/40 text-slate-600 dark:text-slate-400 border border-transparent"
                     }`}
                   >
                     <div className="flex items-center gap-3">
                       <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${
-                        activeTab === item.id ? "bg-emerald-500/15 text-emerald-500" : `${item.bg} ${item.color} group-hover:bg-slate-700/50 group-hover:text-slate-300`
+                        activeTab === item.id 
+                          ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-500" 
+                          : `${item.bg} ${item.color} group-hover:bg-slate-200 dark:group-hover:bg-slate-700/50 group-hover:text-slate-800 dark:group-hover:text-slate-300`
                       }`}>
                         {item.icon}
                       </div>
                       <span className="text-sm">{item.label}</span>
                     </div>
                     {item.right ? (
-                      <span className="text-[10px] font-bold text-slate-500 uppercase">{item.right}</span>
+                      <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase">{item.right}</span>
                     ) : (
-                      <ChevronRight size={14} className={`text-slate-600 transition-transform ${activeTab === item.id ? "translate-x-1" : "group-hover:translate-x-1"}`} />
+                      <ChevronRight size={14} className={`text-slate-400 dark:text-slate-600 transition-transform ${activeTab === item.id ? "translate-x-1" : "group-hover:translate-x-1"}`} />
                     )}
                   </button>
                 ))}
@@ -123,50 +125,50 @@ export default function SettingsPage() {
 
         {/* Main Content Area */}
         <main className="md:col-span-3">
-          <div className="bg-[#0f172a]/60 backdrop-blur-md rounded-2xl p-8 border border-slate-800 shadow-xl min-h-[500px]">
+          <div className="bg-white/80 dark:bg-[#0f172a]/60 backdrop-blur-md rounded-2xl p-8 border border-slate-200 dark:border-slate-800 shadow-xl min-h-[500px]">
             
             {/* BUSINESS PROFILE TAB */}
             {activeTab === "business" && (
               <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
                 <div className="flex items-center gap-3 mb-2">
-                  <div className="p-2 bg-emerald-500/10 text-emerald-500 rounded-lg">
+                  <div className="p-2 bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-500 rounded-lg">
                     <Building size={20} />
                   </div>
-                  <h3 className="text-xl font-bold text-white">Business Profile</h3>
+                  <h3 className="text-xl font-bold text-slate-900 dark:text-white">Business Profile</h3>
                 </div>
-                <p className="text-slate-400 text-sm mb-8 pb-6 border-b border-slate-800">
+                <p className="text-slate-500 dark:text-slate-400 text-sm mb-8 pb-6 border-b border-slate-100 dark:border-slate-800">
                   Update your business name and industry. This information is used for AI personalization.
                 </p>
                 
                 <form onSubmit={handleSaveBusiness} className="space-y-6 max-w-md">
                   <div className="space-y-2">
-                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
+                    <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-2">
                       <Store size={14} /> Business Name
                     </label>
                     <input 
                       type="text" 
                       value={bizName}
                       onChange={(e) => setBizName(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all font-medium"
+                      className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl px-4 py-3 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all font-medium"
                       placeholder="e.g. Acme Tech"
                       required
                     />
                   </div>
                   
                   <div className="space-y-2">
-                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
+                    <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-2">
                       <Factory size={14} /> Industry (Optional)
                     </label>
                     <input 
                       type="text" 
                       value={bizIndustry}
                       onChange={(e) => setBizIndustry(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all font-medium"
+                      className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl px-4 py-3 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all font-medium"
                       placeholder="e.g. Electronics, Fashion"
                     />
                   </div>
 
-                  <div className="pt-4 flex items-center gap-4 border-t border-slate-800 mt-8!">
+                  <div className="pt-4 flex items-center gap-4 border-t border-slate-100 dark:border-slate-800 mt-8!">
                     <button 
                       type="submit" 
                       disabled={isSaving || !business}
@@ -179,7 +181,7 @@ export default function SettingsPage() {
                       )}
                     </button>
                     {saveSuccess && (
-                      <span className="text-emerald-400 text-sm font-bold animate-in fade-in">✓ Profile Updated</span>
+                      <span className="text-emerald-600 dark:text-emerald-400 text-sm font-bold animate-in fade-in">✓ Profile Updated</span>
                     )}
                   </div>
                 </form>
@@ -190,22 +192,22 @@ export default function SettingsPage() {
             {activeTab === "notifications" && (
               <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
                 <div className="flex items-center gap-3 mb-2">
-                  <div className="p-2 bg-emerald-500/10 text-emerald-500 rounded-lg">
+                  <div className="p-2 bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-500 rounded-lg">
                     <Bell size={20} />
                   </div>
-                  <h3 className="text-xl font-bold text-white">Notification Preferences</h3>
+                  <h3 className="text-xl font-bold text-slate-900 dark:text-white">Notification Preferences</h3>
                 </div>
-                <p className="text-slate-400 text-sm mb-8 pb-6 border-b border-slate-800">
+                <p className="text-slate-500 dark:text-slate-400 text-sm mb-8 pb-6 border-b border-slate-100 dark:border-slate-800">
                   Control how PIPELIXR alerts you about new leads and pipeline updates.
                 </p>
                 <div className="space-y-6 max-w-md">
                   {["Browser Notifications", "Email Digest", "Sound Alerts"].map((label, idx) => (
-                    <div key={label} className="flex items-center justify-between p-4 bg-slate-800/30 rounded-xl border border-slate-800">
+                    <div key={label} className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800/30 rounded-xl border border-slate-200 dark:border-slate-800">
                       <div>
-                        <span className="font-bold text-slate-200 block">{label}</span>
+                        <span className="font-bold text-slate-900 dark:text-slate-200 block">{label}</span>
                         <span className="text-xs text-slate-500">Currently managed by system default.</span>
                       </div>
-                      <div className={`w-12 h-6 rounded-full relative p-1 cursor-pointer transition-colors ${idx === 0 ? "bg-emerald-500" : "bg-slate-700"}`}>
+                      <div className={`w-12 h-6 rounded-full relative p-1 cursor-pointer transition-colors ${idx === 0 ? "bg-emerald-500" : "bg-slate-300 dark:bg-slate-700"}`}>
                         <div className={`w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${idx === 0 ? "translate-x-6" : ""}`}></div>
                       </div>
                     </div>
@@ -217,11 +219,11 @@ export default function SettingsPage() {
             {/* OTHER TABS */}
             {(activeTab !== "business" && activeTab !== "notifications") && (
               <div className="flex flex-col items-center justify-center h-full text-center py-20 animate-in fade-in duration-500">
-                <div className="w-20 h-20 bg-slate-800/50 rounded-full flex items-center justify-center mb-6 text-slate-500 border border-slate-700 shadow-inner">
+                <div className="w-20 h-20 bg-slate-100 dark:bg-slate-800/50 rounded-full flex items-center justify-center mb-6 text-slate-400 dark:text-slate-500 border border-slate-200 dark:border-slate-700 shadow-inner">
                   <Shield size={32} strokeWidth={1.5} />
                 </div>
-                <h3 className="text-2xl font-bold text-white mb-2">{activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}</h3>
-                <p className="text-slate-400 text-sm max-w-sm leading-relaxed">This section is currently being updated for the new PIPELIXR OS design system. Check back soon.</p>
+                <h3 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">{activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}</h3>
+                <p className="text-slate-500 dark:text-slate-400 text-sm max-w-sm leading-relaxed">This section is currently being updated for the new PIPELIXR OS design system. Check back soon.</p>
               </div>
             )}
 
