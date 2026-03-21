@@ -1,6 +1,7 @@
 "use client";
 
 import React from 'react';
+import Image from 'next/image';
 
 export default function Loader() {
   return (
@@ -20,28 +21,44 @@ export default function Loader() {
       zIndex: 9999
     }}>
       <style>{`
-        @keyframes spin {
-          to { transform: rotate(360deg); }
+        @keyframes float {
+          0% { transform: translateY(0px); filter: drop-shadow(0 0 10px rgba(16, 185, 129, 0.2)); }
+          50% { transform: translateY(-10px); filter: drop-shadow(0 0 25px rgba(16, 185, 129, 0.6)); }
+          100% { transform: translateY(0px); filter: drop-shadow(0 0 10px rgba(16, 185, 129, 0.2)); }
         }
-        .pipelixr-spinner {
-          width: 48px;
-          height: 48px;
-          border: 4px solid rgba(16, 185, 129, 0.1);
-          border-top-color: #10b981;
-          border-radius: 50%;
-          animation: spin 1s linear infinite;
-          box-shadow: 0 0 20px rgba(16, 185, 129, 0.2);
+        @keyframes pulse-text {
+          0%, 100% { opacity: 0.5; letter-spacing: 0.1em; }
+          50% { opacity: 1; letter-spacing: 0.2em; }
+        }
+        .pipelixr-logo-anim {
+          border-radius: 16px;
+          animation: float 2.5s ease-in-out infinite;
         }
         .pipelixr-loader-text {
-          font-family: sans-serif;
-          font-weight: 600;
-          letter-spacing: 0.05em;
+          font-family: inherit;
+          font-weight: 700;
           color: #94a3b8;
           font-size: 0.875rem;
           text-transform: uppercase;
+          animation: pulse-text 2.5s ease-in-out infinite;
+        }
+        .logoAccent {
+          color: #10b981;
         }
       `}</style>
-      <div className="pipelixr-spinner" />
+      
+      <Image 
+        src="/logo.png" 
+        alt="PIPELIXR Logo" 
+        width={72} 
+        height={72} 
+        className="pipelixr-logo-anim"
+        priority
+      />
+      
+      <div className="pipelixr-loader-text">
+        PIPE<span className="logoAccent">LIXR</span>
+      </div>
     </div>
   );
 }
