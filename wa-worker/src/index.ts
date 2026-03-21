@@ -409,7 +409,12 @@ app.post('/session/start', async (req, res) => {
     }
 });
 
-// Send a message via a specific session
+// Health check
+app.get("/", (req, res) => {
+    res.send("PIPELIXR WhatsApp Worker is running");
+});
+
+// Outgoing message endpoint
 app.post('/message/send', async (req, res) => {
     const { businessId, to, content } = req.body;
     
