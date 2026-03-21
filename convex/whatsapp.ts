@@ -1,5 +1,7 @@
 import { v } from "convex/values";
-import { mutation, query, internalMutation } from "./_generated/server";
+import { mutation, query, internalMutation, action } from "./_generated/server";
+import { api } from "./_generated/api";
+import { Id } from "./_generated/dataModel";
 
 // Called by the external Node.js Worker to emit the generated QR code
 export const updateQRCode = mutation({
@@ -228,3 +230,69 @@ export const getStatuses = query({
   },
 });
 
+
+export const sendMessage = mutation({
+  args: {
+    businessId: v.id("businesses"),
+    customerId: v.id("customers"),
+    content: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const customer = await ctx.db.get(args.customerId);
+    if (!customer) throw new Error("Customer not found");
+
+    const messageId = await ctx.db.insert("interactions", {
+      businessId: args.businessId,
+      customerId: args.customerId,
+      role: "owner",
+      content: args.content,
+      timestamp: Date.now(),
+      messageType: "text",
+    });
+
+    return { messageId, customerPhone: customer.phone };
+  },
+});
+
+export const sendMessageAction = action({
+  args: {
+    businessId: v.id("businesses"),
+    customerId: v.id("customers"),
+    content: v.string(),
+  },
+  handler: async (ctx, args): Promise<Id<"interactions">> => {
+    // 1. Save to DB
+    const { messageId, customerPhone } = await ctx.runMutation(api.whatsapp.sendMessage, {
+      businessId: args.businessId,
+      customerId: args.customerId,
+      content: args.content,
+    });
+
+    // 2. Notify Worker
+    // Note: In a real app, the worker URL would be in an environment variable
+    // For local dev, we assume the worker is reachable. 
+    // If running in Convex production, this would need a public URL or a tunnel.
+    const workerUrl = process.env.WHATSAPP_WORKER_URL || "http://localhost:3005";
+    
+    try {
+        const response = await fetch(`${workerUrl}/message/send`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                businessId: args.businessId,
+                to: customerPhone,
+                content: args.content,
+            }),
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error(`[Convex Action] Worker failed to send message: ${errorText}`);
+        }
+    } catch (e) {
+        console.error("[Convex Action] Failed to connect to worker:", e);
+    }
+
+    return messageId;
+  },
+});

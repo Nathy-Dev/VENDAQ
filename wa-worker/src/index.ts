@@ -240,47 +240,51 @@ async function startSession(businessId: string) {
             const idKey = remoteJid.split('@')[0];
             const name = contactMap.get(remoteJid) || contactMap.get(idKey) || chat.name || (isGroup ? "Group Chat" : idKey);
             
-            // Find the latest message for this chat in the synced messages
-            const chatMessages = messages.filter(m => m.key && m.key.remoteJid === remoteJid);
-            const latestMsg = chatMessages.length > 0 
-                ? chatMessages[chatMessages.length - 1] 
-                : null;
-            
-            let content = "";
-            let timestamp = Date.now();
-            let fromMe = false;
-            let messageType: string = "text";
+            // Sync the last 10 messages for each chat
+            const chatMessages = messages
+                .filter(m => m.key && m.key.remoteJid === remoteJid)
+                .sort((a, b) => ((a.messageTimestamp as number) || 0) - ((b.messageTimestamp as number) || 0))
+                .slice(-10);
 
-            if (latestMsg) {
-                content = latestMsg.message?.conversation || 
-                          latestMsg.message?.extendedTextMessage?.text || 
-                          latestMsg.message?.imageMessage?.caption || 
-                          latestMsg.message?.videoMessage?.caption ||
-                          "[Media]";
-                
-                if (latestMsg.message?.imageMessage) messageType = "image";
-                else if (latestMsg.message?.videoMessage) messageType = "video";
-                else if (latestMsg.message?.audioMessage) messageType = "audio";
-                else if (latestMsg.message?.documentMessage) messageType = "document";
-
-                timestamp = (latestMsg.messageTimestamp as number) * 1000 || Date.now();
-                fromMe = !!latestMsg.key.fromMe;
-            } else if (chat.lastMessageRecvTimestamp) {
-                content = "Existing conversation";
-                timestamp = (chat.lastMessageRecvTimestamp as number) * 1000;
-            } else {
+            if (chatMessages.length === 0) {
+                // If no messages found, still record the chat existence
+                if (chat.lastMessageRecvTimestamp) {
+                    syncData.push({
+                        sender: remoteJid,
+                        content: "Existing conversation",
+                        timestamp: (chat.lastMessageRecvTimestamp as number) * 1000,
+                        fromMe: false,
+                        name,
+                        isGroup,
+                        messageType: "text"
+                    });
+                }
                 continue;
             }
 
-            syncData.push({
-                sender: remoteJid, // Store full JID
-                content,
-                timestamp,
-                fromMe,
-                name,
-                isGroup,
-                messageType
-            });
+            for (const msg of chatMessages) {
+                const content = msg.message?.conversation || 
+                                msg.message?.extendedTextMessage?.text || 
+                                msg.message?.imageMessage?.caption || 
+                                msg.message?.videoMessage?.caption ||
+                                "[Media]";
+                
+                let messageType: string = "text";
+                if (msg.message?.imageMessage) messageType = "image";
+                else if (msg.message?.videoMessage) messageType = "video";
+                else if (msg.message?.audioMessage) messageType = "audio";
+                else if (msg.message?.documentMessage) messageType = "document";
+
+                syncData.push({
+                    sender: remoteJid,
+                    content,
+                    timestamp: ((msg.messageTimestamp as number) || 0) * 1000 || Date.now(),
+                    fromMe: !!msg.key.fromMe,
+                    name,
+                    isGroup,
+                    messageType
+                });
+            }
         }
 
         if (syncData.length > 0) {
@@ -399,17 +403,38 @@ app.post('/session/start', async (req, res) => {
     try {
         const result = await startSession(businessId);
         res.json(result);
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error(`[Worker] Error starting session for ${businessId}:`, error);
-        res.status(500).json({ error: error.message });
+        res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
     }
 });
 
-// Check status of a session
-app.get('/session/status/:businessId', (req, res) => {
-    const { businessId } = req.params;
-    const isActive = !!activeSockets[businessId];
-    res.json({ businessId, active: isActive });
+// Send a message via a specific session
+app.post('/message/send', async (req, res) => {
+    const { businessId, to, content } = req.body;
+    
+    if (!businessId || !to || !content) {
+        return res.status(400).json({ error: 'businessId, to, and content are required' });
+    }
+    
+    const sock = activeSockets[businessId];
+    if (!sock) {
+        return res.status(404).json({ error: `No active session for business ${businessId}` });
+    }
+    
+    try {
+        // Ensure ID is properly formatted for WhatsApp
+        const jid = to.includes('@') ? to : `${to}@s.whatsapp.net`;
+        
+        console.log(`[Worker] Sending message to ${jid} from ${businessId}: ${content.substring(0, 30)}...`);
+        
+        const result = await sock.sendMessage(jid, { text: content });
+        
+        res.json({ success: true, messageId: result.key.id });
+    } catch (error: unknown) {
+        console.error(`[Worker] Error sending message for ${businessId}:`, error);
+        res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+    }
 });
 
 import http from 'http';

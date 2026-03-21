@@ -2,6 +2,7 @@
 
 import React, { useRef, useEffect } from "react";
 import { ArrowLeft, Send, User as UserIcon, MoreVertical, Smile, Paperclip } from "lucide-react";
+import Image from "next/image";
 import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { ChatThread } from "@/types";
@@ -9,11 +10,23 @@ import { Id } from "../../convex/_generated/dataModel";
 import { format } from "date-fns";
 import styles from "./MessageThread.module.css";
 import { formatDisplayName } from "@/utils/format";
+import { useAction } from "convex/react";
 
 interface MessageThreadProps {
   chat: ChatThread;
   businessId: string;
   onBack: () => void;
+}
+
+interface OptimisticMessage {
+  _id: string;
+  role: "owner";
+  content: string;
+  timestamp: number;
+  messageType: "text";
+  isOptimistic: boolean;
+  mediaId?: string;
+  fileName?: string;
 }
 
 export default function MessageThread({ chat, businessId, onBack }: MessageThreadProps) {
@@ -26,11 +39,76 @@ export default function MessageThread({ chat, businessId, onBack }: MessageThrea
 
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  const [inputValue, setInputValue] = React.useState("");
+  const [isSending, setIsSending] = React.useState(false);
+  const [optimisticMessages, setOptimisticMessages] = React.useState<OptimisticMessage[]>([]);
+  const sendMessageAction = useAction(api.whatsapp.sendMessageAction);
+
   useEffect(() => {
     if (scrollRef.current) {
         scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages]);
+  }, [messages, optimisticMessages]);
+
+  const handleSendMessage = async () => {
+    if (!inputValue.trim() || isSending) return;
+
+    setIsSending(true);
+    const content = inputValue.trim();
+    
+    // Optimistic Update
+    const tempId = `temp-${Date.now()}`;
+    const optimisticMsg = {
+        _id: tempId,
+        role: "owner",
+        content,
+        timestamp: Date.now(),
+        messageType: "text",
+        isOptimistic: true
+    };
+    setOptimisticMessages(prev => [...prev, optimisticMsg]);
+    setInputValue("");
+
+    try {
+        await sendMessageAction({
+            businessId: businessId as Id<"businesses">,
+            customerId: chat._id,
+            content,
+        });
+        // Remove optimistic message once real one (hopefully) arrives via sync
+        // Actually, mutation-driven re-renders will handle this if we match IDs,
+        // but for actions, we just wait a bit or wait for query to update.
+        setTimeout(() => {
+            setOptimisticMessages(prev => prev.filter(m => m._id !== tempId));
+        }, 2000); 
+    } catch (error) {
+        console.error("Failed to send message:", error);
+        // Mark as failed or remove
+        setOptimisticMessages(prev => prev.filter(m => m._id !== tempId));
+        setInputValue(content); // Restore input on failure
+    } finally {
+        setIsSending(false);
+    }
+  };
+
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        handleSendMessage();
+    }
+  };
+
+  // Merge real and optimistic messages
+  const allMessages = React.useMemo(() => {
+    if (!messages) return [];
+    
+    // Filter out optimistic messages that already exist in the real list (by content and approximate time)
+    const filteredOptimistic = optimisticMessages.filter(om => 
+        !messages.some(rm => rm.role === "owner" && rm.content === om.content && Math.abs(rm.timestamp - om.timestamp) < 5000)
+    );
+    
+    return [...messages, ...filteredOptimistic].sort((a, b) => a.timestamp - b.timestamp);
+  }, [messages, optimisticMessages]);
 
   return (
     <div className={styles.threadContainer}>
@@ -53,17 +131,17 @@ export default function MessageThread({ chat, businessId, onBack }: MessageThrea
       <div className={styles.messagesList} ref={scrollRef}>
         {!messages ? (
            <div className="flex items-center justify-center h-full text-slate-500 text-sm">Loading interaction history...</div>
-        ) : messages.length === 0 ? (
+        ) : allMessages.length === 0 ? (
            <div className="flex items-center justify-center h-full text-slate-500 text-sm italic">No messages found in history</div>
         ) : (
-           messages.map((msg) => (
+           allMessages.map((msg) => (
              <div 
                key={msg._id} 
-               className={`${styles.messageRow} ${msg.role === "owner" ? styles.outgoing : styles.incoming}`}
+               className={`${styles.messageRow} ${msg.role === "owner" ? styles.outgoing : styles.incoming} ${'isOptimistic' in msg && msg.isOptimistic ? styles.optimistic : ""}`}
              >
                <div className={styles.messageBubble}>
-                 {msg.mediaId && (
-                   <MessageMedia mediaId={msg.mediaId} type={msg.messageType} fileName={msg.fileName} />
+                 {('mediaId' in msg && msg.mediaId) && (
+                   <MessageMedia mediaId={msg.mediaId} type={msg.messageType} fileName={('fileName' in msg ? msg.fileName : undefined)} />
                  )}
                  <div className={styles.messageContent}>{msg.content}</div>
                  <div className={styles.messageTime}>
@@ -82,11 +160,18 @@ export default function MessageThread({ chat, businessId, onBack }: MessageThrea
         </div>
         <input 
           type="text" 
-          placeholder="New message coming soon..." 
+          placeholder="Type a message..." 
           className={styles.inputField}
-          disabled 
+          value={inputValue}
+          onChange={(e) => setInputValue(e.target.value)}
+          onKeyDown={handleKeyPress}
+          disabled={isSending}
         />
-        <button className={styles.sendBtn} disabled>
+        <button 
+          className={styles.sendBtn} 
+          onClick={handleSendMessage}
+          disabled={isSending || !inputValue.trim()}
+        >
           <Send size={24} />
         </button>
       </footer>
@@ -102,7 +187,14 @@ function MessageMedia({ mediaId, type, fileName }: { mediaId: string, type?: str
     if (type === "image") {
         return (
             <div className={styles.mediaContainer}>
-                <img src={url} alt="Shared media" className={styles.mediaImage} />
+                <Image 
+                    src={url} 
+                    alt="Shared media" 
+                    className={styles.mediaImage} 
+                    width={400} 
+                    height={300} 
+                    unoptimized 
+                />
             </div>
         );
     }
