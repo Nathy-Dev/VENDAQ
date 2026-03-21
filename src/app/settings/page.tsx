@@ -84,7 +84,7 @@ export default function SettingsPage() {
     <div className="flex flex-col min-h-screen bg-[#020617] text-slate-200">
       <DashboardNavbar />
       
-      <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-12">
+      <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-24 pb-8 md:pt-28 md:pb-12">
         <div className="mb-8 md:mb-12">
           <h1 className="text-3xl md:text-4xl font-bold mb-3 text-white tracking-tight">Settings</h1>
           <p className="text-slate-400 font-medium text-sm md:text-base">Manage your workspace and business preferences.</p>
