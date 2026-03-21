@@ -144,7 +144,7 @@ async function startSession(businessId: string) {
         version,
         auth: state,
         logger: pino({ level: 'info' }) as any, // Re-enabled logs for debugging
-        browser: ["PIPELIXR", "Chrome", "114.0.5735.199"],
+        browser: ["Ubuntu", "Chrome", "20.0.04"],
         syncFullHistory: true,
         shouldSyncHistoryMessage: () => true
     });
@@ -437,8 +437,14 @@ app.post("/pairing/request", async (req, res) => {
     }
 
     try {
-        console.log(`[Worker] Generating pairing code for ${businessId} with phone ${phone}`);
-        const code = await sock.requestPairingCode(phone.replace(/\D/g, ''));
+        const cleanedPhone = phone.replace(/\D/g, '');
+        console.log(`[Worker] Generating pairing code for ${businessId} with cleaned phone: ${cleanedPhone}`);
+        
+        if (cleanedPhone.length < 8) {
+            throw new Error("Phone number is too short or invalid");
+        }
+
+        const code = await sock.requestPairingCode(cleanedPhone);
         
         // Post code back to Convex
         await updateBackend({
