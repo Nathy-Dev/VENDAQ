@@ -69,7 +69,7 @@ export default defineSchema({
     timestamp: v.number(),
     intent: v.optional(v.string()),
     // Media support
-    messageType: v.union(v.literal("text"), v.literal("image"), v.literal("video"), v.literal("audio"), v.literal("document"), v.literal("location")),
+    messageType: v.optional(v.union(v.literal("text"), v.literal("image"), v.literal("video"), v.literal("audio"), v.literal("document"), v.literal("location"))),
     mediaUrl: v.optional(v.string()),
     mediaId: v.optional(v.string()), // Convex storage ID
     fileName: v.optional(v.string()),

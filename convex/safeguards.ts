@@ -27,6 +27,7 @@ export const enqueueMessage = mutation({
       content: args.content,
       role: "system",
       timestamp: Date.now(),
+      messageType: "text",
     });
   },
 });

@@ -7,7 +7,6 @@ import {
     DisconnectReason, 
     fetchLatestBaileysVersion,
     downloadMediaMessage,
-    WA_DEFAULT_EPHEMERAL,
     proto
 } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
@@ -48,8 +47,13 @@ if (!fs.existsSync(SESSIONS_DIR)) {
 // Store active sockets in memory
 const activeSockets: Record<string, any> = {};
 
+interface BackendResponse {
+    uploadUrl?: string;
+    [key: string]: any;
+}
+
 // Helper to update backend
-async function updateBackend(body: any) {
+async function updateBackend(body: any): Promise<BackendResponse | null> {
     try {
         const response = await fetch(BACKEND_URL, {
             method: 'POST',
@@ -64,7 +68,7 @@ async function updateBackend(body: any) {
         } else {
             console.log(`[Worker DEBUG] Successfully synced ${body.action} with backend.`);
             try {
-                return await response.json();
+                return await response.json() as BackendResponse;
             } catch (e) {
                 return null;
             }
@@ -82,7 +86,7 @@ async function uploadMedia(businessId: string, message: proto.IWebMessageInfo) {
     try {
         console.log(`[Worker] Downloading media of type: ${messageType}`);
         const buffer = await downloadMediaMessage(
-            message,
+            message as any,
             'buffer',
             {},
             { 
@@ -103,9 +107,10 @@ async function uploadMedia(businessId: string, message: proto.IWebMessageInfo) {
         }
 
         // 2. Upload to Convex
+        const messageContent = message.message ? (message.message as any)[messageType] : null;
         const uploadResponse = await fetch(urlResponse.uploadUrl, {
             method: 'POST',
-            headers: { 'Content-Type': message.message?.[messageType as keyof proto.IMessage]?.mimetype || 'application/octet-stream' },
+            headers: { 'Content-Type': messageContent?.mimetype || 'application/octet-stream' },
             body: buffer
         });
 
@@ -114,7 +119,7 @@ async function uploadMedia(businessId: string, message: proto.IWebMessageInfo) {
             return null;
         }
 
-        const { storageId } = await uploadResponse.json();
+        const { storageId } = await uploadResponse.json() as { storageId: string };
         console.log(`[Worker] Media uploaded successfully: ${storageId}`);
         return storageId;
     } catch (error) {
@@ -209,7 +214,6 @@ async function startSession(businessId: string) {
             if (!remoteJid) continue;
             
             const isGroup = remoteJid.endsWith('@g.us');
-            const sender = remoteJid.split('@')[0];
             const name = contactMap.get(remoteJid) || chat.name;
             
             // Find the latest message for this chat in the synced messages
@@ -287,11 +291,11 @@ async function startSession(businessId: string) {
                await updateBackend({
                    action: 'syncStatus',
                    businessId,
-                   sender: msg.pushName || msg.key.participant || "Unknown",
+                   sender: msg.pushName || (msg.key.participant as string) || "Unknown",
                    content,
                    mediaId,
                    mediaType: Object.keys(msg.message || {})[0],
-                   timestamp: (msg.messageTimestamp as number) * 1000 || Date.now()
+                   timestamp: ((msg.messageTimestamp as number) || 0) * 1000 || Date.now()
                });
                continue;
            }
