@@ -24,15 +24,15 @@ const SETTINGS_GROUPS: SettingsGroup[] = [
   {
     title: "Account",
     items: [
-      { id: "business", label: "Business Profile", icon: <Building size={18} />, color: "text-blue-400", bg: "bg-blue-500/10" },
-      { id: "notifications", label: "Notifications", icon: <Bell size={18} />, color: "text-emerald-400", bg: "bg-emerald-500/10" },
-      { id: "security", label: "Security", icon: <Shield size={18} />, color: "text-purple-400", bg: "bg-purple-500/10" },
+      { id: "business", label: "Business Profile", icon: <Building size={18} />, color: "text-slate-400", bg: "bg-slate-800/40" },
+      { id: "notifications", label: "Notifications", icon: <Bell size={18} />, color: "text-slate-400", bg: "bg-slate-800/40" },
+      { id: "security", label: "Security", icon: <Shield size={18} />, color: "text-slate-400", bg: "bg-slate-800/40" },
     ]
   },
   {
     title: "App",
     items: [
-      { id: "theme", label: "Appearance", icon: <Moon size={18} />, color: "text-orange-400", bg: "bg-orange-500/10", right: "Dark" },
+      { id: "theme", label: "Appearance", icon: <Moon size={18} />, color: "text-slate-400", bg: "bg-slate-800/40", right: "Dark" },
     ]
   }
 ];
@@ -97,12 +97,14 @@ export default function SettingsPage() {
                     onClick={() => setActiveTab(item.id)}
                     className={`w-full flex items-center justify-between p-3 rounded-xl transition-all duration-200 group ${
                       activeTab === item.id 
-                        ? "bg-slate-800 text-white font-semibold shadow-inner border border-slate-700" 
-                        : "hover:bg-slate-800/50 text-slate-400 border border-transparent"
+                        ? "bg-slate-800/80 text-white font-semibold shadow-inner border border-emerald-500/20" 
+                        : "hover:bg-slate-800/40 text-slate-400 border border-transparent"
                     }`}
                   >
                     <div className="flex items-center gap-3">
-                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${item.bg} ${item.color}`}>
+                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${
+                        activeTab === item.id ? "bg-emerald-500/15 text-emerald-500" : `${item.bg} ${item.color} group-hover:bg-slate-700/50 group-hover:text-slate-300`
+                      }`}>
                         {item.icon}
                       </div>
                       <span className="text-sm">{item.label}</span>
@@ -127,7 +129,7 @@ export default function SettingsPage() {
             {activeTab === "business" && (
               <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
                 <div className="flex items-center gap-3 mb-2">
-                  <div className="p-2 bg-blue-500/10 text-blue-500 rounded-lg">
+                  <div className="p-2 bg-emerald-500/10 text-emerald-500 rounded-lg">
                     <Building size={20} />
                   </div>
                   <h3 className="text-xl font-bold text-white">Business Profile</h3>
@@ -145,7 +147,7 @@ export default function SettingsPage() {
                       type="text" 
                       value={bizName}
                       onChange={(e) => setBizName(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all font-medium"
+                      className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all font-medium"
                       placeholder="e.g. Acme Tech"
                       required
                     />
@@ -159,7 +161,7 @@ export default function SettingsPage() {
                       type="text" 
                       value={bizIndustry}
                       onChange={(e) => setBizIndustry(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all font-medium"
+                      className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all font-medium"
                       placeholder="e.g. Electronics, Fashion"
                     />
                   </div>
@@ -168,7 +170,7 @@ export default function SettingsPage() {
                     <button 
                       type="submit" 
                       disabled={isSaving || !business}
-                      className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:hover:bg-blue-600 text-white font-bold py-2.5 px-6 rounded-xl transition-colors shadow-lg shadow-blue-900/20"
+                      className="btn-primary flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {isSaving ? (
                         <div className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin" />
