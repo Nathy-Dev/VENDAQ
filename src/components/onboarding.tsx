@@ -53,7 +53,6 @@ export default function Onboarding({ initialStep = 0 }: OnboardingProps) {
   const [selectedMode, setSelectedMode] = useState<'official' | 'unofficial' | null>(null);
   const [usePairingCode, setUsePairingCode] = useState(false);
   const [phoneNumber, setPhoneNumber] = useState("");
-  const [localPairingCode, setLocalPairingCode] = useState<string | null>(null);
   const [isGeneratingCode, setIsGeneratingCode] = useState(false);
   
   const router = useRouter();
@@ -118,12 +117,11 @@ export default function Onboarding({ initialStep = 0 }: OnboardingProps) {
     if (!phoneNumber || !existingBusiness) return;
     setIsGeneratingCode(true);
     try {
-        const code = await requestPairingCode({
+        await requestPairingCode({
             businessId: existingBusiness._id,
             phone: phoneNumber
         });
-        // We can show it instantly from the returned value
-        setLocalPairingCode(code);
+        // The worker will push the code to Convex, and qrData will update
     } catch (e) {
         console.error("Failed to request pairing code", e);
     } finally {
@@ -314,7 +312,7 @@ export default function Onboarding({ initialStep = 0 }: OnboardingProps) {
                     </div>
                 ) : (
                     <div className={styles.phoneInputContainer}>
-                        {!(localPairingCode || qrData?.pairingCode) ? (
+                        {!qrData?.pairingCode ? (
                             <>
                                 <input 
                                     className={styles.phoneInput}
@@ -327,14 +325,14 @@ export default function Onboarding({ initialStep = 0 }: OnboardingProps) {
                                     disabled={!phoneNumber || isGeneratingCode}
                                     onClick={handleRequestPairingCode}
                                 >
-                                    {isGeneratingCode ? "Generating..." : "Generate Pairing Code"}
+                                    {isGeneratingCode ? "Initiating Pairing..." : "Generate Pairing Code"}
                                 </button>
-                                <p className={styles.helpText}> Enter the full phone number (with +) of the account you want to link.</p>
+                                <p className={styles.helpText}> Enter your phone number (e.g., +234...) and we will generate a secure link code.</p>
                             </>
                         ) : (
                             <>
                                 <div className={styles.pairingCodeBox}>
-                                    <span className={styles.codeChar}>{localPairingCode || qrData?.pairingCode}</span>
+                                    <span className={styles.codeChar}>{qrData.pairingCode}</span>
                                 </div>
                                 <p className={styles.helpText} style={{ textAlign: 'center', marginTop: '1rem' }}>
                                     Open WhatsApp on your phone → Settings → Linked Devices → Link with phone number instead → Enter this code.
@@ -344,7 +342,7 @@ export default function Onboarding({ initialStep = 0 }: OnboardingProps) {
                                     style={{ marginTop: '0.5rem' }}
                                     onClick={() => {
                                         setPhoneNumber("");
-                                        setLocalPairingCode(null);
+                                        // We don't have localPairingCode anymore, just reset phone
                                     }} 
                                 >
                                     Use a different number
