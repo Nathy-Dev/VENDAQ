@@ -292,7 +292,11 @@ export const sendMessageAction = action({
         }
     } catch (e) {
         console.error("[Convex Action] Failed to connect to worker:", e);
-        throw new Error(`Failed to reach WhatsApp worker at ${workerUrl}. Ensure the worker is running and the URL is correct.`);
+        const isLocal = workerUrl.includes("localhost") || workerUrl.includes("127.0.0.1");
+        const extraInfo = isLocal 
+            ? " If you are running Convex in the cloud, it cannot reach 'localhost'. Use a tool like ngrok to create a public tunnel to your worker and set its URL in the Convex dashboard."
+            : "";
+        throw new Error(`Failed to reach WhatsApp worker at ${workerUrl}.${extraInfo} Original error: ${e instanceof Error ? e.message : String(e)}`);
     }
 
     return messageId;
