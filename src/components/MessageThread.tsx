@@ -58,7 +58,7 @@ export default function MessageThread({ chat, businessId, onBack }: MessageThrea
     
     // Optimistic Update
     const tempId = `temp-${Date.now()}`;
-    const optimisticMsg = {
+    const optimisticMsg: OptimisticMessage = {
         _id: tempId,
         role: "owner",
         content,
