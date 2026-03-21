@@ -114,7 +114,14 @@ export default function Onboarding({ initialStep = 0 }: OnboardingProps) {
   };
 
   const handleRequestPairingCode = async () => {
-    if (!phoneNumber || !existingBusiness) return;
+    console.log("[Onboarding] Requesting pairing code for:", phoneNumber);
+    if (!phoneNumber) return;
+    if (!existingBusiness) {
+        console.error("[Onboarding] Business not found yet. Query may still be loading.");
+        alert("Business profile is still loading. Please wait a moment and try again.");
+        return;
+    }
+    
     setIsGeneratingCode(true);
     try {
         await requestPairingCode({
