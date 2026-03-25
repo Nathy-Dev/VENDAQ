@@ -278,7 +278,7 @@ export const syncHistory = mutation({
     
     return { success: true, count: args.history.length };
   },
-});
+}); 
 
 // Added for Full WhatsApp System
 export const generateUploadUrl = mutation({
