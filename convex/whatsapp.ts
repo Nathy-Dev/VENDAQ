@@ -3,6 +3,18 @@ import { mutation, query, internalMutation, action } from "./_generated/server";
 import { api } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 
+function isRawName(name: string | undefined, phone: string): boolean {
+    if (!name || name === "Group Chat") return true;
+    if (name.includes('@')) return true;
+    if (name === phone || name === phone.split('@')[0]) return true;
+    
+    // Check if it's strictly digits, spaces, dashes, or plus signs (a raw phone number)
+    const cleaned = name.replace(/[\s\-\(\)\+]/g, '');
+    if (/^\d+$/.test(cleaned)) return true;
+    
+    return false;
+}
+
 // Called by the external Node.js Worker to emit the generated QR code
 export const updateQRCode = mutation({
   args: {
@@ -88,8 +100,10 @@ export const updateContactName = mutation({
 
     if (customer) {
         // Only update if the new name is better than the current one
-        const currentIsRaw = customer.name?.includes('@') || customer.name === customer.phone || !customer.name;
-        if (currentIsRaw && args.name && args.name !== args.phone) {
+        const currentIsRaw = isRawName(customer.name, customer.phone);
+        const newIsRaw = isRawName(args.name, args.phone);
+        
+        if (currentIsRaw && !newIsRaw && args.name) {
             await ctx.db.patch(customer._id, { name: args.name });
         }
     } else {
@@ -149,11 +163,11 @@ export const receiveMessage = mutation({
         const patchData: any = { lastInteraction: args.timestamp };
         if (args.groupMetadata) patchData.groupMetadata = args.groupMetadata;
         
-        // Update name if we have a new one and the current one is just a phone number/JID
-        const isCurrentNameJid = customer.name?.includes('@') || customer.name === customer.phone;
-        const isNewNameBetter = args.name && !args.name.includes('@') && args.name !== args.sender;
+        // Update name if we have a new one and the current one is primitive
+        const currentIsRaw = isRawName(customer.name, customer.phone);
+        const newIsRaw = isRawName(args.name, args.sender);
         
-        if (isNewNameBetter && (isCurrentNameJid || customer.name === "Group Chat")) {
+        if (currentIsRaw && !newIsRaw && args.name) {
             patchData.name = args.name;
         }
         
