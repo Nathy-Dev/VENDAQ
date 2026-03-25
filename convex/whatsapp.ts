@@ -59,6 +59,18 @@ export const getBusinessQR = query({
     };
   },
 });
+
+// Called by the worker on boot to auto-connect active sessions
+export const getConnectedBusinesses = query({
+  args: {},
+  handler: async (ctx) => {
+    const businesses = await ctx.db.query("businesses")
+      .filter((q) => q.eq(q.field("whatsappStatus"), "connected"))
+      .collect();
+    return businesses.map(b => ({ _id: b._id }));
+  },
+});
+
 // Called by the worker to sync a new incoming message
 export const receiveMessage = mutation({
   args: {

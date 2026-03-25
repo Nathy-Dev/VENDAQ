@@ -15,47 +15,149 @@ dotenv_1.default.config();
 const app = (0, express_1.default)();
 app.use((0, cors_1.default)());
 app.use(express_1.default.json());
-const PORT = process.env.PORT || 3001;
-const SESSIONS_DIR = path_1.default.join(__dirname, '../sessions');
-// The Convex HTTP actions endpoint format: <CONVEX_URL>/api/mutation_name
-// Since we don't have HTTP actions setup yet, we will use a workaround or we need to setup HTTP actions in Convex.
-// Wait, Convex mutations can be called directly if we use the convex client, but in a raw node script it's easier to use fetch with HTTP Actions.
-// Let's actually create the fetch calls to a standard Next.js API route as a proxy, OR set up Convex HTTP actions. 
-// Actually, setting up Convex HTTP actions is best practices for external webhooks. Let's use a placeholder URL for now and we will create a Next.js API route to proxy to Convex.
-// Wait, the client is already running on localhost:3000. It's much easier to just create an API route in Next.js.
-const NEXT_JS_URL = 'http://localhost:3000/api/worker';
+const PORT = process.env.PORT || 3005;
+const SESSIONS_DIR = process.env.SESSIONS_PATH || path_1.default.join(__dirname, '../sessions');
+// Health Check for Render/Fly.io
+app.get('/', (req, res) => {
+    res.json({ status: 'active', service: 'wa-worker' });
+});
+// Configuration for Backend (Direct Convex HTTP Actions or Next.js Proxy)
+// The Convex HTTP actions endpoint format: https://<deployment-name>.convex.site/api/worker
+const CONVEX_SITE_URL = process.env.CONVEX_SITE_URL || 'https://original-sparrow-842.eu-west-1.convex.site';
+const NEXT_JS_URL = process.env.NEXT_JS_URL || 'http://localhost:3000/api/worker';
+const BACKEND_URL = process.env.NODE_ENV === 'production' || !!process.env.RAILWAY_ENVIRONMENT
+    ? `${CONVEX_SITE_URL}/api/worker`
+    : NEXT_JS_URL;
+console.log(`[Worker] Using backend for sync: ${BACKEND_URL}`);
 // Ensure sessions directory exists
 if (!fs_1.default.existsSync(SESSIONS_DIR)) {
     fs_1.default.mkdirSync(SESSIONS_DIR, { recursive: true });
 }
 // Store active sockets in memory
 const activeSockets = {};
+const retries = {};
+class MessageQueue {
+    constructor() {
+        this.queue = [];
+        this.isProcessing = false;
+    }
+    add(task) {
+        this.queue.push(task);
+        this.process();
+    }
+    async process() {
+        if (this.isProcessing)
+            return;
+        this.isProcessing = true;
+        while (this.queue.length > 0) {
+            const task = this.queue.shift();
+            if (task) {
+                try {
+                    await task();
+                    // Add jitter delay (500ms - 1500ms)
+                    await new Promise(r => setTimeout(r, 500 + Math.random() * 1000));
+                }
+                catch (e) {
+                    console.error("[Worker] Queue task failed", e);
+                }
+            }
+        }
+        this.isProcessing = false;
+    }
+}
+const messageQueues = {};
 // Helper to update backend
 async function updateBackend(body) {
     try {
-        const response = await fetch(NEXT_JS_URL, {
+        const response = await fetch(BACKEND_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body)
         });
         if (!response.ok) {
             const errorText = await response.text();
-            console.error(`[Worker] Failed to sync with backend. Status: ${response.status}`, errorText);
+            console.error(`[Worker DEBUG] Failed to sync ${body.action} with backend. Status: ${response.status}`, errorText);
+            return null;
+        }
+        else {
+            console.log(`[Worker DEBUG] Successfully synced ${body.action} with backend.`);
+            try {
+                return await response.json();
+            }
+            catch (e) {
+                return null;
+            }
         }
     }
     catch (e) {
-        console.error('[Worker] Failed to connect to backend:', e.message);
+        console.error('[Worker DEBUG] Failed to connect to backend:', e.message);
+        return null;
     }
 }
-async function startSession(businessId) {
-    console.log(`[Worker] Starting session for business: ${businessId}`);
+async function uploadMedia(businessId, message) {
+    const messageType = Object.keys(message.message || {})[0];
+    if (!['imageMessage', 'videoMessage', 'audioMessage', 'documentMessage'].includes(messageType))
+        return null;
+    try {
+        console.log(`[Worker] Downloading media of type: ${messageType}`);
+        const buffer = await (0, baileys_1.downloadMediaMessage)(message, 'buffer', {}, {
+            logger: (0, pino_1.default)({ level: 'silent' }),
+            reuploadRequest: activeSockets[businessId].updateMediaMessage
+        });
+        // 1. Get upload URL from Convex
+        const urlResponse = await updateBackend({
+            action: 'generateUploadUrl',
+            businessId
+        });
+        if (!urlResponse || !urlResponse.uploadUrl) {
+            console.error("[Worker] Failed to get upload URL");
+            return null;
+        }
+        // 2. Upload to Convex
+        const messageContent = message.message ? message.message[messageType] : null;
+        const uploadResponse = await fetch(urlResponse.uploadUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': messageContent?.mimetype || 'application/octet-stream' },
+            body: buffer
+        });
+        if (!uploadResponse.ok) {
+            console.error("[Worker] Failed to upload media to Convex");
+            return null;
+        }
+        const { storageId } = await uploadResponse.json();
+        console.log(`[Worker] Media uploaded successfully: ${storageId}`);
+        return storageId;
+    }
+    catch (error) {
+        console.error("[Worker] Error uploading media:", error);
+        return null;
+    }
+}
+async function startSession(businessId, pairingNumber) {
+    console.log(`[Worker] Starting session for business: ${businessId}${pairingNumber ? ` with pairing number ${pairingNumber}` : ""}`);
     // Path for this specific business's auth state
     const sessionPath = path_1.default.join(SESSIONS_DIR, `session-${businessId}`);
+    // If we want to pair by phone, we MUST have a clean slate
+    if (pairingNumber && fs_1.default.existsSync(sessionPath)) {
+        console.log(`[Worker] Clearing existing session for fresh pairing: ${sessionPath}`);
+        fs_1.default.rmSync(sessionPath, { recursive: true, force: true });
+    }
     const { state, saveCreds } = await (0, baileys_1.useMultiFileAuthState)(sessionPath);
+    // Fetch the latest version to avoid 405 errors
+    const { version, isLatest } = await (0, baileys_1.fetchLatestBaileysVersion)();
+    console.log(`[Worker] Using WhatsApp Web version: ${version.join('.')}, isLatest: ${isLatest}`);
     const sock = (0, baileys_1.makeWASocket)({
+        version,
         auth: state,
-        logger: (0, pino_1.default)({ level: 'silent' }) // Suppress noisy logs
+        logger: (0, pino_1.default)({ level: 'info' }), // Re-enabled logs for debugging
+        browser: ["Ubuntu", "Chrome", "20.0.04"],
+        syncFullHistory: true,
+        shouldSyncHistoryMessage: () => true
     });
+    if (pairingNumber && !state.creds.registered) {
+        // We will handle this in the request handler for immediate feedback
+        console.log(`[Worker] Socket ready for pairing request: ${businessId}`);
+    }
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
         if (qr) {
@@ -70,39 +172,230 @@ async function startSession(businessId) {
             });
         }
         if (connection === 'close') {
-            const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== baileys_1.DisconnectReason.loggedOut;
-            console.log(`[Worker] Connection closed for ${businessId}: ${shouldReconnect ? 'reconnecting' : 'logged out'}`);
+            const errorReason = lastDisconnect?.error?.output?.statusCode;
+            console.log(`[Worker] Connection closed for ${businessId}: Reason: ${errorReason}`);
+            if (activeSockets[businessId]?.ws) {
+                try {
+                    activeSockets[businessId].ws.close();
+                }
+                catch (e) { }
+            }
             delete activeSockets[businessId];
-            // Reconnect if not explicitly logged out
-            if (shouldReconnect) {
-                setTimeout(() => startSession(businessId), 3000);
+            if (errorReason === baileys_1.DisconnectReason.loggedOut) {
+                console.log(`[Worker] Device logged out for ${businessId}`);
+                await updateBackend({ action: 'updateStatus', businessId, status: 'disconnected' });
+                if (fs_1.default.existsSync(sessionPath))
+                    fs_1.default.rmSync(sessionPath, { recursive: true, force: true });
+                delete retries[businessId];
+            }
+            else if (errorReason === baileys_1.DisconnectReason.restartRequired) {
+                console.log(`[Worker] Restart required for ${businessId}, restarting immediately`);
+                startSession(businessId);
             }
             else {
-                // Update backend to disconnected
-                await updateBackend({
-                    action: 'updateStatus',
-                    businessId,
-                    status: 'disconnected'
-                });
-                // Clean up session files if logged out to force re-scan
-                fs_1.default.rmSync(sessionPath, { recursive: true, force: true });
-                console.log(`[Worker] Deleted session files for ${businessId}`);
+                const currentRetry = retries[businessId] || 0;
+                retries[businessId] = currentRetry + 1;
+                // Exponential backoff: 5s, 7.5s, 11.25s... up to 1 minute
+                const retryMs = Math.min(5000 * Math.pow(1.5, currentRetry), 60000);
+                console.log(`[Worker] Reconnecting in ${retryMs}ms for ${businessId} (Retry ${currentRetry + 1})`);
+                setTimeout(() => startSession(businessId), retryMs);
             }
         }
         else if (connection === 'open') {
             console.log(`[Worker] Connection opened for business: ${businessId}`);
+            delete retries[businessId];
             // Update backend to connected
             await updateBackend({
                 action: 'updateStatus',
                 businessId,
                 status: 'connected'
             });
+            // Ensure queue exists
+            if (!messageQueues[businessId]) {
+                messageQueues[businessId] = new MessageQueue();
+            }
         }
     });
     sock.ev.on('creds.update', saveCreds);
-    // TODO: Handle incoming messages
+    sock.ev.on('contacts.upsert', async (contacts) => {
+        for (const contact of contacts) {
+            const name = contact.name || contact.verifiedName || contact.publicName || contact.notify;
+            if (name && contact.id) {
+                console.log(`[Worker] Updating contact name for ${contact.id}: ${name}`);
+                await updateBackend({
+                    action: 'updateContactName',
+                    businessId,
+                    phone: contact.id,
+                    name: name,
+                    isGroup: contact.id.endsWith('@g.us'),
+                });
+            }
+        }
+    });
+    // Handle historical sync (like WhatsApp Web)
+    sock.ev.on('messaging-history.set', async ({ chats, contacts, messages }) => {
+        console.log(`[Worker DEBUG] Received history sync: ${chats.length} chats, ${contacts.length} contacts, ${messages.length} messages`);
+        const syncData = [];
+        const contactMap = new Map();
+        contacts.forEach(c => {
+            const name = c.name || c.verifiedName || c.publicName || c.notify;
+            if (name) {
+                contactMap.set(c.id, name);
+                contactMap.set(c.id.split('@')[0], name);
+            }
+        });
+        // Also try to get names from messages (pushName)
+        messages.forEach(m => {
+            if (m.key.remoteJid && m.pushName) {
+                contactMap.set(m.key.remoteJid, m.pushName);
+                contactMap.set(m.key.remoteJid.split('@')[0], m.pushName);
+            }
+        });
+        for (const chat of chats) {
+            const remoteJid = chat.id;
+            if (!remoteJid)
+                continue;
+            const isGroup = remoteJid.endsWith('@g.us');
+            const idKey = remoteJid.split('@')[0];
+            const name = contactMap.get(remoteJid) || contactMap.get(idKey) || chat.name || (isGroup ? "Group Chat" : idKey);
+            // Sync the last 10 messages for each chat
+            const chatMessages = messages
+                .filter(m => m.key && m.key.remoteJid === remoteJid)
+                .sort((a, b) => (a.messageTimestamp || 0) - (b.messageTimestamp || 0))
+                .slice(-10);
+            if (chatMessages.length === 0) {
+                // If no messages found, still record the chat existence
+                if (chat.lastMessageRecvTimestamp) {
+                    syncData.push({
+                        sender: remoteJid,
+                        content: "Existing conversation",
+                        timestamp: chat.lastMessageRecvTimestamp * 1000,
+                        fromMe: false,
+                        name,
+                        isGroup,
+                        messageType: "text"
+                    });
+                }
+                continue;
+            }
+            for (const msg of chatMessages) {
+                const content = msg.message?.conversation ||
+                    msg.message?.extendedTextMessage?.text ||
+                    msg.message?.imageMessage?.caption ||
+                    msg.message?.videoMessage?.caption ||
+                    "[Media]";
+                let messageType = "text";
+                if (msg.message?.imageMessage)
+                    messageType = "image";
+                else if (msg.message?.videoMessage)
+                    messageType = "video";
+                else if (msg.message?.audioMessage)
+                    messageType = "audio";
+                else if (msg.message?.documentMessage)
+                    messageType = "document";
+                syncData.push({
+                    sender: remoteJid,
+                    content,
+                    timestamp: (msg.messageTimestamp || 0) * 1000 || Date.now(),
+                    fromMe: !!msg.key.fromMe,
+                    name,
+                    isGroup,
+                    messageType
+                });
+            }
+        }
+        if (syncData.length > 0) {
+            for (let i = 0; i < syncData.length; i += 25) {
+                const chunk = syncData.slice(i, i + 25);
+                await updateBackend({
+                    action: 'syncHistory',
+                    businessId,
+                    history: chunk
+                });
+            }
+        }
+    });
+    // Handle incoming messages
     sock.ev.on('messages.upsert', async (m) => {
-        console.log(`[Worker] Received message for ${businessId}`);
+        if (m.type !== 'notify')
+            return;
+        for (const msg of m.messages) {
+            const remoteJid = msg.key.remoteJid;
+            if (!remoteJid)
+                continue;
+            // Handle Status
+            if (remoteJid === 'status@broadcast') {
+                console.log(`[Worker] New status from ${msg.pushName || msg.key.participant}`);
+                const mediaId = await uploadMedia(businessId, msg);
+                const content = msg.message?.conversation ||
+                    msg.message?.extendedTextMessage?.text ||
+                    msg.message?.imageMessage?.caption ||
+                    msg.message?.videoMessage?.caption;
+                await updateBackend({
+                    action: 'syncStatus',
+                    businessId,
+                    sender: msg.pushName || msg.key.participant || "Unknown",
+                    content,
+                    mediaId,
+                    mediaType: Object.keys(msg.message || {})[0],
+                    timestamp: (msg.messageTimestamp || 0) * 1000 || Date.now()
+                });
+                continue;
+            }
+            const isGroup = remoteJid.endsWith('@g.us');
+            let content = msg.message?.conversation ||
+                msg.message?.extendedTextMessage?.text ||
+                msg.message?.imageMessage?.caption ||
+                msg.message?.videoMessage?.caption;
+            let messageType = "text";
+            if (msg.message?.imageMessage)
+                messageType = "image";
+            else if (msg.message?.videoMessage)
+                messageType = "video";
+            else if (msg.message?.audioMessage)
+                messageType = "audio";
+            else if (msg.message?.documentMessage)
+                messageType = "document";
+            if (!content && messageType === "text")
+                continue;
+            if (!content)
+                content = `[${messageType}]`;
+            console.log(`[Worker] New message from ${remoteJid}: ${content.substring(0, 30)}...`);
+            let mediaId = undefined;
+            if (messageType !== "text") {
+                mediaId = await uploadMedia(businessId, msg);
+            }
+            let groupMetadata = undefined;
+            if (isGroup) {
+                try {
+                    const metadata = await sock.groupMetadata(remoteJid);
+                    groupMetadata = {
+                        owner: metadata.owner,
+                        participants: metadata.participants.map(p => p.id)
+                    };
+                }
+                catch (e) {
+                    console.error(`[Worker] Failed to fetch group metadata for ${remoteJid}`);
+                }
+            }
+            // Extract the best available display name
+            const contactName = msg.pushName || (isGroup ? undefined : undefined);
+            // Forward to backend
+            await updateBackend({
+                action: 'newMessage',
+                businessId,
+                sender: remoteJid,
+                content,
+                timestamp: msg.messageTimestamp * 1000 || Date.now(),
+                fromMe: msg.key.fromMe,
+                isGroup,
+                groupMetadata,
+                messageType,
+                mediaId,
+                fileName: msg.message?.documentMessage?.fileName,
+                name: contactName
+            });
+        }
     });
     activeSockets[businessId] = sock;
     return { success: true, message: `Session starting for ${businessId}` };
@@ -123,15 +416,118 @@ app.post('/session/start', async (req, res) => {
     }
     catch (error) {
         console.error(`[Worker] Error starting session for ${businessId}:`, error);
-        res.status(500).json({ error: error.message });
+        res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
     }
 });
-// Check status of a session
-app.get('/session/status/:businessId', (req, res) => {
-    const { businessId } = req.params;
-    const isActive = !!activeSockets[businessId];
-    res.json({ businessId, active: isActive });
+// Health check
+app.get("/", (req, res) => {
+    res.send("PIPELIXR WhatsApp Worker is running");
 });
-app.listen(PORT, () => {
+// Pairing code request
+app.post("/pairing/request", async (req, res) => {
+    const { businessId, phone } = req.body;
+    if (!businessId || !phone) {
+        return res.status(400).json({ error: "Missing businessId or phone" });
+    }
+    const sock = activeSockets[businessId];
+    if (sock) {
+        console.log(`[Worker] Closing existing session to allow fresh pairing for ${businessId}`);
+        try {
+            // Check if socket/ws exists before closing
+            if (sock.ws)
+                sock.ws.close();
+            delete activeSockets[businessId];
+        }
+        catch (e) {
+            console.error(`[Worker] Error closing socket:`, e);
+        }
+    }
+    try {
+        console.log(`[Worker] Initiating fresh pairing for ${businessId} with phone ${phone}`);
+        await startSession(businessId, phone);
+        // Wait a small bit for socket to be ready
+        const sock = activeSockets[businessId];
+        if (!sock)
+            throw new Error("Failed to initialize socket");
+        console.log(`[Worker] Requesting code from Baileys...`);
+        // Add a timeout for the Baileys request itself
+        const codePromise = sock.requestPairingCode(phone.replace(/\D/g, ''));
+        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Baileys pairing code request timed out")), 15000));
+        const code = await Promise.race([codePromise, timeoutPromise]);
+        console.log(`[Worker] Generated pairing code: ${code}`);
+        // Sync to backend anyway for permanence
+        await updateBackend({
+            action: 'updatePairingCode',
+            businessId,
+            pairingCode: code
+        });
+        res.json({ success: true, code });
+    }
+    catch (error) {
+        console.error(`[Worker] Pairing initiation error for ${businessId}:`, error);
+        res.status(500).json({ error: String(error) });
+    }
+});
+// Outgoing message endpoint
+app.post('/message/send', async (req, res) => {
+    const { businessId, to, content } = req.body;
+    if (!businessId || !to || !content) {
+        return res.status(400).json({ error: 'businessId, to, and content are required' });
+    }
+    const sock = activeSockets[businessId];
+    if (!sock) {
+        return res.status(404).json({ error: `No active session for business ${businessId}` });
+    }
+    try {
+        // Ensure ID is properly formatted for WhatsApp
+        // 1. Strip '+' if present
+        const cleanTo = to.startsWith('+') ? to.substring(1) : to;
+        // 2. Add suffix if not present
+        const jid = cleanTo.includes('@') ? cleanTo : `${cleanTo}@s.whatsapp.net`;
+        if (!sock.user) {
+            return res.status(503).json({ error: 'WhatsApp session is active but not fully connected' });
+        }
+        const task = async () => {
+            console.log(`[Worker] Attempting to send message to JID: "${jid}"`);
+            console.log(`[Worker] Content: "${content.substring(0, 50)}${content.length > 50 ? '...' : ''}"`);
+            const result = await sock.sendMessage(jid, { text: content });
+            console.log(`[Worker] Message sent successfully. Baileys result ID: ${result?.key?.id}`);
+        };
+        if (!messageQueues[businessId]) {
+            messageQueues[businessId] = new MessageQueue();
+        }
+        messageQueues[businessId].add(task);
+        res.json({ success: true, queued: true });
+    }
+    catch (error) {
+        console.error(`[Worker] Error sending message for ${businessId}:`, error);
+        res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+});
+const http_1 = __importDefault(require("http"));
+const server = http_1.default.createServer(app);
+async function initWorker() {
+    console.log("[Worker] Initializing worker, fetching connected businesses...");
+    try {
+        const response = await updateBackend({ action: 'getConnectedBusinesses' });
+        if (response && response.businesses) {
+            for (const business of response.businesses) {
+                console.log(`[Worker] Auto-starting session for ${business._id}`);
+                startSession(business._id);
+                // Stagger starts slightly to avoid thundering herd
+                await new Promise(r => setTimeout(r, 1000));
+            }
+        }
+    }
+    catch (e) {
+        console.error("[Worker] Failed to fetch connected businesses on boot", e);
+    }
+}
+server.listen(PORT, () => {
     console.log(`WhatsApp Worker running on port ${PORT}`);
+    initWorker();
 });
+// Force event loop to stay alive
+setInterval(() => {
+    // Keep alive
+}, 1000 * 60 * 60);

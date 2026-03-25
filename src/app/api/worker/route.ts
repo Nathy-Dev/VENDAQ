@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { fetchMutation } from "convex/nextjs";
+import { fetchMutation, fetchQuery } from "convex/nextjs";
 import { api } from "../../../../convex/_generated/api";
 import { Id } from "../../../../convex/_generated/dataModel";
 
@@ -7,6 +7,11 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
     const { action, businessId, qrCodeString, status } = body;
+
+    if (action === 'getConnectedBusinesses') {
+        const businesses = await fetchQuery(api.whatsapp.getConnectedBusinesses);
+        return NextResponse.json({ success: true, businesses });
+    }
 
     if (!businessId || typeof businessId !== 'string') {
         return NextResponse.json({ error: "Invalid businessId provided" }, { status: 400 });

@@ -46,6 +46,36 @@ if (!fs.existsSync(SESSIONS_DIR)) {
 
 // Store active sockets in memory
 const activeSockets: Record<string, any> = {};
+const retries: Record<string, number> = {};
+
+class MessageQueue {
+    queue: (() => Promise<void>)[] = [];
+    isProcessing = false;
+    
+    add(task: () => Promise<void>) {
+        this.queue.push(task);
+        this.process();
+    }
+    
+    async process() {
+        if (this.isProcessing) return;
+        this.isProcessing = true;
+        while (this.queue.length > 0) {
+            const task = this.queue.shift();
+            if (task) {
+                try {
+                    await task();
+                    // Add jitter delay (500ms - 1500ms)
+                    await new Promise(r => setTimeout(r, 500 + Math.random() * 1000));
+                } catch (e) {
+                    console.error("[Worker] Queue task failed", e);
+                }
+            }
+        }
+        this.isProcessing = false;
+    }
+}
+const messageQueues: Record<string, MessageQueue> = {};
 
 interface BackendResponse {
     uploadUrl?: string;
@@ -178,35 +208,44 @@ async function startSession(businessId: string, pairingNumber?: string) {
         
         if (connection === 'close') {
             const errorReason = (lastDisconnect?.error as Boom)?.output?.statusCode;
-            const shouldReconnect = errorReason !== DisconnectReason.loggedOut;
-            console.log(`[Worker] Connection closed for ${businessId}: ${shouldReconnect ? 'reconnecting' : 'logged out'}, Reason: ${errorReason}`);
+            console.log(`[Worker] Connection closed for ${businessId}: Reason: ${errorReason}`);
             
+            if (activeSockets[businessId]?.ws) {
+                try {
+                    activeSockets[businessId].ws.close();
+                } catch (e) {}
+            }
             delete activeSockets[businessId];
-            
-            // Reconnect if not explicitly logged out
-            if (shouldReconnect) {
-                setTimeout(() => startSession(businessId), 5000);
-            } else {
-                // Update backend to disconnected
-                await updateBackend({
-                    action: 'updateStatus',
-                    businessId,
-                    status: 'disconnected'
-                });
 
-                // Clean up session files if logged out to force re-scan
-                if (fs.existsSync(sessionPath)) {
-                    fs.rmSync(sessionPath, { recursive: true, force: true });
-                }
+            if (errorReason === DisconnectReason.loggedOut) {
+                console.log(`[Worker] Device logged out for ${businessId}`);
+                await updateBackend({ action: 'updateStatus', businessId, status: 'disconnected' });
+                if (fs.existsSync(sessionPath)) fs.rmSync(sessionPath, { recursive: true, force: true });
+                delete retries[businessId];
+            } else if (errorReason === DisconnectReason.restartRequired) {
+                console.log(`[Worker] Restart required for ${businessId}, restarting immediately`);
+                startSession(businessId);
+            } else {
+                const currentRetry = retries[businessId] || 0;
+                retries[businessId] = currentRetry + 1;
+                // Exponential backoff: 5s, 7.5s, 11.25s... up to 1 minute
+                const retryMs = Math.min(5000 * Math.pow(1.5, currentRetry), 60000);
+                console.log(`[Worker] Reconnecting in ${retryMs}ms for ${businessId} (Retry ${currentRetry + 1})`);
+                setTimeout(() => startSession(businessId), retryMs);
             }
         } else if (connection === 'open') {
             console.log(`[Worker] Connection opened for business: ${businessId}`);
+            delete retries[businessId];
             // Update backend to connected
             await updateBackend({
                 action: 'updateStatus',
                 businessId,
                 status: 'connected'
             });
+            // Ensure queue exists
+            if (!messageQueues[businessId]) {
+                messageQueues[businessId] = new MessageQueue();
+            }
         }
     });
 
@@ -512,15 +551,21 @@ app.post('/message/send', async (req, res) => {
             return res.status(503).json({ error: 'WhatsApp session is active but not fully connected' });
         }
         
-        console.log(`[Worker] Attempting to send message to JID: "${jid}"`);
-        console.log(`[Worker] Content: "${content.substring(0, 50)}${content.length > 50 ? '...' : ''}"`);
+        const task = async () => {
+            console.log(`[Worker] Attempting to send message to JID: "${jid}"`);
+            console.log(`[Worker] Content: "${content.substring(0, 50)}${content.length > 50 ? '...' : ''}"`);
+            
+            const result = await sock.sendMessage(jid, { text: content });
+            
+            console.log(`[Worker] Message sent successfully. Baileys result ID: ${result?.key?.id}`);
+        };
+
+        if (!messageQueues[businessId]) {
+            messageQueues[businessId] = new MessageQueue();
+        }
+        messageQueues[businessId].add(task);
         
-        const result = await sock.sendMessage(jid, { text: content });
-        
-        console.log(`[Worker] Message sent successfully. Baileys result ID: ${result?.key?.id}`);
-        console.log(`[Worker] Full result key:`, JSON.stringify(result?.key));
-        
-        res.json({ success: true, messageId: result?.key?.id });
+        res.json({ success: true, queued: true });
     } catch (error: unknown) {
         console.error(`[Worker] Error sending message for ${businessId}:`, error);
         res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
@@ -531,11 +576,29 @@ import http from 'http';
 
 const server = http.createServer(app);
 
+async function initWorker() {
+    console.log("[Worker] Initializing worker, fetching connected businesses...");
+    try {
+        const response = await updateBackend({ action: 'getConnectedBusinesses' });
+        if (response && response.businesses) {
+            for (const business of response.businesses) {
+                console.log(`[Worker] Auto-starting session for ${business._id}`);
+                startSession(business._id);
+                // Stagger starts slightly to avoid thundering herd
+                await new Promise(r => setTimeout(r, 1000));
+            }
+        }
+    } catch (e) {
+        console.error("[Worker] Failed to fetch connected businesses on boot", e);
+    }
+}
+
 server.listen(PORT, () => {
     console.log(`WhatsApp Worker running on port ${PORT}`);
+    initWorker();
 });
 
-// Force event loop to stay alive (Wait workaround for Node 24 / ts-node clean exit issue)
+// Force event loop to stay alive
 setInterval(() => {
    // Keep alive
 }, 1000 * 60 * 60);
