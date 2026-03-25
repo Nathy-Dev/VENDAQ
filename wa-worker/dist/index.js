@@ -366,6 +366,14 @@ async function startSession(businessId, pairingNumber) {
             const remoteJid = msg.key.remoteJid;
             if (!remoteJid)
                 continue;
+            // Skip messages to/from ourselves (prevents phantom self-chat)
+            const myJid = sock.user?.id;
+            const myNumber = myJid?.split(':')[0]?.split('@')[0];
+            const remoteNumber = remoteJid.split('@')[0].split(':')[0];
+            if (myNumber && remoteNumber === myNumber) {
+                console.log(`[Worker] Skipping self-message to ${remoteJid}`);
+                continue;
+            }
             // Handle Status
             if (remoteJid === 'status@broadcast') {
                 console.log(`[Worker] New status from ${msg.pushName || msg.key.participant}`);
