@@ -269,12 +269,30 @@ async function startSession(businessId: string, pairingNumber?: string) {
         }
     });
 
+    sock.ev.on('contacts.update', async (updates) => {
+        for (const update of updates) {
+            const name = (update as any).name || (update as any).verifiedName || (update as any).notify;
+            if (name && update.id) {
+                console.log(`[Worker] contacts.update for ${update.id}: ${name}`);
+                await updateBackend({
+                    action: 'updateContactName',
+                    businessId,
+                    phone: update.id,
+                    name: name,
+                    isGroup: update.id.endsWith('@g.us'),
+                });
+            }
+        }
+    });
+
     // Handle historical sync (like WhatsApp Web)
     sock.ev.on('messaging-history.set', async ({ chats, contacts, messages }) => {
         console.log(`[Worker DEBUG] Received history sync: ${chats.length} chats, ${contacts.length} contacts, ${messages.length} messages`);
         
         const syncData: any[] = [];
-        const contactMap = new Map();
+        const contactMap = new Map<string, string>();
+
+        // 1. Build name map from contacts
         contacts.forEach(c => {
             const name = c.name || c.verifiedName || (c as any).publicName || (c as any).notify;
             if (name) {
@@ -283,13 +301,41 @@ async function startSession(businessId: string, pairingNumber?: string) {
             }
         });
 
-        // Also try to get names from messages (pushName)
+        // 2. Also pull names from messages (pushName)
         messages.forEach(m => {
             if (m.key.remoteJid && m.pushName) {
-                contactMap.set(m.key.remoteJid, m.pushName);
-                contactMap.set(m.key.remoteJid.split('@')[0], m.pushName);
+                // Only set if we don't already have a better name from contacts
+                if (!contactMap.has(m.key.remoteJid)) {
+                    contactMap.set(m.key.remoteJid, m.pushName);
+                    contactMap.set(m.key.remoteJid.split('@')[0], m.pushName);
+                }
             }
         });
+
+        // 3. Also pull names from chat objects (Baileys chat.name)
+        chats.forEach(chat => {
+            if (chat.id && chat.name && !contactMap.has(chat.id)) {
+                contactMap.set(chat.id, chat.name);
+                contactMap.set(chat.id.split('@')[0], chat.name);
+            }
+        });
+
+        // 4. Aggressively push ALL resolved names to the backend
+        const sentNames = new Set<string>();
+        for (const [jid, name] of contactMap) {
+            // Only send for full JIDs (not bare number keys), and deduplicate
+            if (jid.includes('@') && !sentNames.has(jid)) {
+                sentNames.add(jid);
+                await updateBackend({
+                    action: 'updateContactName',
+                    businessId,
+                    phone: jid,
+                    name: name,
+                    isGroup: jid.endsWith('@g.us'),
+                });
+            }
+        }
+        console.log(`[Worker] Pushed ${sentNames.size} contact names to backend from history sync`);
 
         for (const chat of chats) {
             const remoteJid = chat.id;
@@ -297,7 +343,7 @@ async function startSession(businessId: string, pairingNumber?: string) {
             
             const isGroup = remoteJid.endsWith('@g.us');
             const idKey = remoteJid.split('@')[0];
-            const name = contactMap.get(remoteJid) || contactMap.get(idKey) || chat.name || (isGroup ? "Group Chat" : idKey);
+            const name = contactMap.get(remoteJid) || contactMap.get(idKey) || chat.name || (isGroup ? "Group Chat" : undefined);
             
             // Sync the last 10 messages for each chat
             const chatMessages = messages
@@ -339,7 +385,7 @@ async function startSession(businessId: string, pairingNumber?: string) {
                     content,
                     timestamp: ((msg.messageTimestamp as number) || 0) * 1000 || Date.now(),
                     fromMe: !!msg.key.fromMe,
-                    name,
+                    name: name || msg.pushName,
                     isGroup,
                     messageType
                 });
@@ -423,7 +469,18 @@ async function startSession(businessId: string, pairingNumber?: string) {
            }
 
            // Extract the best available display name
-           const contactName = msg.pushName || (isGroup ? undefined : undefined);
+           const contactName = msg.pushName || undefined;
+
+           // If we got a pushName, also proactively sync it as the contact name
+           if (msg.pushName && !msg.key.fromMe) {
+               updateBackend({
+                   action: 'updateContactName',
+                   businessId,
+                   phone: remoteJid,
+                   name: msg.pushName,
+                   isGroup,
+               });
+           }
 
            // Forward to backend
            await updateBackend({

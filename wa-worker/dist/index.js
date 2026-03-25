@@ -150,7 +150,7 @@ async function startSession(businessId, pairingNumber) {
         version,
         auth: state,
         logger: (0, pino_1.default)({ level: 'info' }), // Re-enabled logs for debugging
-        browser: ["Ubuntu", "Chrome", "20.0.04"],
+        browser: ["PIPELIXR", "Chrome", "1.0.0"],
         syncFullHistory: true,
         shouldSyncHistoryMessage: () => true
     });
@@ -181,8 +181,9 @@ async function startSession(businessId, pairingNumber) {
                 catch (e) { }
             }
             delete activeSockets[businessId];
-            if (errorReason === baileys_1.DisconnectReason.loggedOut) {
-                console.log(`[Worker] Device logged out for ${businessId}`);
+            const isLoggedOut = errorReason === baileys_1.DisconnectReason.loggedOut || errorReason === 403;
+            if (isLoggedOut) {
+                console.log(`[Worker] Device logged out natively for ${businessId}`);
                 await updateBackend({ action: 'updateStatus', businessId, status: 'disconnected' });
                 if (fs_1.default.existsSync(sessionPath))
                     fs_1.default.rmSync(sessionPath, { recursive: true, force: true });
@@ -232,11 +233,27 @@ async function startSession(businessId, pairingNumber) {
             }
         }
     });
+    sock.ev.on('contacts.update', async (updates) => {
+        for (const update of updates) {
+            const name = update.name || update.verifiedName || update.notify;
+            if (name && update.id) {
+                console.log(`[Worker] contacts.update for ${update.id}: ${name}`);
+                await updateBackend({
+                    action: 'updateContactName',
+                    businessId,
+                    phone: update.id,
+                    name: name,
+                    isGroup: update.id.endsWith('@g.us'),
+                });
+            }
+        }
+    });
     // Handle historical sync (like WhatsApp Web)
     sock.ev.on('messaging-history.set', async ({ chats, contacts, messages }) => {
         console.log(`[Worker DEBUG] Received history sync: ${chats.length} chats, ${contacts.length} contacts, ${messages.length} messages`);
         const syncData = [];
         const contactMap = new Map();
+        // 1. Build name map from contacts
         contacts.forEach(c => {
             const name = c.name || c.verifiedName || c.publicName || c.notify;
             if (name) {
@@ -244,20 +261,46 @@ async function startSession(businessId, pairingNumber) {
                 contactMap.set(c.id.split('@')[0], name);
             }
         });
-        // Also try to get names from messages (pushName)
+        // 2. Also pull names from messages (pushName)
         messages.forEach(m => {
             if (m.key.remoteJid && m.pushName) {
-                contactMap.set(m.key.remoteJid, m.pushName);
-                contactMap.set(m.key.remoteJid.split('@')[0], m.pushName);
+                // Only set if we don't already have a better name from contacts
+                if (!contactMap.has(m.key.remoteJid)) {
+                    contactMap.set(m.key.remoteJid, m.pushName);
+                    contactMap.set(m.key.remoteJid.split('@')[0], m.pushName);
+                }
             }
         });
+        // 3. Also pull names from chat objects (Baileys chat.name)
+        chats.forEach(chat => {
+            if (chat.id && chat.name && !contactMap.has(chat.id)) {
+                contactMap.set(chat.id, chat.name);
+                contactMap.set(chat.id.split('@')[0], chat.name);
+            }
+        });
+        // 4. Aggressively push ALL resolved names to the backend
+        const sentNames = new Set();
+        for (const [jid, name] of contactMap) {
+            // Only send for full JIDs (not bare number keys), and deduplicate
+            if (jid.includes('@') && !sentNames.has(jid)) {
+                sentNames.add(jid);
+                await updateBackend({
+                    action: 'updateContactName',
+                    businessId,
+                    phone: jid,
+                    name: name,
+                    isGroup: jid.endsWith('@g.us'),
+                });
+            }
+        }
+        console.log(`[Worker] Pushed ${sentNames.size} contact names to backend from history sync`);
         for (const chat of chats) {
             const remoteJid = chat.id;
             if (!remoteJid)
                 continue;
             const isGroup = remoteJid.endsWith('@g.us');
             const idKey = remoteJid.split('@')[0];
-            const name = contactMap.get(remoteJid) || contactMap.get(idKey) || chat.name || (isGroup ? "Group Chat" : idKey);
+            const name = contactMap.get(remoteJid) || contactMap.get(idKey) || chat.name || (isGroup ? "Group Chat" : undefined);
             // Sync the last 10 messages for each chat
             const chatMessages = messages
                 .filter(m => m.key && m.key.remoteJid === remoteJid)
@@ -298,7 +341,7 @@ async function startSession(businessId, pairingNumber) {
                     content,
                     timestamp: (msg.messageTimestamp || 0) * 1000 || Date.now(),
                     fromMe: !!msg.key.fromMe,
-                    name,
+                    name: name || msg.pushName,
                     isGroup,
                     messageType
                 });
@@ -379,7 +422,17 @@ async function startSession(businessId, pairingNumber) {
                 }
             }
             // Extract the best available display name
-            const contactName = msg.pushName || (isGroup ? undefined : undefined);
+            const contactName = msg.pushName || undefined;
+            // If we got a pushName, also proactively sync it as the contact name
+            if (msg.pushName && !msg.key.fromMe) {
+                updateBackend({
+                    action: 'updateContactName',
+                    businessId,
+                    phone: remoteJid,
+                    name: msg.pushName,
+                    isGroup,
+                });
+            }
             // Forward to backend
             await updateBackend({
                 action: 'newMessage',

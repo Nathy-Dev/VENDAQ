@@ -210,6 +210,10 @@ export const syncHistory = mutation({
     console.log(`[Convex] Syncing history for business ${args.businessId}, ${args.history.length} items`);
     
     for (const item of args.history) {
+      // Determine if the incoming name is actually useful (not a LID/raw number)
+      const incomingNameIsReal = item.name && !isRawName(item.name, item.sender);
+      const displayName = incomingNameIsReal ? item.name : undefined;
+
       // 1. Find or create the customer
       let customer = await ctx.db
         .query("customers")
@@ -222,7 +226,7 @@ export const syncHistory = mutation({
         const customerId = await ctx.db.insert("customers", {
           businessId: args.businessId,
           phone: item.sender,
-          name: item.name || item.sender, 
+          name: displayName || item.sender, 
           isGroup: item.isGroup,
           totalValue: 0,
           lastInteraction: item.timestamp,
@@ -230,12 +234,20 @@ export const syncHistory = mutation({
         });
         customer = await ctx.db.get(customerId);
       } else {
+          const patchData: Record<string, unknown> = {};
+          
           // Update last interaction if this one is newer
           if (item.timestamp > customer.lastInteraction) {
-            await ctx.db.patch(customer._id, {
-                lastInteraction: item.timestamp,
-                name: item.name || customer.name, 
-            });
+            patchData.lastInteraction = item.timestamp;
+          }
+          
+          // Update name if old one looks raw and new one is real
+          if (displayName && isRawName(customer.name, customer.phone)) {
+            patchData.name = displayName;
+          }
+          
+          if (Object.keys(patchData).length > 0) {
+            await ctx.db.patch(customer._id, patchData);
           }
       }
 
