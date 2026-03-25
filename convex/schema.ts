@@ -27,7 +27,8 @@ export default defineSchema({
     totalValue: v.number(),
     lastInteraction: v.number(),
     tags: v.array(v.string()),
-  }).index("by_business_phone", ["businessId", "phone"]),
+  }).index("by_business_phone", ["businessId", "phone"])
+    .index("by_business_last_interaction", ["businessId", "lastInteraction"]),
 
   orders: defineTable({
     businessId: v.id("businesses"),

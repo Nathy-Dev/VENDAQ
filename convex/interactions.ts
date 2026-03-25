@@ -20,25 +20,24 @@ export const getChatMessages = query({
 export const getRecentChats = query({
     args: { businessId: v.id("businesses") },
     handler: async (ctx, args) => {
-      // Get the latest interaction for each customer
-      const interactions = await ctx.db
-        .query("interactions")
-        .filter(q => q.eq(q.field("businessId"), args.businessId))
+      // 1. Get the 100 most recently active customers using our new index
+      // This avoids scanning thousands of interactions, making the query instant.
+      const customers = await ctx.db
+        .query("customers")
+        .withIndex("by_business_last_interaction", (q) => q.eq("businessId", args.businessId))
         .order("desc")
-        .collect();
+        .take(100);
 
-      const latestByCustomer = new Map();
-      for (const interaction of interactions) {
-        if (!latestByCustomer.has(interaction.customerId)) {
-          latestByCustomer.set(interaction.customerId, interaction);
-        }
-      }
-
-      // Fetch customer details for these interactions
       const results = [];
-      for (const [customerId, lastInteraction] of latestByCustomer.entries()) {
-        const customer = await ctx.db.get(customerId);
-        if (customer) {
+      for (const customer of customers) {
+        // 2. Fetch only the ONE most recent message for this specific customer
+        const lastInteraction = await ctx.db
+          .query("interactions")
+          .withIndex("by_customer", (q) => q.eq("customerId", customer._id))
+          .order("desc")
+          .first();
+
+        if (lastInteraction) {
           results.push({
             ...customer,
             lastMessage: lastInteraction.content,
@@ -49,7 +48,7 @@ export const getRecentChats = query({
         }
       }
 
-      return results.sort((a, b) => b.lastMessageTimestamp - a.lastMessageTimestamp);
+      return results;
     },
 });
 
