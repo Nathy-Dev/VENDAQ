@@ -180,7 +180,7 @@ async function startSession(businessId: string, pairingNumber?: string) {
         version,
         auth: state,
         logger: pino({ level: 'info' }) as any, // Re-enabled logs for debugging
-        browser: ["Ubuntu", "Chrome", "20.0.04"],
+        browser: ["PIPELIXR", "Chrome", "1.0.0"],
         syncFullHistory: true,
         shouldSyncHistoryMessage: () => true
     });
@@ -217,8 +217,10 @@ async function startSession(businessId: string, pairingNumber?: string) {
             }
             delete activeSockets[businessId];
 
-            if (errorReason === DisconnectReason.loggedOut) {
-                console.log(`[Worker] Device logged out for ${businessId}`);
+            const isLoggedOut = errorReason === DisconnectReason.loggedOut || errorReason === 403;
+
+            if (isLoggedOut) {
+                console.log(`[Worker] Device logged out natively for ${businessId}`);
                 await updateBackend({ action: 'updateStatus', businessId, status: 'disconnected' });
                 if (fs.existsSync(sessionPath)) fs.rmSync(sessionPath, { recursive: true, force: true });
                 delete retries[businessId];
