@@ -44,6 +44,17 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: true });
     }
 
+    if (action === 'updateContactName') {
+        const { phone, name, isGroup } = body;
+        await fetchMutation(api.whatsapp.updateContactName, {
+            businessId: businessId as Id<"businesses">,
+            phone,
+            name,
+            isGroup: !!isGroup,
+        });
+        return NextResponse.json({ success: true });
+    }
+
     if (action === 'newMessage') {
         const { sender, content, timestamp, fromMe, isGroup, groupMetadata, messageType, mediaId, fileName, name } = body;
         await fetchMutation(api.whatsapp.receiveMessage, {

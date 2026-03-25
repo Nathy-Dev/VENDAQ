@@ -71,6 +71,41 @@ export const getConnectedBusinesses = query({
   },
 });
 
+export const updateContactName = mutation({
+  args: {
+    businessId: v.id("businesses"),
+    phone: v.string(),
+    name: v.string(),
+    isGroup: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const customer = await ctx.db
+      .query("customers")
+      .withIndex("by_business_phone", (q) => 
+        q.eq("businessId", args.businessId).eq("phone", args.phone)
+      )
+      .unique();
+
+    if (customer) {
+        // Only update if the new name is better than the current one
+        const currentIsRaw = customer.name?.includes('@') || customer.name === customer.phone || !customer.name;
+        if (currentIsRaw && args.name && args.name !== args.phone) {
+            await ctx.db.patch(customer._id, { name: args.name });
+        }
+    } else {
+        await ctx.db.insert("customers", {
+            businessId: args.businessId,
+            phone: args.phone,
+            name: args.name,
+            isGroup: args.isGroup,
+            totalValue: 0,
+            lastInteraction: Date.now(),
+            tags: [args.isGroup ? "group" : "contact"],
+        });
+    }
+  },
+});
+
 // Called by the worker to sync a new incoming message
 export const receiveMessage = mutation({
   args: {
