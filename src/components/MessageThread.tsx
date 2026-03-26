@@ -44,6 +44,11 @@ export default function MessageThread({ chat, businessId, onBack }: MessageThrea
   const [isSending, setIsSending] = React.useState(false);
   const [optimisticMessages, setOptimisticMessages] = React.useState<OptimisticMessage[]>([]);
   const sendMessageAction = useAction(api.whatsapp.sendMessageAction);
+  const editMessageAction = useAction(api.whatsapp.editMessageAction);
+  const deleteMessageAction = useAction(api.whatsapp.deleteMessageAction);
+
+  const [editingMessageId, setEditingMessageId] = React.useState<string | null>(null);
+  const [editValue, setEditValue] = React.useState("");
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -54,8 +59,28 @@ export default function MessageThread({ chat, businessId, onBack }: MessageThrea
   const handleSendMessage = async () => {
     if (!inputValue.trim() || isSending) return;
 
+    if (editingMessageId) {
+        const msg = allMessages.find(m => m._id === editingMessageId);
+        if (msg && 'whatsappMessageId' in msg && msg.whatsappMessageId) {
+            try {
+                await editMessageAction({
+                    businessId: businessId as Id<"businesses">,
+                    customerId: chat._id,
+                    whatsappMessageId: msg.whatsappMessageId,
+                    newContent: inputValue.trim(),
+                });
+                setEditingMessageId(null);
+                setInputValue("");
+            } catch (e) {
+                console.error("Failed to edit message:", e);
+            }
+        }
+        return;
+    }
+
     setIsSending(true);
     const content = inputValue.trim();
+    // ...
     
     // Optimistic Update
     const tempId = `temp-${Date.now()}`;
@@ -146,7 +171,12 @@ export default function MessageThread({ chat, businessId, onBack }: MessageThrea
                  {('mediaId' in msg && msg.mediaId) && (
                    <MessageMedia mediaId={msg.mediaId} type={msg.messageType} fileName={('fileName' in msg ? msg.fileName : undefined)} />
                  )}
-                 <div className={styles.messageContent}>{msg.content}</div>
+                 <div className={styles.messageContent}>
+                    {msg.content}
+                    {'isEdited' in msg && msg.isEdited && (
+                        <span className={styles.editedLabel}> (edited)</span>
+                    )}
+                 </div>
                  <div className={styles.messageFooter}>
                     <div className={styles.messageTime}>
                         {format(new Date(msg.timestamp), "HH:mm")}
@@ -163,6 +193,32 @@ export default function MessageThread({ chat, businessId, onBack }: MessageThrea
                         </div>
                     )}
                  </div>
+                 
+                 {msg.role === "owner" && !('isOptimistic' in msg) && 'whatsappMessageId' in msg && msg.whatsappMessageId && (
+                    <div className={styles.messageActions}>
+                        <button onClick={() => {
+                            setEditingMessageId(msg._id);
+                            setInputValue(msg.content);
+                        }} title="Edit">
+                            <Smile size={12} /> 
+                        </button>
+                        <button onClick={async () => {
+                            if (confirm("Delete this message?")) {
+                                try {
+                                    await deleteMessageAction({
+                                        businessId: businessId as Id<"businesses">,
+                                        customerId: chat._id,
+                                        whatsappMessageId: msg.whatsappMessageId as string,
+                                    });
+                                } catch (e) {
+                                    console.error("Delete failed:", e);
+                                }
+                            }
+                        }} title="Delete">
+                            <MoreVertical size={12} />
+                        </button>
+                    </div>
+                 )}
                </div>
              </div>
            ))

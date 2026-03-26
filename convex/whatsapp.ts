@@ -137,9 +137,45 @@ export const receiveMessage = mutation({
     mediaId: v.optional(v.string()),
     fileName: v.optional(v.string()),
     name: v.optional(v.string()),
+    whatsappMessageId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    // 1. Find or create the customer (or group)
+    // 1. Deduplication: Check if this message already exists
+    if (args.whatsappMessageId) {
+      const existing = await ctx.db
+        .query("interactions")
+        .withIndex("by_whatsapp_id", (q) => q.eq("whatsappMessageId", args.whatsappMessageId))
+        .first();
+      if (existing) {
+        console.log(`[receiveMessage] Deduplicated message: ${args.whatsappMessageId}`);
+        return { success: true, messageId: existing._id };
+      }
+    } else {
+      // Fallback deduplication: same customer, content, and very close timestamp (within 2s)
+      const customer = await ctx.db
+        .query("customers")
+        .withIndex("by_business_phone", (q) => 
+          q.eq("businessId", args.businessId).eq("phone", args.sender)
+        )
+        .unique();
+      
+      if (customer) {
+        const dupe = await ctx.db
+          .query("interactions")
+          .withIndex("by_customer", (q) => q.eq("customerId", customer._id))
+          .filter((q) => q.and(
+            q.eq(q.field("content"), args.content),
+            q.gt(q.field("timestamp"), args.timestamp - 2000),
+            q.lt(q.field("timestamp"), args.timestamp + 2000)
+          ))
+          .first();
+        if (dupe) {
+          return { success: true, messageId: dupe._id };
+        }
+      }
+    }
+
+    // 2. Find or create the customer (or group)
     let customer = await ctx.db
       .query("customers")
       .withIndex("by_business_phone", (q) => 
@@ -186,6 +222,7 @@ export const receiveMessage = mutation({
       messageType: args.messageType || "text",
       mediaId: args.mediaId,
       fileName: args.fileName,
+      whatsappMessageId: args.whatsappMessageId,
     });
     
     return { success: true };
@@ -280,6 +317,32 @@ export const syncHistory = mutation({
   },
 }); 
 
+export const updateMessage = mutation({
+  args: {
+    businessId: v.id("businesses"),
+    whatsappMessageId: v.string(),
+    content: v.optional(v.string()),
+    isDeleted: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("interactions")
+      .withIndex("by_whatsapp_id", (q) => q.eq("whatsappMessageId", args.whatsappMessageId))
+      .first();
+
+    if (!existing) {
+      console.warn(`[updateMessage] Message not found: ${args.whatsappMessageId}`);
+      return;
+    }
+
+    if (args.isDeleted) {
+      await ctx.db.patch(existing._id, { content: "🚫 This message was deleted", isEdited: true });
+    } else if (args.content) {
+      await ctx.db.patch(existing._id, { content: args.content, isEdited: true });
+    }
+  },
+});
+
 // Added for Full WhatsApp System
 export const generateUploadUrl = mutation({
   args: {},
@@ -331,6 +394,7 @@ export const sendMessage = mutation({
     businessId: v.id("businesses"),
     customerId: v.id("customers"),
     content: v.string(),
+    whatsappMessageId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const customer = await ctx.db.get(args.customerId);
@@ -343,6 +407,7 @@ export const sendMessage = mutation({
       content: args.content,
       timestamp: Date.now(),
       messageType: "text",
+      whatsappMessageId: args.whatsappMessageId,
     });
 
     return { messageId, customerPhone: customer.phone };
@@ -395,6 +460,70 @@ export const sendMessageAction = action({
     }
 
     return messageId;
+  },
+});
+
+export const editMessageAction = action({
+  args: {
+    businessId: v.id("businesses"),
+    customerId: v.id("customers"),
+    whatsappMessageId: v.string(),
+    newContent: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const customer = await ctx.runQuery(api.interactions.getCustomerById, { 
+      businessId: args.businessId, 
+      customerId: args.customerId 
+    });
+    if (!customer) throw new Error("Customer not found");
+
+    const workerUrl = process.env.WHATSAPP_WORKER_URL || "http://localhost:3005";
+    
+    const response = await fetch(`${workerUrl}/message/edit`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        businessId: args.businessId,
+        to: customer.phone,
+        messageId: args.whatsappMessageId,
+        newContent: args.newContent,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Worker failed to edit message: ${await response.text()}`);
+    }
+  },
+});
+
+export const deleteMessageAction = action({
+  args: {
+    businessId: v.id("businesses"),
+    customerId: v.id("customers"),
+    whatsappMessageId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const customer = await ctx.runQuery(api.interactions.getCustomerById, { 
+        businessId: args.businessId, 
+        customerId: args.customerId 
+    });
+    if (!customer) throw new Error("Customer not found");
+
+    const workerUrl = process.env.WHATSAPP_WORKER_URL || "http://localhost:3005";
+    
+    const response = await fetch(`${workerUrl}/message/delete`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        businessId: args.businessId,
+        to: customer.phone,
+        messageId: args.whatsappMessageId,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Worker failed to delete message: ${await response.text()}`);
+    }
   },
 });
 

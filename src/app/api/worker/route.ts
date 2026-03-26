@@ -56,7 +56,7 @@ export async function POST(req: Request) {
     }
 
     if (action === 'newMessage') {
-        const { sender, content, timestamp, fromMe, isGroup, groupMetadata, messageType, mediaId, fileName, name } = body;
+        const { sender, content, timestamp, fromMe, isGroup, groupMetadata, messageType, mediaId, fileName, name, whatsappMessageId } = body;
         await fetchMutation(api.whatsapp.receiveMessage, {
             businessId: businessId as Id<"businesses">,
             sender,
@@ -68,7 +68,19 @@ export async function POST(req: Request) {
             messageType,
             mediaId,
             fileName,
-            name
+            name,
+            whatsappMessageId,
+        });
+        return NextResponse.json({ success: true });
+    }
+
+    if (action === 'updateMessage') {
+        const { whatsappMessageId, content, isDeleted } = body;
+        await fetchMutation(api.whatsapp.updateMessage, {
+            businessId: businessId as Id<"businesses">,
+            whatsappMessageId,
+            content,
+            isDeleted,
         });
         return NextResponse.json({ success: true });
     }

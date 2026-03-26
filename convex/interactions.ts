@@ -97,3 +97,15 @@ export const updateCustomerName = mutation({
     }
   },
 });
+
+export const getCustomerById = query({
+  args: { 
+    businessId: v.id("businesses"),
+    customerId: v.id("customers")
+  },
+  handler: async (ctx, args) => {
+    const customer = await ctx.db.get(args.customerId);
+    if (!customer || customer.businessId !== args.businessId) return null;
+    return customer;
+  },
+});

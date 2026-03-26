@@ -75,8 +75,11 @@ export default defineSchema({
     mediaUrl: v.optional(v.string()),
     mediaId: v.optional(v.string()), // Convex storage ID
     fileName: v.optional(v.string()),
+    whatsappMessageId: v.optional(v.string()), // Unique ID from Baileys
+    isEdited: v.optional(v.boolean()),
   }).index("by_business", ["businessId"])
-    .index("by_customer", ["customerId"]),
+    .index("by_customer", ["customerId"])
+    .index("by_whatsapp_id", ["whatsappMessageId"]),
 
   statuses: defineTable({
     businessId: v.id("businesses"),

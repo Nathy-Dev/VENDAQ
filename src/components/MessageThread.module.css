@@ -202,3 +202,46 @@
 .fileLink:hover {
     background: rgba(0, 0, 0, 0.3);
 }
+
+.editedLabel {
+    font-size: 0.7rem;
+    color: rgba(233, 237, 239, 0.4);
+    font-style: italic;
+    margin-left: 4px;
+}
+
+.messageBubble:hover .messageActions {
+    opacity: 1;
+}
+
+.messageActions {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    display: flex;
+    gap: 4px;
+    opacity: 0;
+    transition: opacity 0.2s;
+    background: rgba(32, 44, 51, 0.8);
+    backdrop-filter: blur(4px);
+    padding: 2px 4px;
+    border-radius: 4px;
+    z-index: 10;
+}
+
+.messageActions button {
+    background: transparent;
+    border: none;
+    color: #8696a0;
+    cursor: pointer;
+    padding: 2px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+}
+
+.messageActions button:hover {
+    background: rgba(255,255,255,0.1);
+    color: #e9edef;
+}
