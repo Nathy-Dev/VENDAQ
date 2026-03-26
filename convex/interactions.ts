@@ -37,15 +37,15 @@ export const getRecentChats = query({
           .order("desc")
           .first();
 
-        if (lastInteraction) {
-          results.push({
-            ...customer,
-            lastMessage: lastInteraction.content,
-            lastMessageTimestamp: lastInteraction.timestamp,
-            lastMessageType: lastInteraction.messageType,
-            lastMediaId: lastInteraction.mediaId,
-          });
-        }
+        // Include the customer even if no interaction is explicitly found in DB (e.g. sync gap)
+        // Fallback to customer.lastInteraction and a placeholder
+        results.push({
+          ...customer,
+          lastMessage: lastInteraction?.content || "Existing conversation",
+          lastMessageTimestamp: lastInteraction?.timestamp || customer.lastInteraction,
+          lastMessageType: lastInteraction?.messageType,
+          lastMediaId: lastInteraction?.mediaId,
+        });
       }
 
       return results;

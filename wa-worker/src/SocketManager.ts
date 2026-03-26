@@ -52,6 +52,9 @@ export class SocketManager {
         console.log(`[SocketManager] Starting session for ${businessId}`);
         const sessionPath = path.join(this.sessionsDir, `session-${businessId}`);
 
+        // Prevent duplicate sessions
+        await this.closeSession(businessId);
+
         if (pairingNumber && fs.existsSync(sessionPath)) {
             fs.rmSync(sessionPath, { recursive: true, force: true });
         }

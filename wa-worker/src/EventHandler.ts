@@ -26,7 +26,11 @@ export class EventHandler {
     static isMe(jid: string, sock: any): boolean {
         const myJid = sock.user?.id;
         if (!myJid) return false;
-        return this.normalizeJid(jid) === this.normalizeJid(myJid);
+        
+        const normJid = this.normalizeJid(jid);
+        const normMe = this.normalizeJid(myJid);
+        
+        return normJid === normMe;
     }
 
     static async onConnectionUpdate(businessId: string, update: any, sock: any, onRestart: (bid: string) => void) {
@@ -149,13 +153,13 @@ export class EventHandler {
                 sender: this.normalizeJid(remoteJid),
                 content,
                 timestamp: (msg.messageTimestamp as number) * 1000 || Date.now(),
-                fromMe: msg.key.fromMe,
+                fromMe: !!msg.key.fromMe,
                 isGroup,
                 groupMetadata,
                 messageType,
                 mediaId,
                 fileName: msg.message?.documentMessage?.fileName,
-                name: msg.pushName,
+                name: msg.key.fromMe ? undefined : msg.pushName, // Don't use our own name for recipients
                 whatsappMessageId: msg.key.id
             });
         }

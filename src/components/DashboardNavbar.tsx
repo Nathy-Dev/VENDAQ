@@ -104,13 +104,8 @@ export default function DashboardNavbar() {
                 </div>
                 
                 <div className="flex flex-col">
-                  {business?.whatsappStatus !== 'connected' ? (
-                    <div className="p-8 text-center text-slate-500 text-sm">
-                      <WifiOff size={24} className="mx-auto mb-2 text-red-500/70" />
-                      <p className="text-slate-300 font-bold mb-1">WhatsApp Disconnected</p>
-                      <p className="text-xs">Reconnect your device to see new notifications.</p>
-                    </div>
-                  ) : chats && chats.length > 0 ? (
+                  {chats && chats.length > 0 ? (
+                    chats.slice(0, 5).map(chat => (
                     chats.slice(0, 5).map(chat => (
                       <div 
                         key={chat._id} 
@@ -215,7 +210,7 @@ export default function DashboardNavbar() {
             </button>
           </div>
           <div className={styles.inboxContent}>
-            {business?.whatsappStatus !== 'connected' ? (
+            {(business?.whatsappStatus !== 'connected' && (!chats || chats.length === 0)) ? (
               <div className="flex flex-col items-center justify-center h-full text-slate-400 p-8 text-center" style={{ backgroundColor: '#020617', height: '100%' }}>
                 <WifiOff size={48} className="text-red-500/60 mb-6" />
                 <h3 className="text-xl font-bold text-slate-200 mb-3">WhatsApp is Disconnected</h3>
