@@ -276,4 +276,24 @@ export class EventHandler {
             }
         }
     }
+    
+    static async onMessageReceiptUpdate(businessId: string, receipts: any[]) {
+        for (const receipt of receipts) {
+            const { key, receipt: r } = receipt;
+            
+            // We only care about receipts for statuses (views)
+            if (key.remoteJid === 'status@broadcast' && !key.fromMe) {
+                const viewerPhone = this.normalizeJid(key.participant || key.remoteJid);
+                const whatsappStatusId = key.id;
+                
+                console.log(`[EventHandler] Status viewed by ${viewerPhone}: ${whatsappStatusId}`);
+                
+                await BackendService.syncStatusView(businessId, {
+                    whatsappStatusId,
+                    viewerPhone,
+                    timestamp: Date.now()
+                });
+            }
+        }
+    }
 }

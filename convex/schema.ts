@@ -26,6 +26,7 @@ export default defineSchema({
     })),
     totalValue: v.number(),
     lastInteraction: v.number(),
+    lastIntent: v.optional(v.string()), // Added for Status-to-Cash Engine
     tags: v.array(v.string()),
   }).index("by_business_phone", ["businessId", "phone"])
     .index("by_business_last_interaction", ["businessId", "lastInteraction"]),
@@ -89,7 +90,18 @@ export default defineSchema({
     mediaType: v.optional(v.string()),
     timestamp: v.number(),
     expiresAt: v.number(),
-  }).index("by_business", ["businessId"]),
+    whatsappMessageId: v.optional(v.string()),
+  }).index("by_business", ["businessId"])
+    .index("by_whatsapp_id", ["whatsappMessageId"]),
+
+  statusViews: defineTable({
+    businessId: v.id("businesses"),
+    statusId: v.optional(v.id("statuses")), // Can be empty if we don't have the status synced yet
+    whatsappStatusId: v.string(),
+    viewerPhone: v.string(),
+    timestamp: v.number(),
+  }).index("by_business", ["businessId"])
+    .index("by_status", ["whatsappStatusId"]),
 
 
   users: defineTable({

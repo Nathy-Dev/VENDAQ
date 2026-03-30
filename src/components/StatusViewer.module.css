@@ -1,0 +1,200 @@
+.container {
+  padding: 2rem;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.header {
+  margin-bottom: 2rem;
+  text-align: left;
+}
+
+.title {
+  font-size: 2.4rem;
+  font-weight: 800;
+  color: #e9edef;
+  margin-bottom: 0.5rem;
+  background: linear-gradient(135deg, #00a884 0%, #53bdeb 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.subtitle {
+  color: #8696a0;
+  font-size: 1.1rem;
+}
+
+.statusGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1.5rem;
+}
+
+.card {
+  background: #202c33;
+  border-radius: 1.2rem;
+  overflow: hidden;
+  border: 1px solid rgba(134, 150, 160, 0.1);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.2);
+}
+
+.statusPreview {
+  position: relative;
+  height: 200px;
+  background: #111b21;
+}
+
+.previewImage {
+  object-fit: cover;
+}
+
+.textStatus {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 1rem;
+  text-align: center;
+  font-size: 1.1rem;
+  color: #e9edef;
+  font-weight: 500;
+}
+
+.viewCount {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  background: rgba(0, 0, 0, 0.6);
+  padding: 0.4rem 0.8rem;
+  border-radius: 2rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: #e9edef;
+  font-size: 0.85rem;
+  backdrop-filter: blur(4px);
+}
+
+.cardContent {
+  padding: 1.2rem;
+}
+
+.statusMeta {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: #8696a0;
+  font-size: 0.85rem;
+  margin-bottom: 1rem;
+}
+
+.viewersList {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(134, 150, 160, 0.1);
+}
+
+.viewerHeading {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #00a884;
+  margin-bottom: 0.8rem;
+}
+
+.viewerItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0;
+}
+
+.viewerPhone {
+  color: #e9edef;
+  font-size: 0.9rem;
+}
+
+.convertBtn {
+  background: none;
+  border: none;
+  color: #00a884;
+  cursor: pointer;
+  padding: 0.4rem;
+  border-radius: 0.4rem;
+  transition: background 0.2s;
+}
+
+.convertBtn:hover {
+  background: rgba(0, 168, 132, 0.1);
+}
+
+.noViewers {
+  color: #667781;
+  font-size: 0.85rem;
+  font-style: italic;
+}
+
+.moreViewers {
+  color: #53bdeb;
+  font-size: 0.8rem;
+  margin-top: 0.4rem;
+}
+
+.retargetBtn {
+  width: 100%;
+  margin-top: 1.2rem;
+  background: linear-gradient(135deg, #00a884 0%, #008069 100%);
+  color: white;
+  border: none;
+  padding: 0.8rem;
+  border-radius: 0.6rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.retargetBtn:hover {
+  opacity: 0.9;
+}
+
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 4rem 2rem;
+  text-align: center;
+  background: #202c33;
+  border-radius: 1.2rem;
+  border: 1px dashed rgba(134, 150, 160, 0.3);
+}
+
+.emptyIcon {
+  color: #00a884;
+  margin-bottom: 1rem;
+}
+
+.emptyState h3 {
+  font-size: 1.4rem;
+  color: #e9edef;
+  margin-bottom: 0.5rem;
+}
+
+.emptyState p {
+  color: #8696a0;
+  max-width: 400px;
+}
+
+.loading {
+  padding: 4rem;
+  text-align: center;
+  color: #8696a0;
+}

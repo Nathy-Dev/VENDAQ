@@ -1,16 +1,15 @@
 "use client";
 
 import React, { useRef, useEffect } from "react";
-import { ArrowLeft, Send, User as UserIcon, MoreVertical, Smile, Paperclip, Check, CheckCheck, AlertCircle, Loader2 } from "lucide-react";
+import { ArrowLeft, Send, User as UserIcon, MoreVertical, Smile, Paperclip, Check, CheckCheck, AlertCircle, Loader2, Zap, X } from "lucide-react";
 import Image from "next/image";
-import { useQuery } from "convex/react";
+import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { ChatThread } from "@/types";
 import { Id } from "../../convex/_generated/dataModel";
 import { format } from "date-fns";
 import styles from "./MessageThread.module.css";
 import { formatDisplayName } from "@/utils/format";
-import { useAction } from "convex/react";
 
 interface MessageThreadProps {
   chat: ChatThread;
@@ -48,7 +47,11 @@ export default function MessageThread({ chat, businessId, onBack }: MessageThrea
   const deleteMessageAction = useAction(api.whatsapp.deleteMessageAction);
 
   const [editingMessageId, setEditingMessageId] = React.useState<string | null>(null);
-  const [editValue, setEditValue] = React.useState("");
+  
+  const [isOrderModalOpen, setIsOrderModalOpen] = React.useState(false);
+  const [orderAmount, setOrderAmount] = React.useState("");
+  const [orderItem, setOrderItem] = React.useState("");
+  const createOrder = useMutation(api.orders.createOrder);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -148,10 +151,26 @@ export default function MessageThread({ chat, businessId, onBack }: MessageThrea
            <UserIcon size={24} color="#e9edef" />
         </div>
         <div className={styles.userInfo}>
-           <div className={styles.userName}>{formatDisplayName(chat.name, chat.phone)}</div>
+           <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
+                <div className={styles.userName}>{formatDisplayName(chat.name, chat.phone)}</div>
+                {chat.lastIntent && (
+                    <span className={styles.intentBadge}>
+                        <Zap size={10} />
+                        {chat.lastIntent.replace('_', ' ')}
+                    </span>
+                )}
+           </div>
            <div className={styles.userStatus}>online</div>
         </div>
-        <div style={{ color: '#8696a0', display: 'flex', gap: '1.2rem' }}>
+        <div style={{ color: '#8696a0', display: 'flex', gap: '1.2rem', alignItems: 'center' }}>
+            <button 
+                className={styles.orderBtn}
+                onClick={() => setIsOrderModalOpen(true)}
+                title="Create Order"
+            >
+                <Zap size={18} />
+                <span>Order</span>
+            </button>
             <MoreVertical size={20} />
         </div>
       </header>
@@ -247,6 +266,68 @@ export default function MessageThread({ chat, businessId, onBack }: MessageThrea
           <Send size={24} />
         </button>
       </footer>
+
+      {isOrderModalOpen && (
+        <div className={styles.modalOverlay}>
+            <div className={styles.modal}>
+                <div className={styles.modalHeader}>
+                    <h3>Create New Order</h3>
+                    <button onClick={() => setIsOrderModalOpen(false)}><X size={20} /></button>
+                </div>
+                <div className={styles.modalBody}>
+                    <div className={styles.formGroup}>
+                        <label>Item Name</label>
+                        <input 
+                            type="text" 
+                            placeholder="e.g. Blue Sneakers" 
+                            value={orderItem}
+                            onChange={(e) => setOrderItem(e.target.value)}
+                        />
+                    </div>
+                    <div className={styles.formGroup}>
+                        <label>Amount (₦)</label>
+                        <input 
+                            type="number" 
+                            placeholder="0.00" 
+                            value={orderAmount}
+                            onChange={(e) => setOrderAmount(e.target.value)}
+                        />
+                    </div>
+                </div>
+                <div className={styles.modalFooter}>
+                    <button 
+                        className={styles.cancelBtn} 
+                        onClick={() => setIsOrderModalOpen(false)}
+                    >
+                        Cancel
+                    </button>
+                    <button 
+                        className={styles.confirmBtn}
+                        onClick={async () => {
+                            if (!orderAmount || !orderItem) return;
+                            try {
+                                await createOrder({
+                                    businessId: businessId as Id<"businesses">,
+                                    customerId: chat._id,
+                                    totalAmount: parseFloat(orderAmount),
+                                    items: [{ name: orderItem, quantity: 1, price: parseFloat(orderAmount) }],
+                                    status: "pending"
+                                });
+                                setIsOrderModalOpen(false);
+                                setOrderAmount("");
+                                setOrderItem("");
+                                alert("Order created successfully!");
+                            } catch (e) {
+                                console.error("Order creation failed:", e);
+                            }
+                        }}
+                    >
+                        Create Order
+                    </button>
+                </div>
+            </div>
+        </div>
+      )}
     </div>
   );
 }

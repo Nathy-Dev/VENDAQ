@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { query } from "./_generated/server";
+import { query, mutation } from "./_generated/server";
 
 export const getOrdersByBusiness = query({
   args: { businessId: v.id("businesses") },
@@ -28,5 +28,48 @@ export const getOrdersByBusiness = query({
       processing: enrichedOrders.filter(o => o.status === "processing" || o.status === "shipped"),
       delivered: enrichedOrders.filter(o => o.status === "delivered"),
     };
+  },
+});
+
+export const createOrder = mutation({
+  args: {
+    businessId: v.id("businesses"),
+    customerId: v.id("customers"),
+    totalAmount: v.number(),
+    items: v.array(v.object({
+        name: v.string(),
+        quantity: v.number(),
+        price: v.number(),
+    })),
+    status: v.optional(v.union(
+        v.literal("pending"),
+        v.literal("awaiting_payment"),
+        v.literal("paid"),
+        v.literal("processing"),
+        v.literal("shipped"),
+        v.literal("delivered"),
+        v.literal("cancelled")
+    )),
+  },
+  handler: async (ctx, args) => {
+    const orderId = await ctx.db.insert("orders", {
+      businessId: args.businessId,
+      customerId: args.customerId,
+      items: args.items,
+      totalAmount: args.totalAmount,
+      status: args.status || "pending",
+      createdAt: Date.now(),
+    });
+
+    // Update customer total value
+    const customer = await ctx.db.get(args.customerId);
+    if (customer) {
+        await ctx.db.patch(customer._id, {
+            totalValue: (customer.totalValue || 0) + args.totalAmount,
+            tags: customer.tags.includes("customer") ? customer.tags : [...customer.tags, "customer"]
+        });
+    }
+
+    return orderId;
   },
 });

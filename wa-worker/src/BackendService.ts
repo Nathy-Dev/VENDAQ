@@ -71,6 +71,10 @@ export class BackendService {
         return this.update({ action: 'syncStatus', businessId, ...data });
     }
 
+    static async syncStatusView(businessId: string, data: { whatsappStatusId: string, viewerPhone: string, timestamp: number }) {
+        return this.update({ action: 'syncStatusView', businessId, ...data });
+    }
+
     static async updateMessage(businessId: string, data: { whatsappMessageId: string, content?: string, isDeleted?: boolean }) {
         return this.update({ action: 'updateMessage', businessId, ...data });
     }

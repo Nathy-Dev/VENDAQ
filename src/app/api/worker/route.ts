@@ -97,6 +97,30 @@ export async function POST(req: Request) {
         
         return NextResponse.json({ success: true, count: history?.length || 0 });
     }
+    if (action === 'syncStatus') {
+        const { sender, content, mediaId, mediaType, timestamp, whatsappMessageId } = body;
+        await fetchMutation(api.whatsapp.syncStatus, {
+            businessId: businessId as Id<"businesses">,
+            sender,
+            content,
+            mediaId,
+            mediaType,
+            timestamp,
+            whatsappMessageId,
+        });
+        return NextResponse.json({ success: true });
+    }
+
+    if (action === 'syncStatusView') {
+        const { whatsappStatusId, viewerPhone, timestamp } = body;
+        await fetchMutation(api.whatsapp.syncStatusView, {
+            businessId: businessId as Id<"businesses">,
+            whatsappStatusId,
+            viewerPhone,
+            timestamp,
+        });
+        return NextResponse.json({ success: true });
+    }
 
 
 

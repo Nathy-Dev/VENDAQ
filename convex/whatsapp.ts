@@ -212,6 +212,23 @@ export const receiveMessage = mutation({
 
     if (!customer) return;
 
+    // --- Intent Detection (Status-to-Cash Engine) ---
+    const lowerContent = args.content.toLowerCase();
+    let intent: string | undefined = undefined;
+    
+    if (lowerContent.includes("price") || lowerContent.includes("how much") || lowerContent.includes("cost")) {
+        intent = "inquiry";
+    } else if (lowerContent.includes("buy") || lowerContent.includes("order") || lowerContent.includes("want")) {
+        intent = "purchase_intent";
+    } else if (lowerContent.includes("account") || lowerContent.includes("pay")) {
+        intent = "payment_inquiry";
+    }
+    
+    if (intent) {
+        await ctx.db.patch(customer._id, { lastIntent: intent });
+    }
+    // ------------------------------------------------
+
     // 2. Insert the interaction
     await ctx.db.insert("interactions", {
       businessId: args.businessId,
@@ -223,6 +240,7 @@ export const receiveMessage = mutation({
       mediaId: args.mediaId,
       fileName: args.fileName,
       whatsappMessageId: args.whatsappMessageId,
+      intent: intent, // Store detected intent in interaction too
     });
     
     return { success: true };
@@ -359,8 +377,18 @@ export const syncStatus = mutation({
     mediaId: v.optional(v.string()),
     mediaType: v.optional(v.string()),
     timestamp: v.number(),
+    whatsappMessageId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    // Deduplication for status
+    if (args.whatsappMessageId) {
+        const existing = await ctx.db
+            .query("statuses")
+            .withIndex("by_whatsapp_id", (q) => q.eq("whatsappMessageId", args.whatsappMessageId))
+            .first();
+        if (existing) return;
+    }
+
     // 24 hour expiry for statuses
     const expiresAt = args.timestamp + (24 * 60 * 60 * 1000);
     
@@ -372,7 +400,68 @@ export const syncStatus = mutation({
       mediaType: args.mediaType,
       timestamp: args.timestamp,
       expiresAt: expiresAt,
+      whatsappMessageId: args.whatsappMessageId,
     });
+  },
+});
+
+export const syncStatusView = mutation({
+  args: {
+    businessId: v.id("businesses"),
+    whatsappStatusId: v.string(),
+    viewerPhone: v.string(),
+    timestamp: v.number(),
+  },
+  handler: async (ctx, args) => {
+    // 1. Find the status if it exists
+    const status = await ctx.db
+        .query("statuses")
+        .withIndex("by_whatsapp_id", (q) => q.eq("whatsappMessageId", args.whatsappStatusId))
+        .first();
+
+    // 2. Deduplicate view
+    const existing = await ctx.db
+        .query("statusViews")
+        .withIndex("by_status", (q) => q.eq("whatsappStatusId", args.whatsappStatusId))
+        .filter((q) => q.eq(q.field("viewerPhone"), args.viewerPhone))
+        .first();
+    
+    if (existing) return;
+
+    // 3. Insert view
+    await ctx.db.insert("statusViews", {
+        businessId: args.businessId,
+        statusId: status?._id,
+        whatsappStatusId: args.whatsappStatusId,
+        viewerPhone: args.viewerPhone,
+        timestamp: args.timestamp,
+    });
+    
+    // 4. Update or create customer as a lead
+    let customer = await ctx.db
+        .query("customers")
+        .withIndex("by_business_phone", (q) => 
+            q.eq("businessId", args.businessId).eq("phone", args.viewerPhone)
+        )
+        .unique();
+    
+    if (!customer) {
+        await ctx.db.insert("customers", {
+            businessId: args.businessId,
+            phone: args.viewerPhone,
+            name: args.viewerPhone, // We don't have a name yet
+            totalValue: 0,
+            lastInteraction: args.timestamp,
+            tags: ["status-viewer", "new-lead"],
+        });
+    } else {
+        // Tag existing customer as status viewer if not already
+        if (!customer.tags.includes("status-viewer")) {
+            await ctx.db.patch(customer._id, {
+                tags: [...customer.tags, "status-viewer"]
+            });
+        }
+    }
   },
 });
 
@@ -385,6 +474,17 @@ export const getStatuses = query({
       .withIndex("by_business", (q) => q.eq("businessId", args.businessId))
       .filter((q) => q.gt(q.field("expiresAt"), now))
       .collect();
+  },
+});
+
+export const getStatusViews = query({
+  args: { businessId: v.id("businesses"), whatsappStatusId: v.string() },
+  handler: async (ctx, args) => {
+    return await ctx.db
+        .query("statusViews")
+        .withIndex("by_status", (q) => q.eq("whatsappStatusId", args.whatsappStatusId))
+        .filter((q) => q.eq(q.field("businessId"), args.businessId))
+        .collect();
   },
 });
 

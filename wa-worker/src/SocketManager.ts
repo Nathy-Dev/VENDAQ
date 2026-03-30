@@ -96,6 +96,10 @@ export class SocketManager {
             EventHandler.onMessagesUpdate(businessId, updates).catch(console.error);
         });
 
+        sock.ev.on('message-receipt.update', (receipts) => {
+            EventHandler.onMessageReceiptUpdate(businessId, receipts).catch(console.error);
+        });
+
         return sock;
     }
 

@@ -45,6 +45,7 @@ export const getRecentChats = query({
           lastMessageTimestamp: lastInteraction?.timestamp || customer.lastInteraction,
           lastMessageType: lastInteraction?.messageType,
           lastMediaId: lastInteraction?.mediaId,
+          lastIntent: lastInteraction?.intent || customer.lastIntent,
         });
       }
 

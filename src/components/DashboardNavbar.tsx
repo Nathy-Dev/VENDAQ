@@ -12,7 +12,8 @@ import {
   LayoutDashboard,
   MessageSquare,
   X,
-  WifiOff
+  WifiOff,
+  Zap
 } from "lucide-react";
 import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
@@ -106,7 +107,6 @@ export default function DashboardNavbar() {
                 <div className="flex flex-col">
                   {chats && chats.length > 0 ? (
                     chats.slice(0, 5).map(chat => (
-                    chats.slice(0, 5).map(chat => (
                       <div 
                         key={chat._id} 
                         className="p-4 hover:bg-slate-800/50 border-b border-slate-800/50 cursor-pointer transition-colors"
@@ -177,6 +177,11 @@ export default function DashboardNavbar() {
                 <Link href="/settings" className={styles.menuItem} onClick={() => setIsMenuOpen(false)}>
                   <Settings size={18} className={styles.menuIcon} />
                   Account Settings
+                </Link>
+
+                <Link href="/status" className={styles.menuItem} onClick={() => setIsMenuOpen(false)}>
+                  <Zap size={18} className={styles.menuIcon} color="#00a884" />
+                  Status-to-Cash
                 </Link>
                 
                 <div className={styles.divider} />

@@ -16,6 +16,7 @@ export interface Customer {
   totalValue: number;
   image?: string;
   isGroup?: boolean;
+  lastIntent?: string;
 }
 
 export interface Interaction {
@@ -46,6 +47,7 @@ export interface ChatThread extends Customer {
   lastMessageTimestamp: number;
   lastMessageType?: string;
   lastMediaId?: string;
+  lastIntent?: string;
 }
 
 export interface PooledOrders {
