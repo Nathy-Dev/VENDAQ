@@ -45,12 +45,13 @@ export async function POST(req: Request) {
     }
 
     if (action === 'updateContactName') {
-        const { phone, name, isGroup } = body;
+        const { phone, name, isGroup, createIfMissing } = body;
         await fetchMutation(api.whatsapp.updateContactName, {
             businessId: businessId as Id<"businesses">,
             phone,
             name,
             isGroup: !!isGroup,
+            createIfMissing,
         });
         return NextResponse.json({ success: true });
     }

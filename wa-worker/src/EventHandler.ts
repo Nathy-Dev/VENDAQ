@@ -78,7 +78,8 @@ export class EventHandler {
                     businessId, 
                     this.normalizeJid(contact.id), 
                     name, 
-                    contact.id.endsWith('@g.us')
+                    contact.id.endsWith('@g.us'),
+                    false
                 );
             }
         }
@@ -150,7 +151,8 @@ export class EventHandler {
                     businessId, 
                     this.normalizeJid(remoteJid), 
                     msg.pushName, 
-                    isGroup
+                    isGroup,
+                    false
                 );
             }
 
@@ -229,7 +231,7 @@ export class EventHandler {
             const batch = contactEntries.slice(i, i + CONTACT_UPSERT_BATCH_SIZE);
             await Promise.all(
                 batch.map(([jid, name]) =>
-                    BackendService.updateContactName(businessId, jid, name, jid.endsWith('@g.us'))
+                    BackendService.updateContactName(businessId, jid, name, jid.endsWith('@g.us'), false)
                 )
             );
         }

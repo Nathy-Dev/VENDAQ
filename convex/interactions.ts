@@ -20,11 +20,14 @@ export const getChatMessages = query({
 export const getRecentChats = query({
     args: { businessId: v.id("businesses") },
     handler: async (ctx, args) => {
-      // 1. Get the 100 most recently active customers using our new index
-      // This avoids scanning thousands of interactions, making the query instant.
+      const recentWindowHours = Number(process.env.RECENT_CHATS_WINDOW_HOURS || 24);
+      const cutoffMs = Date.now() - recentWindowHours * 60 * 60 * 1000;
+
+      // 1. Get recently active customers only
       const customers = await ctx.db
         .query("customers")
         .withIndex("by_business_last_interaction", (q) => q.eq("businessId", args.businessId))
+        .filter((q) => q.gte(q.field("lastInteraction"), cutoffMs))
         .order("desc")
         .take(100);
 
@@ -34,18 +37,20 @@ export const getRecentChats = query({
         const lastInteraction = await ctx.db
           .query("interactions")
           .withIndex("by_customer", (q) => q.eq("customerId", customer._id))
+          .filter((q) => q.gte(q.field("timestamp"), cutoffMs))
           .order("desc")
           .first();
 
-        // Include the customer even if no interaction is explicitly found in DB (e.g. sync gap)
-        // Fallback to customer.lastInteraction and a placeholder
+        // Only include records with real recent interactions.
+        if (!lastInteraction) continue;
+
         results.push({
           ...customer,
-          lastMessage: lastInteraction?.content || "Existing conversation",
-          lastMessageTimestamp: lastInteraction?.timestamp || customer.lastInteraction,
-          lastMessageType: lastInteraction?.messageType,
-          lastMediaId: lastInteraction?.mediaId,
-          lastIntent: lastInteraction?.intent || customer.lastIntent,
+          lastMessage: lastInteraction.content,
+          lastMessageTimestamp: lastInteraction.timestamp,
+          lastMessageType: lastInteraction.messageType,
+          lastMediaId: lastInteraction.mediaId,
+          lastIntent: lastInteraction.intent || customer.lastIntent,
         });
       }
 
@@ -123,5 +128,55 @@ export const getCustomerByPhone = query({
         q.eq("businessId", args.businessId).eq("phone", args.phone)
       )
       .unique();
+  },
+});
+
+export const cleanupStaleCustomers = mutation({
+  args: {
+    businessId: v.id("businesses"),
+    olderThanHours: v.optional(v.number()),
+    limit: v.optional(v.number()),
+    dryRun: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const olderThanHours = Math.max(1, args.olderThanHours || 24 * 30);
+    const cutoffMs = Date.now() - olderThanHours * 60 * 60 * 1000;
+    const limit = Math.min(Math.max(1, args.limit || 500), 5000);
+    const dryRun = args.dryRun ?? true;
+
+    const customers = await ctx.db
+      .query("customers")
+      .withIndex("by_business_last_interaction", (q) => q.eq("businessId", args.businessId))
+      .order("asc")
+      .take(limit);
+
+    let staleCount = 0;
+    let deletedCount = 0;
+    const staleCustomerIds: string[] = [];
+
+    for (const customer of customers) {
+      if (customer.lastInteraction >= cutoffMs) continue;
+      const hasInteraction = await ctx.db
+        .query("interactions")
+        .withIndex("by_customer", (q) => q.eq("customerId", customer._id))
+        .first();
+      if (hasInteraction) continue;
+
+      staleCount += 1;
+      staleCustomerIds.push(customer._id);
+      if (!dryRun) {
+        await ctx.db.delete(customer._id);
+        deletedCount += 1;
+      }
+    }
+
+    return {
+      dryRun,
+      cutoffMs,
+      scanned: customers.length,
+      staleCount,
+      deletedCount,
+      staleCustomerIds,
+    };
   },
 });

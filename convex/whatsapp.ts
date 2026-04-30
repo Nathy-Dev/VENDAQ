@@ -175,6 +175,7 @@ export const updateContactName = mutation({
     phone: v.string(),
     name: v.string(),
     isGroup: v.optional(v.boolean()),
+    createIfMissing: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const customer = await ctx.db
@@ -193,6 +194,9 @@ export const updateContactName = mutation({
             await ctx.db.patch(customer._id, { name: args.name });
         }
     } else {
+        if (args.createIfMissing === false) {
+            return;
+        }
         await ctx.db.insert("customers", {
             businessId: args.businessId,
             phone: args.phone,

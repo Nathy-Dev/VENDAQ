@@ -54,6 +54,7 @@ export default function Onboarding({ initialStep = 0 }: OnboardingProps) {
   const [usePairingCode, setUsePairingCode] = useState(false);
   const [phoneNumber, setPhoneNumber] = useState("");
   const [isGeneratingCode, setIsGeneratingCode] = useState(false);
+  const [localPairingCode, setLocalPairingCode] = useState<string | null>(null);
   
   const router = useRouter();
   const { createOrUpdateBusiness } = usePipelixrActions();
@@ -140,6 +141,9 @@ export default function Onboarding({ initialStep = 0 }: OnboardingProps) {
             phone: phoneNumber
         });
         console.log("[Onboarding] Action returned successfully. Result:", result);
+        if (result) {
+          setLocalPairingCode(result);
+        }
     } catch (e) {
         console.error("[Onboarding] Action failed:", e);
         alert(`Failed to request pairing code: ${e instanceof Error ? e.message : String(e)}`);
@@ -332,7 +336,7 @@ export default function Onboarding({ initialStep = 0 }: OnboardingProps) {
                     </div>
                 ) : (
                     <div className={styles.phoneInputContainer}>
-                        {!qrData?.pairingCode ? (
+                        {!(qrData?.pairingCode || localPairingCode) ? (
                             <>
                                 <input 
                                     className={styles.phoneInput}
@@ -352,7 +356,7 @@ export default function Onboarding({ initialStep = 0 }: OnboardingProps) {
                         ) : (
                             <>
                                 <div className={styles.pairingCodeBox}>
-                                    <span className={styles.codeChar}>{qrData.pairingCode}</span>
+                                    <span className={styles.codeChar}>{qrData?.pairingCode || localPairingCode}</span>
                                 </div>
                                 <p className={styles.helpText} style={{ textAlign: 'center', marginTop: '1rem' }}>
                                     Open WhatsApp on your phone → Settings → Linked Devices → Link with phone number instead → Enter this code.
@@ -362,7 +366,7 @@ export default function Onboarding({ initialStep = 0 }: OnboardingProps) {
                                     style={{ marginTop: '0.5rem' }}
                                     onClick={() => {
                                         setPhoneNumber("");
-                                        // We don't have localPairingCode anymore, just reset phone
+                                        setLocalPairingCode(null);
                                     }} 
                                 >
                                     Use a different number

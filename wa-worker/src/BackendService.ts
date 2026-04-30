@@ -55,8 +55,14 @@ export class BackendService {
         return this.update({ action: 'updateQRCode', businessId, qrCodeString: qr });
     }
 
-    static async updateContactName(businessId: string, phone: string, name: string, isGroup: boolean) {
-        return this.update({ action: 'updateContactName', businessId, phone, name, isGroup });
+    static async updateContactName(
+        businessId: string,
+        phone: string,
+        name: string,
+        isGroup: boolean,
+        createIfMissing: boolean = true
+    ) {
+        return this.update({ action: 'updateContactName', businessId, phone, name, isGroup, createIfMissing });
     }
 
     static async newMessage(businessId: string, data: any) {
