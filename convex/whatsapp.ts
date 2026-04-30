@@ -18,6 +18,10 @@ function normalizePhoneForWhatsApp(phone: string): string {
   return digits.length > 0 ? digits : raw;
 }
 
+function normalizePhoneDigits(phone: string): string {
+  return phone.split("@")[0].replace(/\D/g, "");
+}
+
 function scoreIntentFromContent(content: string): IntentScore {
   const text = content.toLowerCase();
   let price = 0;
@@ -1078,6 +1082,99 @@ export const getCustomerLiteById = query({
   handler: async (ctx, args) => await ctx.db.get(args.customerId),
 });
 
+export const getCustomerByBusinessPhone = query({
+  args: { businessId: v.id("businesses"), phone: v.string() },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("customers")
+      .withIndex("by_business_phone", (q) =>
+        q.eq("businessId", args.businessId).eq("phone", args.phone)
+      )
+      .unique();
+  },
+});
+
+function buildRealtimeAssistantReply(
+  customerName: string,
+  lastIntent: string | undefined,
+  inboundContent: string
+): string {
+  if (lastIntent === "payment_signal") {
+    return `Perfect ${customerName}, I can send payment details now and confirm your order immediately.`;
+  }
+  if (lastIntent === "ready_to_buy") {
+    return `Great ${customerName}, I can lock this in for you now. Share your delivery location and preferred payment method.`;
+  }
+  if (lastIntent === "price_request") {
+    return `Sure ${customerName}, I can help with pricing. Tell me your budget and I will suggest the best option right away.`;
+  }
+  if (lastIntent === "availability_check") {
+    return `Yes ${customerName}, I can confirm availability for you now. Tell me the exact item, size, and color.`;
+  }
+  if (/(hello|hi|hey|good morning|good afternoon|good evening)/i.test(inboundContent)) {
+    return `Hi ${customerName}, welcome to Pipelixr sales desk. What product are you looking for today?`;
+  }
+  return `Thanks ${customerName}. I can help you choose quickly and place your order in chat. What are you looking for?`;
+}
+
+export const handleRealtimeAssistantReply = action({
+  args: {
+    businessId: v.id("businesses"),
+    sender: v.string(),
+    content: v.string(),
+  },
+  handler: async (ctx, args): Promise<{ sent: boolean; reason?: string }> => {
+    const customer = await ctx.runQuery(api.whatsapp.getCustomerByBusinessPhone, {
+      businessId: args.businessId,
+      phone: args.sender,
+    });
+
+    if (!customer) return { sent: false, reason: "customer_not_found" };
+    if (customer.isGroup) return { sent: false, reason: "group_chat_not_supported" };
+
+    const recentOutbound = await ctx.runQuery(api.whatsapp.getRecentOutboundForCustomer, {
+      customerId: customer._id,
+      since: Date.now() - 2 * 60 * 1000,
+    });
+    if (recentOutbound > 0) return { sent: false, reason: "cooldown_active" };
+
+    const allowed = await ctx.runQuery(api.whatsapp.canSendToCustomerNow, {
+      businessId: args.businessId,
+      customerId: customer._id,
+    });
+    if (!allowed) return { sent: false, reason: "guardrail_blocked" };
+
+    const customerName = customer.name || customer.phone.split("@")[0];
+    const message = buildRealtimeAssistantReply(customerName, customer.lastIntent, args.content);
+    const result = await ctx.runAction(api.whatsapp.sendRetargetMessage, {
+      businessId: args.businessId,
+      customerId: customer._id,
+      content: message,
+    });
+    return result?.sent ? { sent: true } : { sent: false, reason: "send_failed" };
+  },
+});
+
+export const getRecentOutboundForCustomer = query({
+  args: {
+    customerId: v.id("customers"),
+    since: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const recent = await ctx.db
+      .query("interactions")
+      .withIndex("by_customer", (q) => q.eq("customerId", args.customerId))
+      .filter((q) =>
+        q.and(
+          q.eq(q.field("role"), "owner"),
+          q.gt(q.field("timestamp"), args.since)
+        )
+      )
+      .collect();
+    return recent.length;
+  },
+});
+
 export const getOrderSuggestion = query({
   args: { businessId: v.id("businesses"), customerId: v.id("customers") },
   handler: async (ctx, args) => {
@@ -1483,6 +1580,11 @@ export const requestPairingCodeAction = action({
   handler: async (ctx, args): Promise<string> => {
     const workerUrl = process.env.WHATSAPP_WORKER_URL || "http://localhost:3005";
     
+    await ctx.runMutation(api.whatsapp.setAssistantAdminPhone, {
+      businessId: args.businessId,
+      phone: args.phone,
+    });
+
     try {
         const response = await fetch(`${workerUrl}/pairing/request`, {
             method: "POST",
@@ -1503,5 +1605,181 @@ export const requestPairingCodeAction = action({
     } catch (e) {
         throw new Error(`Failed to reach WhatsApp worker. Error: ${e instanceof Error ? e.message : String(e)}`);
     }
+  },
+});
+
+export const setAssistantAdminPhone = mutation({
+  args: {
+    businessId: v.id("businesses"),
+    phone: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const business = await ctx.db.get(args.businessId);
+    if (!business) return;
+    const normalized = normalizePhoneForWhatsApp(args.phone);
+    const existing = business.assistantAdminPhones || [];
+    if (existing.includes(normalized)) return;
+    await ctx.db.patch(args.businessId, {
+      assistantAdminPhones: [...existing, normalized],
+    });
+  },
+});
+
+function parseOwnerAssistantCommand(content: string): "help" | "today" | "funnel" | "hot" | "revenue" | "actions" | "unknown" {
+  const text = content.trim().toLowerCase();
+  if (!text) return "unknown";
+  if (text === "help" || text.includes("menu")) return "help";
+  if (text.includes("today") || text.includes("daily")) return "today";
+  if (text.includes("funnel") || text.includes("pipeline")) return "funnel";
+  if (text.includes("hot")) return "hot";
+  if (text.includes("revenue") || text.includes("sales")) return "revenue";
+  if (text.includes("action") || text.includes("follow")) return "actions";
+  return "unknown";
+}
+
+export const getOwnerAssistantSnapshot = query({
+  args: { businessId: v.id("businesses") },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const since = todayStart.getTime();
+
+    const customers = await ctx.db
+      .query("customers")
+      .withIndex("by_business_last_interaction", (q) => q.eq("businessId", args.businessId))
+      .collect();
+    const orders = await ctx.db
+      .query("orders")
+      .withIndex("by_business", (q) => q.eq("businessId", args.businessId))
+      .collect();
+
+    const totalLeads = customers.length;
+    const hotLeads = customers.filter((c) =>
+      c.lastIntent === "ready_to_buy" ||
+      c.lastIntent === "payment_signal" ||
+      c.funnelStage === "awaiting_payment"
+    ).length;
+    const todayInbound = customers.filter((c) => (c.lastInboundAt || 0) >= since).length;
+    const awaitingPayment = customers.filter((c) => c.funnelStage === "awaiting_payment").length;
+    const paid = customers.filter((c) => c.funnelStage === "paid").length;
+    const intent = customers.filter((c) => c.funnelStage === "intent").length;
+    const engaged = customers.filter((c) => c.funnelStage === "engaged").length;
+    const viewers = customers.filter((c) => c.funnelStage === "viewer").length;
+    const todayPaidOrders = orders.filter((o) => o.status === "paid" && o.createdAt >= since);
+    const todayRevenue = todayPaidOrders.reduce((sum, o) => sum + o.totalAmount, 0);
+    const todayOrders = todayPaidOrders.length;
+
+    const actionFeed = await ctx.db
+      .query("actionOutcomes")
+      .withIndex("by_business_sent", (q) => q.eq("businessId", args.businessId))
+      .order("desc")
+      .take(50);
+
+    const openActions = actionFeed.filter((a) => a.status === "sent").length;
+    const repliedActions = actionFeed.filter((a) => a.status === "replied").length;
+    const wonActions = actionFeed.filter((a) => a.status === "won").length;
+
+    return {
+      now,
+      totalLeads,
+      hotLeads,
+      todayInbound,
+      awaitingPayment,
+      paid,
+      intent,
+      engaged,
+      viewers,
+      todayOrders,
+      todayRevenue,
+      openActions,
+      repliedActions,
+      wonActions,
+    };
+  },
+});
+
+function formatNaira(amount: number): string {
+  return `N${Math.round(amount).toLocaleString()}`;
+}
+
+function buildOwnerAssistantReply(
+  command: ReturnType<typeof parseOwnerAssistantCommand>,
+  snapshot: {
+    totalLeads: number;
+    hotLeads: number;
+    todayInbound: number;
+    awaitingPayment: number;
+    paid: number;
+    intent: number;
+    engaged: number;
+    viewers: number;
+    todayOrders: number;
+    todayRevenue: number;
+    openActions: number;
+    repliedActions: number;
+    wonActions: number;
+  }
+): string {
+  if (command === "today") {
+    return `Pipelixr Daily Report\n- New inbound leads today: ${snapshot.todayInbound}\n- Paid orders today: ${snapshot.todayOrders}\n- Revenue today: ${formatNaira(snapshot.todayRevenue)}\n- Hot leads now: ${snapshot.hotLeads}\n- Awaiting payment: ${snapshot.awaitingPayment}`;
+  }
+  if (command === "funnel") {
+    return `Pipelixr Funnel Snapshot\n- Viewers: ${snapshot.viewers}\n- Engaged: ${snapshot.engaged}\n- Intent: ${snapshot.intent}\n- Awaiting payment: ${snapshot.awaitingPayment}\n- Paid: ${snapshot.paid}\n- Total leads: ${snapshot.totalLeads}`;
+  }
+  if (command === "hot") {
+    return `Pipelixr Hot Leads\n- Hot leads: ${snapshot.hotLeads}\n- Awaiting payment: ${snapshot.awaitingPayment}\n- Open recovery actions: ${snapshot.openActions}\nUse: "actions" to check recovery performance.`;
+  }
+  if (command === "revenue") {
+    return `Pipelixr Revenue Pulse\n- Revenue today: ${formatNaira(snapshot.todayRevenue)}\n- Paid orders today: ${snapshot.todayOrders}\n- Won recoveries: ${snapshot.wonActions}\n- Replied recoveries: ${snapshot.repliedActions}`;
+  }
+  if (command === "actions") {
+    return `Pipelixr Recovery Actions\n- Open sent actions: ${snapshot.openActions}\n- Replied actions: ${snapshot.repliedActions}\n- Won actions: ${snapshot.wonActions}\n- Hot leads pending: ${snapshot.hotLeads}`;
+  }
+  return `Pipelixr Assistant Commands:\n- today\n- funnel\n- hot\n- revenue\n- actions\n- help`;
+}
+
+export const handleOwnerAssistantMessage = action({
+  args: {
+    businessId: v.id("businesses"),
+    sender: v.string(),
+    content: v.string(),
+  },
+  handler: async (ctx, args): Promise<{ handled: boolean; reason?: string }> => {
+    const business = await ctx.runQuery(api.whatsapp.getBusinessForAssistantAuth, {
+      businessId: args.businessId,
+    });
+    if (!business) return { handled: false, reason: "business_not_found" };
+    const adminPhones = (business.assistantAdminPhones || []).map(normalizePhoneDigits);
+    const senderDigits = normalizePhoneDigits(args.sender);
+    if (!senderDigits || !adminPhones.includes(senderDigits)) {
+      return { handled: false, reason: "not_admin_sender" };
+    }
+
+    const customer = await ctx.runQuery(api.whatsapp.getCustomerByBusinessPhone, {
+      businessId: args.businessId,
+      phone: args.sender,
+    });
+    if (!customer) return { handled: false, reason: "chat_not_ready" };
+
+    const command = parseOwnerAssistantCommand(args.content);
+    const snapshot = await ctx.runQuery(api.whatsapp.getOwnerAssistantSnapshot, {
+      businessId: args.businessId,
+    });
+    const reply = buildOwnerAssistantReply(command, snapshot);
+
+    const sent = await ctx.runAction(api.whatsapp.sendRetargetMessage, {
+      businessId: args.businessId,
+      customerId: customer._id,
+      content: reply,
+    });
+    return sent?.sent ? { handled: true } : { handled: false, reason: "send_failed" };
+  },
+});
+
+export const getBusinessForAssistantAuth = query({
+  args: { businessId: v.id("businesses") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.businessId);
   },
 });

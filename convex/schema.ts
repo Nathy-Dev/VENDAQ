@@ -5,6 +5,7 @@ export default defineSchema({
   businesses: defineTable({
     name: v.string(),
     ownerId: v.string(), // Clerk user ID or similar
+    assistantAdminPhones: v.optional(v.array(v.string())),
     whatsappMode: v.optional(v.union(v.literal("official"), v.literal("unofficial"))),
     whatsappStatus: v.union(v.literal("disconnected"), v.literal("connected"), v.literal("error"), v.literal("pending")),
     connectionDetails: v.optional(v.any()), // Tokens or Whapi instance details

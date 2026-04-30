@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { fetchMutation, fetchQuery } from "convex/nextjs";
+import { fetchAction, fetchMutation, fetchQuery } from "convex/nextjs";
 import { api } from "../../../../convex/_generated/api";
 import { Id } from "../../../../convex/_generated/dataModel";
 
@@ -71,6 +71,15 @@ export async function POST(req: Request) {
             name,
             whatsappMessageId,
         });
+
+        if (!fromMe && !isGroup && messageType === "text") {
+          await fetchAction(api.whatsapp.handleOwnerAssistantMessage, {
+            businessId: businessId as Id<"businesses">,
+            sender,
+            content,
+          });
+        }
+
         return NextResponse.json({ success: true });
     }
 
