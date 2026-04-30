@@ -54,6 +54,7 @@ app.post("/pairing/request", async (req, res) => {
 
     try {
         const sock = await SocketManager.startSession(businessId, phone);
+        await new Promise((r) => setTimeout(r, 1500));
         let code = "";
         let lastError: unknown = null;
         for (let attempt = 1; attempt <= 3; attempt++) {
