@@ -76,6 +76,16 @@ export default function Onboarding({ initialStep = 0 }: OnboardingProps) {
     }
   }, [qrData?.status, router]);
 
+  React.useEffect(() => {
+    if (!existingBusiness || step < 3) return;
+    if (existingBusiness.whatsappMode === "unofficial") {
+      setSelectedMode("unofficial");
+      if (initialStep >= 3) {
+        setStep(4);
+      }
+    }
+  }, [existingBusiness, step, initialStep]);
+
   const nextFeature = () => {
     if (featureIndex < features.length - 1) {
       setFeatureIndex(featureIndex + 1);
@@ -289,7 +299,7 @@ export default function Onboarding({ initialStep = 0 }: OnboardingProps) {
                 <div>
                   <h1 className={styles.title} style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>Connect WhatsApp</h1>
                   <p className={styles.description} style={{ fontSize: '0.875rem' }}>
-                    {selectedMode === 'unofficial' 
+                    {(selectedMode === 'unofficial' || existingBusiness?.whatsappMode === "unofficial")
                       ? "Scan the QR code with your WhatsApp Link Device feature." 
                       : "Enter your Meta Developer tokens to establish connection."}
                   </p>

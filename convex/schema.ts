@@ -12,6 +12,9 @@ export default defineSchema({
     qrCode: v.optional(v.string()), // Base64 QR code for Unofficlal mode
     pairingCode: v.optional(v.string()), // 8-char code for link-by-phone
     workerSessionId: v.optional(v.string()), // ID of the worker owning this connection
+    lastHistorySyncAt: v.optional(v.number()),
+    lastHistorySyncCount: v.optional(v.number()),
+    lastHistorySyncWindowHours: v.optional(v.number()),
     industry: v.optional(v.string()),
     onboardingStep: v.number(),
   }).index("by_owner", ["ownerId"]),

@@ -91,11 +91,11 @@ export const updateQRCode = mutation({
 export const updateConnectionStatus = mutation({
   args: {
     businessId: v.id("businesses"),
-    status: v.union(v.literal("connected"), v.literal("disconnected"), v.literal("error")),
+    status: v.union(v.literal("connected"), v.literal("disconnected"), v.literal("error"), v.literal("pending")),
   },
   handler: async (ctx, args) => {
     // If we are fully connected, clear the QR code so the UI can proceed
-    const patchData: { whatsappStatus: "connected" | "disconnected" | "error"; qrCode?: string } = {
+    const patchData: { whatsappStatus: "connected" | "disconnected" | "error" | "pending"; qrCode?: string } = {
       whatsappStatus: args.status,
     };
     if (args.status === "connected") {
@@ -115,6 +115,17 @@ export const updatePairingCode = mutation({
     await ctx.db.patch(args.businessId, {
       pairingCode: args.pairingCode,
       whatsappStatus: "pending", 
+    });
+  },
+});
+
+export const clearPairingCode = mutation({
+  args: {
+    businessId: v.id("businesses"),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.businessId, {
+      pairingCode: undefined,
     });
   },
 });
@@ -348,12 +359,18 @@ export const syncHistory = mutation({
       isGroup: v.optional(v.boolean()),
       messageType: v.optional(v.union(v.literal("text"), v.literal("image"), v.literal("video"), v.literal("audio"), v.literal("document"), v.literal("location"))),
       mediaId: v.optional(v.string()),
+      whatsappMessageId: v.optional(v.string()),
     })),
   },
   handler: async (ctx, args) => {
-    console.log(`[Convex] Syncing history for business ${args.businessId}, ${args.history.length} items`);
+    const historyWindowHours = Number(process.env.HISTORY_SYNC_WINDOW_HOURS || 24);
+    const cutoffMs = Date.now() - historyWindowHours * 60 * 60 * 1000;
+    const recentHistory = args.history.filter((item) => item.timestamp >= cutoffMs);
+    console.log(
+      `[Convex] Syncing history for business ${args.businessId}, received=${args.history.length}, recent=${recentHistory.length}, window=${historyWindowHours}h`
+    );
     
-    for (const item of args.history) {
+    for (const item of recentHistory) {
       // Determine if the incoming name is actually useful (not a LID/raw number)
       const incomingNameIsReal = item.name && !isRawName(item.name, item.sender);
       const displayName = incomingNameIsReal ? item.name : undefined;
@@ -406,6 +423,16 @@ export const syncHistory = mutation({
 
       if (!customer) continue;
 
+      if (item.whatsappMessageId) {
+        const existingByWhatsappId = await ctx.db
+          .query("interactions")
+          .withIndex("by_whatsapp_id", (q) => q.eq("whatsappMessageId", item.whatsappMessageId!))
+          .first();
+        if (existingByWhatsappId) {
+          continue;
+        }
+      }
+
       // 2. Insert the interaction
       const existing = await ctx.db
         .query("interactions")
@@ -425,11 +452,18 @@ export const syncHistory = mutation({
           timestamp: item.timestamp,
           messageType: item.messageType || "text",
           mediaId: item.mediaId,
+          whatsappMessageId: item.whatsappMessageId,
         });
       }
     }
+
+    await ctx.db.patch(args.businessId, {
+      lastHistorySyncAt: Date.now(),
+      lastHistorySyncCount: recentHistory.length,
+      lastHistorySyncWindowHours: historyWindowHours,
+    });
     
-    return { success: true, count: args.history.length };
+    return { success: true, count: recentHistory.length };
   },
 }); 
 
@@ -1579,10 +1613,21 @@ export const requestPairingCodeAction = action({
   },
   handler: async (ctx, args): Promise<string> => {
     const workerUrl = process.env.WHATSAPP_WORKER_URL || "http://localhost:3005";
+    const normalizedDigits = args.phone.replace(/\D/g, "");
+    if (normalizedDigits.length < 10 || normalizedDigits.length > 15) {
+      throw new Error("Enter a valid phone number with country code (10-15 digits).");
+    }
     
     await ctx.runMutation(api.whatsapp.setAssistantAdminPhone, {
       businessId: args.businessId,
       phone: args.phone,
+    });
+    await ctx.runMutation(api.whatsapp.clearPairingCode, {
+      businessId: args.businessId,
+    });
+    await ctx.runMutation(api.whatsapp.updateConnectionStatus, {
+      businessId: args.businessId,
+      status: "pending",
     });
 
     try {
@@ -1591,7 +1636,7 @@ export const requestPairingCodeAction = action({
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
                 businessId: args.businessId,
-                phone: args.phone,
+                phone: normalizedDigits,
             }),
         });
 

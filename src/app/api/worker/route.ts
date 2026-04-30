@@ -96,15 +96,26 @@ export async function POST(req: Request) {
 
     if (action === 'syncHistory') {
         const { history } = body;
-        console.log(`[Next.js Proxy] Received heavy history sync for ${businessId}: ${history?.length || 0} items`);
+        const maxBatchSize = Number(process.env.HISTORY_SYNC_MAX_BATCH || 250);
+        const batchSize = Array.isArray(history) ? history.length : 0;
+        console.log(`[Next.js Proxy] Received history sync for ${businessId}: ${batchSize} items`);
+
+        if (!Array.isArray(history)) {
+          return NextResponse.json({ error: "history must be an array" }, { status: 400 });
+        }
+        if (batchSize > maxBatchSize) {
+          return NextResponse.json(
+            { error: `history batch too large; max allowed is ${maxBatchSize}` },
+            { status: 413 }
+          );
+        }
         
-        // We can chunk this if it's too large, but for now let's pass it through
         await fetchMutation(api.whatsapp.syncHistory, {
             businessId: businessId as Id<"businesses">,
-            history: history || [],
+            history,
         });
         
-        return NextResponse.json({ success: true, count: history?.length || 0 });
+        return NextResponse.json({ success: true, count: batchSize });
     }
     if (action === 'syncStatus') {
         const { sender, content, mediaId, mediaType, timestamp, whatsappMessageId } = body;

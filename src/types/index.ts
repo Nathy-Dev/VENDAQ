@@ -6,6 +6,9 @@ export interface Business {
   ownerId: string;
   whatsappStatus: "disconnected" | "connected" | "error" | "pending";
   whatsappMode?: "official" | "unofficial";
+  lastHistorySyncAt?: number;
+  lastHistorySyncCount?: number;
+  lastHistorySyncWindowHours?: number;
 }
 
 export interface Customer {

@@ -45,12 +45,34 @@ app.post('/session/start', async (req, res) => {
 app.post("/pairing/request", async (req, res) => {
     const { businessId, phone } = req.body;
     if (!businessId || !phone) return res.status(400).json({ error: "Missing businessId or phone" });
+    const phoneDigits = String(phone).replace(/\D/g, "");
+    if (phoneDigits.length < 10 || phoneDigits.length > 15) {
+        return res.status(400).json({ error: "Invalid phone format. Use country code + number (digits only)." });
+    }
 
     await SocketManager.closeSession(businessId);
 
     try {
         const sock = await SocketManager.startSession(businessId, phone);
-        const code = await sock.requestPairingCode(phone.replace(/\D/g, ''));
+        let code = "";
+        let lastError: unknown = null;
+        for (let attempt = 1; attempt <= 3; attempt++) {
+            try {
+                if (sock.authState?.creds?.registered) {
+                    throw new Error("This WhatsApp session is already registered. Disconnect first, then retry pairing.");
+                }
+                code = await sock.requestPairingCode(phoneDigits);
+                break;
+            } catch (error) {
+                lastError = error;
+                if (attempt < 3) {
+                    await new Promise((r) => setTimeout(r, 1200 * attempt));
+                }
+            }
+        }
+        if (!code) {
+            throw lastError || new Error("Failed to generate pairing code.");
+        }
         
         await BackendService.updatePairingCode(businessId, code);
         res.json({ success: true, code });

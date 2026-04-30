@@ -8,6 +8,11 @@ import fs from 'fs';
 import { BackendService } from './BackendService';
 import { MediaService } from './MediaService';
 
+const HISTORY_WINDOW_HOURS = Number(process.env.HISTORY_SYNC_WINDOW_HOURS || 24);
+const HISTORY_BATCH_SIZE = Number(process.env.HISTORY_SYNC_BATCH_SIZE || 100);
+const CONTACT_UPSERT_BATCH_SIZE = Number(process.env.HISTORY_CONTACT_BATCH_SIZE || 50);
+const MAX_HISTORY_MESSAGES = Number(process.env.HISTORY_MAX_MESSAGES || 3000);
+
 export class EventHandler {
     private static sessionsPath: string;
 
@@ -178,21 +183,55 @@ export class EventHandler {
         console.log(`[EventHandler] Received history sync for ${businessId}`);
         const syncData: any[] = [];
         const contactMap = new Map<string, string>();
+        const cutoffMs = Date.now() - HISTORY_WINDOW_HOURS * 60 * 60 * 1000;
+        const messagesByJid = new Map<string, any[]>();
+        const recentMessages: any[] = [];
+
+        for (const message of messages || []) {
+            const remoteJid = message?.key?.remoteJid;
+            if (!remoteJid || remoteJid === "status@broadcast") continue;
+            const normalizedJid = this.normalizeJid(remoteJid);
+            const timestampMs = ((message.messageTimestamp as number) || 0) * 1000;
+            if (timestampMs < cutoffMs) continue;
+
+            recentMessages.push(message);
+            const bucket = messagesByJid.get(normalizedJid) || [];
+            bucket.push(message);
+            messagesByJid.set(normalizedJid, bucket);
+        }
+
+        if (recentMessages.length > MAX_HISTORY_MESSAGES) {
+            recentMessages.sort((a, b) => (((b.messageTimestamp as number) || 0) - ((a.messageTimestamp as number) || 0)));
+            const trimmed = recentMessages.slice(0, MAX_HISTORY_MESSAGES);
+            messagesByJid.clear();
+            for (const message of trimmed) {
+                const jid = this.normalizeJid(message.key.remoteJid);
+                const bucket = messagesByJid.get(jid) || [];
+                bucket.push(message);
+                messagesByJid.set(jid, bucket);
+            }
+        }
 
         contacts.forEach((c: any) => {
             const name = c.name || c.verifiedName || c.publicName || c.notify;
             if (name) contactMap.set(this.normalizeJid(c.id), name);
         });
 
-        messages.forEach((m: any) => {
+        recentMessages.forEach((m: any) => {
             if (m.key.remoteJid && m.pushName) {
                 const jid = this.normalizeJid(m.key.remoteJid);
                 if (!contactMap.has(jid)) contactMap.set(jid, m.pushName);
             }
         });
 
-        for (const [jid, name] of contactMap) {
-            await BackendService.updateContactName(businessId, jid, name, jid.endsWith('@g.us'));
+        const contactEntries = Array.from(contactMap.entries());
+        for (let i = 0; i < contactEntries.length; i += CONTACT_UPSERT_BATCH_SIZE) {
+            const batch = contactEntries.slice(i, i + CONTACT_UPSERT_BATCH_SIZE);
+            await Promise.all(
+                batch.map(([jid, name]) =>
+                    BackendService.updateContactName(businessId, jid, name, jid.endsWith('@g.us'))
+                )
+            );
         }
 
         for (const chat of chats) {
@@ -202,12 +241,11 @@ export class EventHandler {
             const isGroup = jid.endsWith('@g.us');
             const name = contactMap.get(jid) || chat.name || (isGroup ? "Group Chat" : undefined);
             
-            const chatMessages = messages
-                .filter((m: any) => m.key && this.normalizeJid(m.key.remoteJid) === jid)
+            const chatMessages = (messagesByJid.get(jid) || [])
                 .sort((a: any, b: any) => ((a.messageTimestamp as number) || 0) - ((b.messageTimestamp as number) || 0))
                 .slice(-10);
 
-            if (chatMessages.length === 0 && chat.lastMessageRecvTimestamp) {
+            if (chatMessages.length === 0 && chat.lastMessageRecvTimestamp && ((chat.lastMessageRecvTimestamp as number) * 1000) >= cutoffMs) {
                 syncData.push({
                     sender: jid,
                     content: "Existing conversation",
@@ -243,9 +281,14 @@ export class EventHandler {
         }
 
         if (syncData.length > 0) {
-            for (let i = 0; i < syncData.length; i += 25) {
-                await BackendService.syncHistory(businessId, syncData.slice(i, i + 25));
+            console.log(
+                `[EventHandler] History sync window=${HISTORY_WINDOW_HOURS}h; messages=${syncData.length}; batchSize=${HISTORY_BATCH_SIZE}`
+            );
+            for (let i = 0; i < syncData.length; i += HISTORY_BATCH_SIZE) {
+                await BackendService.syncHistory(businessId, syncData.slice(i, i + HISTORY_BATCH_SIZE));
             }
+        } else {
+            console.log(`[EventHandler] No recent history to sync in the last ${HISTORY_WINDOW_HOURS}h for ${businessId}`);
         }
     }
 

@@ -33,6 +33,13 @@
   font-size: 1rem;
 }
 
+.syncStatus {
+  margin-top: 0.625rem;
+  color: #34d399;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
 .landingLink {
   color: #10b981;
   font-weight: 600;

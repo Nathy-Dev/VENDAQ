@@ -7,6 +7,7 @@ import { api } from "../../../convex/_generated/api";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { LayoutDashboard, MessageSquare, Users, TrendingUp, type LucideIcon } from "lucide-react";
+import { formatDistanceToNow } from "date-fns";
 import styles from "./dashboard.module.css";
 import Loader from "@/components/Loader";
 import LeadPipeline from "@/components/LeadPipeline";
@@ -54,6 +55,11 @@ export default function DashboardPage() {
           <div>
             <h1 className={styles.welcomeTitle}>Welcome back, {session?.user?.name || "Partner"}!</h1>
             <p className={styles.subTitle}>Here&apos;s what&apos;s happening with PIPELIXR today.</p>
+            {business?.lastHistorySyncAt && (
+              <p className={styles.syncStatus}>
+                Recent sync: {business.lastHistorySyncCount || 0} messages in last {business.lastHistorySyncWindowHours || 24}h, updated {formatDistanceToNow(business.lastHistorySyncAt, { addSuffix: true })}.
+              </p>
+            )}
           </div>
         </header>
 
