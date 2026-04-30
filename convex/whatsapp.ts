@@ -22,6 +22,21 @@ function normalizePhoneDigits(phone: string): string {
   return phone.split("@")[0].replace(/\D/g, "");
 }
 
+function getWorkerUrlOrThrow(): string {
+  const workerUrl = process.env.WHATSAPP_WORKER_URL || "";
+  if (!workerUrl) {
+    throw new Error(
+      "WHATSAPP_WORKER_URL is not configured in Convex environment variables. Set it to your public wa-worker URL."
+    );
+  }
+  if (workerUrl.includes("localhost") || workerUrl.includes("127.0.0.1")) {
+    throw new Error(
+      `WHATSAPP_WORKER_URL=${workerUrl} is not reachable from Convex cloud. Use a public HTTPS URL for wa-worker.`
+    );
+  }
+  return workerUrl;
+}
+
 function scoreIntentFromContent(content: string): IntentScore {
   const text = content.toLowerCase();
   let price = 0;
@@ -1612,7 +1627,7 @@ export const requestPairingCodeAction = action({
     phone: v.string(),
   },
   handler: async (ctx, args): Promise<string> => {
-    const workerUrl = process.env.WHATSAPP_WORKER_URL || "http://localhost:3005";
+    const workerUrl = getWorkerUrlOrThrow();
     const normalizedDigits = args.phone.replace(/\D/g, "");
     if (normalizedDigits.length < 10 || normalizedDigits.length > 15) {
       throw new Error("Enter a valid phone number with country code (10-15 digits).");
