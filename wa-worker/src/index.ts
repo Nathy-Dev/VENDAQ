@@ -54,7 +54,7 @@ app.post("/pairing/request", async (req, res) => {
 
     try {
         const sock = await SocketManager.startSession(businessId, phone);
-        await new Promise((r) => setTimeout(r, 1500));
+        await waitForSocketReady(sock);
         let code = "";
         let lastError: unknown = null;
         for (let attempt = 1; attempt <= 3; attempt++) {
@@ -81,6 +81,15 @@ app.post("/pairing/request", async (req, res) => {
         res.status(500).json({ error: String(error) });
     }
 });
+
+async function waitForSocketReady(sock: any, timeoutMs: number = 12000): Promise<void> {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+        if (sock?.ws?.readyState === 1) return;
+        await new Promise((r) => setTimeout(r, 250));
+    }
+    throw new Error("WhatsApp socket not ready for pairing request. Please retry.");
+}
 
 // --- Message Operations ---
 

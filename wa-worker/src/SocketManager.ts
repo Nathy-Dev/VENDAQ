@@ -2,7 +2,6 @@ import {
     makeWASocket, 
     useMultiFileAuthState as getMultiFileAuthState, 
     fetchLatestBaileysVersion,
-    Browsers,
 } from '@whiskeysockets/baileys';
 import pino from 'pino';
 import fs from 'fs';
@@ -67,7 +66,7 @@ export class SocketManager {
             version,
             auth: state,
             logger: pino({ level: 'info' }) as any,
-            browser: Browsers.ubuntu("Pipelixr"),
+            browser: ["Pipelixr", "Chrome", "1.0.0"],
             syncFullHistory: false,
             shouldSyncHistoryMessage: () => true
         });
