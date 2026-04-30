@@ -67,7 +67,7 @@ export class SocketManager {
             version,
             auth: state,
             logger: pino({ level: 'info' }) as any,
-            browser: Browsers.ubuntu("Chrome"),
+            browser: Browsers.ubuntu("Pipelixr"),
             syncFullHistory: false,
             shouldSyncHistoryMessage: () => true
         });

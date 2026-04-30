@@ -47,7 +47,7 @@ export class BackendService {
         return response?.businesses || [];
     }
 
-    static async updateStatus(businessId: string, status: 'connected' | 'disconnected' | 'error') {
+    static async updateStatus(businessId: string, status: 'connected' | 'disconnected' | 'error' | 'pending') {
         return this.update({ action: 'updateStatus', businessId, status });
     }
 

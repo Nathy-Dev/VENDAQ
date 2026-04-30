@@ -60,9 +60,13 @@ export class EventHandler {
                 if (fs.existsSync(sessionPath)) fs.rmSync(sessionPath, { recursive: true, force: true });
             } else if (errorReason === DisconnectReason.restartRequired) {
                 console.log(`[EventHandler] Restart required for ${businessId}`);
+                // Mark not connected immediately so UI doesn't stay stale.
+                await BackendService.updateStatus(businessId, 'pending');
                 onRestart(businessId);
             } else {
                 console.log(`[EventHandler] Connection lost for ${businessId}, will reconnect.`);
+                // Mark not connected immediately while transport is down.
+                await BackendService.updateStatus(businessId, 'pending');
             }
         } else if (connection === 'open') {
             console.log(`[EventHandler] Connection opened for ${businessId}`);
