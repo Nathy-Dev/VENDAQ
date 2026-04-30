@@ -312,6 +312,21 @@ export const receiveMessage = mutation({
       whatsappMessageId: args.whatsappMessageId,
       intent: intent,
     });
+
+    if (!args.fromMe) {
+      const recentSentOutcome = await ctx.db
+        .query("actionOutcomes")
+        .withIndex("by_customer_status", (q) => q.eq("customerId", customer._id).eq("status", "sent"))
+        .order("desc")
+        .first();
+
+      if (recentSentOutcome) {
+        await ctx.db.patch(recentSentOutcome._id, {
+          status: "replied",
+          repliedAt: args.timestamp,
+        });
+      }
+    }
     
     return { success: true };
   },
@@ -1194,6 +1209,22 @@ function estimateCustomerValue(totalValue: number, lastIntent: string | undefine
   return Math.round(base * 0.5);
 }
 
+function computeBasePriorityScore(
+  now: number,
+  lastInteraction: number,
+  lastOutboundAt: number | undefined,
+  funnelStage: string | undefined,
+  lastIntent: string | undefined
+): number {
+  const inactivityMs = now - lastInteraction;
+  const hoursSilent = inactivityMs / (1000 * 60 * 60);
+  const isHot = lastIntent === "payment_signal" || lastIntent === "ready_to_buy" || funnelStage === "awaiting_payment";
+  const isWarm = lastIntent === "price_request" || lastIntent === "availability_check" || funnelStage === "intent";
+  const shouldReplyNow = isHot && (!lastOutboundAt || (now - lastOutboundAt) > 90 * 60 * 1000);
+  const urgencyBoost = shouldReplyNow ? 8 : 0;
+  return (isHot ? 80 : isWarm ? 50 : 25) + Math.min(Math.round(hoursSilent * 2), 30) + urgencyBoost;
+}
+
 export const getInvisibleCrmOverview = query({
   args: { businessId: v.id("businesses") },
   handler: async (ctx, args) => {
@@ -1239,6 +1270,19 @@ export const getRevenueActionFeed = query({
 
     const now = Date.now();
     const limit = Math.min(args.limit || 25, 50);
+    const outcomes = await ctx.db
+      .query("actionOutcomes")
+      .withIndex("by_business_sent", (q) => q.eq("businessId", args.businessId))
+      .collect();
+
+    const intentPerformance = new Map<string, { sent: number; won: number }>();
+    for (const outcome of outcomes) {
+      const key = outcome.initialIntent || "general";
+      const current = intentPerformance.get(key) || { sent: 0, won: 0 };
+      current.sent += 1;
+      if (outcome.status === "won") current.won += 1;
+      intentPerformance.set(key, current);
+    }
 
     const actions = customers.map((customer) => {
       const inactivityMs = now - (customer.lastInteraction || now);
@@ -1248,8 +1292,19 @@ export const getRevenueActionFeed = query({
 
       const shouldReplyNow = isHot && (!customer.lastOutboundAt || (now - customer.lastOutboundAt) > 90 * 60 * 1000);
       const shouldNudge = isWarm && hoursSilent > 6;
-
-      const priorityScore = (isHot ? 80 : isWarm ? 50 : 25) + Math.min(Math.round(hoursSilent * 2), 30);
+      const baseScore = computeBasePriorityScore(
+        now,
+        customer.lastInteraction || now,
+        customer.lastOutboundAt,
+        customer.funnelStage,
+        customer.lastIntent
+      );
+      const performance = intentPerformance.get(customer.lastIntent || "general");
+      const learningBoost =
+        performance && performance.sent >= 5
+          ? Math.max(-10, Math.min(12, Math.round(((performance.won / performance.sent) - 0.3) * 40)))
+          : 0;
+      const priorityScore = baseScore + learningBoost;
       const priority = priorityScore >= 90 ? "high" : priorityScore >= 60 ? "medium" : "low";
       const customerName = customer.name || customer.phone.split("@")[0];
 
@@ -1295,12 +1350,128 @@ export const executeRevenueAction = action({
       return { sent: false, reason: "send_limit_guardrail" };
     }
 
+    const customer = await ctx.runQuery(api.whatsapp.getCustomerLiteById, {
+      customerId: args.customerId,
+    });
+    if (!customer || customer.businessId !== args.businessId) {
+      return { sent: false, reason: "customer_not_found" };
+    }
+
     const result = await ctx.runAction(api.whatsapp.sendRetargetMessage, {
       businessId: args.businessId,
       customerId: args.customerId,
       content: args.message,
     });
-    return { sent: !!result?.sent };
+    if (!result?.sent) return { sent: false, reason: "send_failed" };
+
+    const scoreAtSend = computeBasePriorityScore(
+      Date.now(),
+      customer.lastInteraction || Date.now(),
+      customer.lastOutboundAt,
+      customer.funnelStage,
+      customer.lastIntent
+    );
+    await ctx.runMutation(api.whatsapp.logActionOutcomeSent, {
+      businessId: args.businessId,
+      customerId: args.customerId,
+      suggestedMessage: args.message,
+      initialIntent: customer.lastIntent,
+      scoreAtSend,
+      estimatedValue: estimateCustomerValue(customer.totalValue, customer.lastIntent),
+    });
+
+    return { sent: true };
+  },
+});
+
+export const logActionOutcomeSent = mutation({
+  args: {
+    businessId: v.id("businesses"),
+    customerId: v.id("customers"),
+    suggestedMessage: v.string(),
+    initialIntent: v.optional(v.string()),
+    scoreAtSend: v.number(),
+    estimatedValue: v.number(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.insert("actionOutcomes", {
+      businessId: args.businessId,
+      customerId: args.customerId,
+      status: "sent",
+      actionType: "follow_up",
+      suggestedMessage: args.suggestedMessage,
+      initialIntent: args.initialIntent,
+      scoreAtSend: args.scoreAtSend,
+      estimatedValue: args.estimatedValue,
+      sentAt: Date.now(),
+    });
+  },
+});
+
+export const markActionOutcomeClosed = mutation({
+  args: {
+    businessId: v.id("businesses"),
+    outcomeId: v.id("actionOutcomes"),
+    status: v.union(v.literal("won"), v.literal("lost")),
+    outcomeValue: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const outcome = await ctx.db.get(args.outcomeId);
+    if (!outcome || outcome.businessId !== args.businessId) {
+      throw new Error("Outcome not found");
+    }
+
+    await ctx.db.patch(args.outcomeId, {
+      status: args.status,
+      closedAt: Date.now(),
+      outcomeValue: args.outcomeValue,
+    });
+  },
+});
+
+export const getRecentActionOutcomes = query({
+  args: { businessId: v.id("businesses"), limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const limit = Math.min(args.limit || 30, 100);
+    const outcomes = await ctx.db
+      .query("actionOutcomes")
+      .withIndex("by_business_sent", (q) => q.eq("businessId", args.businessId))
+      .order("desc")
+      .take(limit);
+
+    const result = [];
+    for (const outcome of outcomes) {
+      const customer = await ctx.db.get(outcome.customerId);
+      result.push({
+        ...outcome,
+        customerName: customer?.name || customer?.phone || "Unknown",
+      });
+    }
+    return result;
+  },
+});
+
+export const getRevenueLoopMetrics = query({
+  args: { businessId: v.id("businesses") },
+  handler: async (ctx, args) => {
+    const outcomes = await ctx.db
+      .query("actionOutcomes")
+      .withIndex("by_business_sent", (q) => q.eq("businessId", args.businessId))
+      .collect();
+
+    const totalSent = outcomes.length;
+    const replied = outcomes.filter((o) => o.status === "replied" || o.status === "won" || o.status === "lost").length;
+    const won = outcomes.filter((o) => o.status === "won").length;
+    const recoveredRevenue = outcomes
+      .filter((o) => o.status === "won")
+      .reduce((sum, o) => sum + (o.outcomeValue || o.estimatedValue || 0), 0);
+
+    return {
+      totalSent,
+      replyRate: totalSent > 0 ? replied / totalSent : 0,
+      winRate: totalSent > 0 ? won / totalSent : 0,
+      recoveredRevenue,
+    };
   },
 });
 

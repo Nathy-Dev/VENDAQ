@@ -187,6 +187,22 @@ export default defineSchema({
   }).index("by_business_status", ["businessId", "status"])
     .index("by_scheduled_status", ["status", "scheduledAt"]),
 
+  actionOutcomes: defineTable({
+    businessId: v.id("businesses"),
+    customerId: v.id("customers"),
+    status: v.union(v.literal("sent"), v.literal("replied"), v.literal("won"), v.literal("lost")),
+    actionType: v.string(),
+    suggestedMessage: v.string(),
+    initialIntent: v.optional(v.string()),
+    scoreAtSend: v.number(),
+    estimatedValue: v.number(),
+    sentAt: v.number(),
+    repliedAt: v.optional(v.number()),
+    closedAt: v.optional(v.number()),
+    outcomeValue: v.optional(v.number()),
+  }).index("by_business_sent", ["businessId", "sentAt"])
+    .index("by_customer_status", ["customerId", "status"]),
+
 
   users: defineTable({
     name: v.optional(v.string()),

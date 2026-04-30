@@ -10,7 +10,8 @@ import {
   LogOut, 
   Bell,
   LayoutDashboard,
-  Zap
+  Zap,
+  TrendingUp
 } from "lucide-react";
 import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
@@ -161,6 +162,11 @@ export default function DashboardNavbar() {
                 <Link href="/status" className={styles.menuItem} onClick={() => setIsMenuOpen(false)}>
                   <Zap size={18} className={styles.menuIcon} color="#00a884" />
                   Status-to-Cash
+                </Link>
+
+                <Link href="/revenue" className={styles.menuItem} onClick={() => setIsMenuOpen(false)}>
+                  <TrendingUp size={18} className={styles.menuIcon} color="#10b981" />
+                  Revenue Ops
                 </Link>
                 
                 <div className={styles.divider} />

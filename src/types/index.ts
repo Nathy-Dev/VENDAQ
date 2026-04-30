@@ -79,3 +79,23 @@ export interface RevenueActionItem {
   dueAt: number;
   estimatedValue: number;
 }
+
+export interface ActionOutcome {
+  _id: Id<"actionOutcomes">;
+  customerId: Id<"customers">;
+  customerName: string;
+  status: "sent" | "replied" | "won" | "lost";
+  suggestedMessage: string;
+  estimatedValue: number;
+  sentAt: number;
+  repliedAt?: number;
+  closedAt?: number;
+  outcomeValue?: number;
+}
+
+export interface RevenueLoopMetrics {
+  totalSent: number;
+  replyRate: number;
+  winRate: number;
+  recoveredRevenue: number;
+}
