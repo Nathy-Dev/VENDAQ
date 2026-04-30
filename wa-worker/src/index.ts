@@ -81,48 +81,6 @@ app.post('/message/send', async (req, res) => {
     }
 });
 
-app.post('/message/edit', async (req, res) => {
-    const { businessId, to, messageId, newContent } = req.body;
-    if (!businessId || !to || !messageId || !newContent) return res.status(400).json({ error: 'Missing parameters' });
-
-    const sock = SocketManager.getSocket(businessId);
-    if (!sock) return res.status(404).json({ error: 'No active session' });
-
-    try {
-        const jid = to.includes('@') ? to : `${to.replace(/\D/g, '')}@s.whatsapp.net`;
-        
-        SocketManager.enqueueTask(businessId, async () => {
-            const key = { remoteJid: jid, id: messageId, fromMe: true };
-            await sock.sendMessage(jid, { text: newContent, edit: key });
-        });
-
-        res.json({ success: true, queued: true });
-    } catch (error) {
-        res.status(500).json({ error: String(error) });
-    }
-});
-
-app.post('/message/delete', async (req, res) => {
-    const { businessId, to, messageId } = req.body;
-    if (!businessId || !to || !messageId) return res.status(400).json({ error: 'Missing parameters' });
-
-    const sock = SocketManager.getSocket(businessId);
-    if (!sock) return res.status(404).json({ error: 'No active session' });
-
-    try {
-        const jid = to.includes('@') ? to : `${to.replace(/\D/g, '')}@s.whatsapp.net`;
-        
-        SocketManager.enqueueTask(businessId, async () => {
-            const key = { remoteJid: jid, id: messageId, fromMe: true };
-            await sock.sendMessage(jid, { delete: key });
-        });
-
-        res.json({ success: true, queued: true });
-    } catch (error) {
-        res.status(500).json({ error: String(error) });
-    }
-});
-
 // --- Chat States & Modification ---
 
 app.post('/presence/update', async (req, res) => {

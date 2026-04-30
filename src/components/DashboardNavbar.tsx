@@ -10,24 +10,16 @@ import {
   LogOut, 
   Bell,
   LayoutDashboard,
-  MessageSquare,
-  X,
-  WifiOff,
   Zap
 } from "lucide-react";
 import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
-import MessageInbox from "./MessageInbox";
-import MessageThread from "./MessageThread";
-import { ChatThread } from "@/types";
 import styles from "./DashboardNavbar.module.css";
 
 export default function DashboardNavbar() {
   const { data: session } = useSession();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [isInboxOpen, setIsInboxOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
-  const [selectedChat, setSelectedChat] = useState<ChatThread | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const notificationsRef = useRef<HTMLDivElement>(null);
 
@@ -37,7 +29,7 @@ export default function DashboardNavbar() {
 
   const chats = useQuery(api.interactions.getRecentChats,
     business ? { businessId: business._id } : "skip"
-  ) as ChatThread[] | undefined;
+  );
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -75,15 +67,6 @@ export default function DashboardNavbar() {
 
         {/* Actions Section */}
         <div className={styles.navActions}>
-          <button 
-            className={styles.avatarBtn} 
-            style={{ background: 'transparent', border: 'none', color: isInboxOpen ? '#10b981' : '#94a3b8', width: 'auto', height: 'auto', marginRight: '0.5rem' }}
-            onClick={() => setIsInboxOpen(!isInboxOpen)}
-            aria-label="Open messages"
-          >
-            <MessageSquare size={20} />
-          </button>
-
           <div className={styles.userMenuWrapper} ref={notificationsRef}>
             <button 
               className={styles.avatarBtn} 
@@ -109,12 +92,7 @@ export default function DashboardNavbar() {
                     chats.slice(0, 5).map(chat => (
                       <div 
                         key={chat._id} 
-                        className="p-4 hover:bg-slate-800/50 border-b border-slate-800/50 cursor-pointer transition-colors"
-                        onClick={() => {
-                          setSelectedChat(chat);
-                          setIsInboxOpen(true);
-                          setIsNotificationsOpen(false);
-                        }}
+                        className="p-4 hover:bg-slate-800/50 border-b border-slate-800/50 transition-colors"
                       >
                         <div className="flex items-start gap-3">
                           <div className="w-8 h-8 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center shrink-0 font-bold text-xs uppercase">
@@ -198,48 +176,6 @@ export default function DashboardNavbar() {
           </div>
         </div>
       </div>
-
-      {/* Message Inbox Overlay */}
-      {isInboxOpen && (
-        <div className={styles.inboxOverlay}>
-          <div className={styles.inboxHeader}>
-            <div className={styles.inboxHeaderTitle}>
-              <MessageSquare size={20} className={styles.logoAccent} />
-              <span>WhatsApp Messages</span>
-            </div>
-            <button 
-              className={styles.closeInboxBtn}
-              onClick={() => setIsInboxOpen(false)}
-            >
-              <X size={24} />
-            </button>
-          </div>
-          <div className={styles.inboxContent}>
-            {(business?.whatsappStatus !== 'connected' && (!chats || chats.length === 0)) ? (
-              <div className="flex flex-col items-center justify-center h-full text-slate-400 p-8 text-center" style={{ backgroundColor: '#020617', height: '100%' }}>
-                <WifiOff size={48} className="text-red-500/60 mb-6" />
-                <h3 className="text-xl font-bold text-slate-200 mb-3">WhatsApp is Disconnected</h3>
-                <p className="text-sm max-w-sm leading-relaxed text-slate-400">
-                  Your WhatsApp session has been disconnected or expired. 
-                  Please close this inbox and click the <strong>&quot;Connect WhatsApp&quot;</strong> button on your dashboard to re-link your device.
-                </p>
-              </div>
-            ) : selectedChat ? (
-                <MessageThread 
-                  chat={selectedChat} 
-                  businessId={business?._id || ""} 
-                  onBack={() => setSelectedChat(null)} 
-                />
-            ) : (
-                <MessageInbox 
-                  chats={chats} 
-                  isLoading={chats === undefined} 
-                  onSelectChat={(chat) => setSelectedChat(chat)}
-                />
-            )}
-          </div>
-        </div>
-      )}
     </nav>
   );
 }
