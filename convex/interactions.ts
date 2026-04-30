@@ -110,3 +110,18 @@ export const getCustomerById = query({
     return customer;
   },
 });
+
+export const getCustomerByPhone = query({
+  args: {
+    businessId: v.id("businesses"),
+    phone: v.string(),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("customers")
+      .withIndex("by_business_phone", (q) =>
+        q.eq("businessId", args.businessId).eq("phone", args.phone)
+      )
+      .unique();
+  },
+});

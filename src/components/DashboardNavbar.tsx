@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
+import { ChatThread } from "@/types";
 import styles from "./DashboardNavbar.module.css";
 
 export default function DashboardNavbar() {
@@ -29,7 +30,7 @@ export default function DashboardNavbar() {
 
   const chats = useQuery(api.interactions.getRecentChats,
     business ? { businessId: business._id } : "skip"
-  );
+  ) as ChatThread[] | undefined;
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -89,7 +90,7 @@ export default function DashboardNavbar() {
                 
                 <div className="flex flex-col">
                   {chats && chats.length > 0 ? (
-                    chats.slice(0, 5).map(chat => (
+                    chats.slice(0, 5).map((chat) => (
                       <div 
                         key={chat._id} 
                         className="p-4 hover:bg-slate-800/50 border-b border-slate-800/50 transition-colors"

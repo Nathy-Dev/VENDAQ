@@ -2,22 +2,29 @@
 
 import React, { useState } from "react";
 import { useSession } from "next-auth/react";
-import { useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import DashboardNavbar from "@/components/DashboardNavbar";
 import StatusViewer from "@/components/StatusViewer";
+import { Id } from "../../../convex/_generated/dataModel";
 
 export default function StatusPage() {
   const { data: session } = useSession();
   const [, setSelectedPhone] = useState<string | null>(null);
+  const openChatFromViewer = useMutation(api.whatsapp.openChatFromViewer);
 
   const business = useQuery(api.businesses.getBusiness, 
     session?.user?.id ? { ownerId: session.user.id } : "skip"
   );
 
   const handleSelectCustomer = async (phone: string) => {
-    // Placeholder for upcoming "retarget/send automation" flow.
     setSelectedPhone(phone);
+    if (!business) return;
+    const result = await openChatFromViewer({
+      businessId: business._id as Id<"businesses">,
+      viewerPhone: phone,
+    });
+    window.open(result.deepLink, "_blank", "noopener,noreferrer");
   };
 
   return (

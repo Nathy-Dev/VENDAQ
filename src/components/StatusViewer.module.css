@@ -24,6 +24,28 @@
   font-size: 1.1rem;
 }
 
+.segmentTools {
+  margin-top: 1rem;
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.segmentSelect {
+  background: #111b21;
+  color: #e9edef;
+  border: 1px solid rgba(134, 150, 160, 0.3);
+  border-radius: 0.6rem;
+  padding: 0.6rem 0.75rem;
+  min-width: 220px;
+}
+
+.segmentTools .retargetBtn {
+  width: auto;
+  margin-top: 0;
+  padding: 0.65rem 0.9rem;
+}
+
 .statusGrid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));

@@ -45,6 +45,8 @@ export const createOrder = mutation({
         v.literal("pending"),
         v.literal("awaiting_payment"),
         v.literal("paid"),
+        v.literal("payment_failed"),
+        v.literal("expired"),
         v.literal("processing"),
         v.literal("shipped"),
         v.literal("delivered"),
@@ -66,10 +68,64 @@ export const createOrder = mutation({
     if (customer) {
         await ctx.db.patch(customer._id, {
             totalValue: (customer.totalValue || 0) + args.totalAmount,
+            funnelStage: args.status === "paid" ? "paid" : args.status === "awaiting_payment" ? "awaiting_payment" : "order_created",
             tags: customer.tags.includes("customer") ? customer.tags : [...customer.tags, "customer"]
         });
     }
 
     return orderId;
+  },
+});
+
+export const getOrderById = query({
+  args: {
+    businessId: v.id("businesses"),
+    orderId: v.id("orders"),
+  },
+  handler: async (ctx, args) => {
+    const order = await ctx.db.get(args.orderId);
+    if (!order || order.businessId !== args.businessId) return null;
+    const customer = await ctx.db.get(order.customerId);
+    return {
+      ...order,
+      customerName: customer?.name,
+      customerPhone: customer?.phone ?? "",
+    };
+  },
+});
+
+export const updateOrderStatus = mutation({
+  args: {
+    businessId: v.id("businesses"),
+    orderId: v.id("orders"),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("awaiting_payment"),
+      v.literal("paid"),
+      v.literal("payment_failed"),
+      v.literal("expired"),
+      v.literal("processing"),
+      v.literal("shipped"),
+      v.literal("delivered"),
+      v.literal("cancelled")
+    ),
+  },
+  handler: async (ctx, args) => {
+    const order = await ctx.db.get(args.orderId);
+    if (!order || order.businessId !== args.businessId) {
+      throw new Error("Order not found.");
+    }
+    await ctx.db.patch(args.orderId, { status: args.status });
+    const customer = await ctx.db.get(order.customerId);
+    if (!customer) return;
+    await ctx.db.patch(customer._id, {
+      funnelStage: args.status === "paid" || args.status === "delivered"
+        ? "paid"
+        : args.status === "awaiting_payment"
+          ? "awaiting_payment"
+          : args.status === "payment_failed" || args.status === "expired"
+            ? "lost"
+            : "order_created",
+    });
   },
 });

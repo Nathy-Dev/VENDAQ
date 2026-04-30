@@ -17,6 +17,11 @@ export interface Customer {
   image?: string;
   isGroup?: boolean;
   lastIntent?: string;
+  leadSource?: "status_view" | "dm" | "imported";
+  funnelStage?: "viewer" | "engaged" | "intent" | "order_created" | "awaiting_payment" | "paid" | "lost";
+  lastStatusViewedAt?: number;
+  lastOutboundAt?: number;
+  lastInboundAt?: number;
 }
 
 export interface Interaction {
@@ -38,7 +43,7 @@ export interface Order {
   customerName?: string;
   customerPhone: string;
   totalAmount: number;
-  status: "pending" | "awaiting_payment" | "processing" | "shipped" | "delivered" | "cancelled";
+  status: "pending" | "awaiting_payment" | "paid" | "payment_failed" | "expired" | "processing" | "shipped" | "delivered" | "cancelled";
   createdAt: number;
 }
 
@@ -55,4 +60,22 @@ export interface PooledOrders {
   awaiting_payment: Order[];
   processing: Order[];
   delivered: Order[];
+}
+
+export interface InvisibleCrmOverview {
+  hotLeads: number;
+  stalledAfterQuote: number;
+  unattendedHotLeads: number;
+  potentialRevenueAtRisk: number;
+}
+
+export interface RevenueActionItem {
+  customerId: Id<"customers">;
+  customerName: string;
+  customerPhone: string;
+  priority: "high" | "medium" | "low";
+  reason: string;
+  suggestedMessage: string;
+  dueAt: number;
+  estimatedValue: number;
 }

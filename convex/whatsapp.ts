@@ -1,5 +1,61 @@
 import { v } from "convex/values";
-import { mutation, query, internalMutation, action } from "./_generated/server";
+import { mutation, query, action } from "./_generated/server";
+import { api } from "./_generated/api";
+import { Id } from "./_generated/dataModel";
+
+const VIEWER_FOLLOW_UP_DELAY_MS = 2 * 60 * 60 * 1000;
+const AWAITING_PAYMENT_REMINDER_DELAY_MS = 3 * 60 * 60 * 1000;
+const SECOND_REMINDER_DELAY_MS = 9 * 60 * 60 * 1000;
+
+type IntentScore = {
+  intent: "price_request" | "availability_check" | "ready_to_buy" | "payment_signal" | "general";
+  score: number;
+};
+
+function normalizePhoneForWhatsApp(phone: string): string {
+  const raw = phone.split("@")[0] || phone;
+  const digits = raw.replace(/\D/g, "");
+  return digits.length > 0 ? digits : raw;
+}
+
+function scoreIntentFromContent(content: string): IntentScore {
+  const text = content.toLowerCase();
+  let price = 0;
+  let availability = 0;
+  let ready = 0;
+  let payment = 0;
+
+  if (/(price|how much|cost|rate|budget)/.test(text)) price += 2;
+  if (/(available|in stock|have|size|color|variant)/.test(text)) availability += 2;
+  if (/(buy|order|take|i want|i need|send it)/.test(text)) ready += 3;
+  if (/(pay|payment|account|transfer|receipt|checkout)/.test(text)) payment += 3;
+  if (/(today|now|urgent|asap)/.test(text)) ready += 1;
+
+  const ranking: IntentScore[] = [
+    { intent: "price_request", score: price },
+    { intent: "availability_check", score: availability },
+    { intent: "ready_to_buy", score: ready },
+    { intent: "payment_signal", score: payment },
+  ];
+  ranking.sort((a, b) => b.score - a.score);
+
+  return ranking[0].score > 0 ? ranking[0] : { intent: "general", score: 0 };
+}
+
+function inferMemoryPatch(content: string): Record<string, unknown> {
+  const text = content.toLowerCase();
+  const patch: Record<string, unknown> = {
+    memorySummaryUpdatedAt: Date.now(),
+  };
+
+  if (/(price|how much|cost|discount)/.test(text)) patch.memoryLastAskedTopic = "pricing";
+  if (/(size|fit|color|variant|available)/.test(text)) patch.memoryLastAskedTopic = "availability";
+  if (/(expensive|too much|can't afford|later)/.test(text)) patch.memoryLastObjection = "price";
+  if (/(delivery|ship|waybill)/.test(text)) patch.memoryLastAskedTopic = "delivery";
+  if (/(shoe|sneaker|slipper)/.test(text)) patch.memoryPreferredCategory = "footwear";
+  if (/(bag|purse)/.test(text)) patch.memoryPreferredCategory = "bags";
+  return patch;
+}
 
 function isRawName(name: string | undefined, phone: string): boolean {
     if (!name || name === "Group Chat") return true;
@@ -35,7 +91,9 @@ export const updateConnectionStatus = mutation({
   },
   handler: async (ctx, args) => {
     // If we are fully connected, clear the QR code so the UI can proceed
-    const patchData: any = { whatsappStatus: args.status };
+    const patchData: { whatsappStatus: "connected" | "disconnected" | "error"; qrCode?: string } = {
+      whatsappStatus: args.status,
+    };
     if (args.status === "connected") {
         patchData.qrCode = undefined;
     }
@@ -112,6 +170,9 @@ export const updateContactName = mutation({
             isGroup: args.isGroup,
             totalValue: 0,
             lastInteraction: Date.now(),
+            leadSource: "dm",
+            funnelStage: "engaged",
+            lastInboundAt: Date.now(),
             tags: [args.isGroup ? "group" : "contact"],
         });
     }
@@ -190,11 +251,24 @@ export const receiveMessage = mutation({
         groupMetadata: args.groupMetadata,
         totalValue: 0,
         lastInteraction: args.timestamp,
+        leadSource: "dm",
+        funnelStage: "engaged",
+        lastInboundAt: args.timestamp,
         tags: [args.isGroup ? "group" : "new-lead"],
       });
       customer = await ctx.db.get(customerId);
     } else {
-        const patchData: any = { lastInteraction: args.timestamp };
+        const patchData: {
+          lastInteraction: number;
+          lastInboundAt?: number;
+          lastOutboundAt?: number;
+          groupMetadata?: { owner?: string; participants: string[] };
+          name?: string;
+        } = {
+          lastInteraction: args.timestamp,
+          lastInboundAt: args.fromMe ? customer.lastInboundAt : args.timestamp,
+          lastOutboundAt: args.fromMe ? args.timestamp : customer.lastOutboundAt,
+        };
         if (args.groupMetadata) patchData.groupMetadata = args.groupMetadata;
         
         // Update name if we have a new one and the current one is primitive
@@ -211,19 +285,17 @@ export const receiveMessage = mutation({
     if (!customer) return;
 
     // --- Intent Detection (Status-to-Cash Engine) ---
-    const lowerContent = args.content.toLowerCase();
-    let intent: string | undefined = undefined;
-    
-    if (lowerContent.includes("price") || lowerContent.includes("how much") || lowerContent.includes("cost")) {
-        intent = "inquiry";
-    } else if (lowerContent.includes("buy") || lowerContent.includes("order") || lowerContent.includes("want")) {
-        intent = "purchase_intent";
-    } else if (lowerContent.includes("account") || lowerContent.includes("pay")) {
-        intent = "payment_inquiry";
-    }
-    
-    if (intent) {
-        await ctx.db.patch(customer._id, { lastIntent: intent });
+    const intentScore = scoreIntentFromContent(args.content);
+    const intent = intentScore.intent === "general" ? undefined : intentScore.intent;
+    const memoryPatch = inferMemoryPatch(args.content);
+    if (!args.fromMe) {
+      await ctx.db.patch(customer._id, {
+        ...memoryPatch,
+        lastIntent: intent,
+        funnelStage: intent === "payment_signal" ? "awaiting_payment" : intent ? "intent" : "engaged",
+      });
+    } else {
+      await ctx.db.patch(customer._id, memoryPatch);
     }
     // ------------------------------------------------
 
@@ -238,7 +310,7 @@ export const receiveMessage = mutation({
       mediaId: args.mediaId,
       fileName: args.fileName,
       whatsappMessageId: args.whatsappMessageId,
-      intent: intent, // Store detected intent in interaction too
+      intent: intent,
     });
     
     return { success: true };
@@ -283,6 +355,10 @@ export const syncHistory = mutation({
           isGroup: item.isGroup,
           totalValue: 0,
           lastInteraction: item.timestamp,
+          leadSource: "imported",
+          funnelStage: "engaged",
+          lastInboundAt: item.fromMe ? undefined : item.timestamp,
+          lastOutboundAt: item.fromMe ? item.timestamp : undefined,
           tags: ["imported", item.isGroup ? "group" : "lead"],
         });
         customer = await ctx.db.get(customerId);
@@ -292,6 +368,11 @@ export const syncHistory = mutation({
           // Update last interaction if this one is newer
           if (item.timestamp > customer.lastInteraction) {
             patchData.lastInteraction = item.timestamp;
+          }
+          if (item.fromMe) {
+            patchData.lastOutboundAt = item.timestamp;
+          } else {
+            patchData.lastInboundAt = item.timestamp;
           }
           
           // Update name if old one looks raw and new one is real
@@ -444,21 +525,56 @@ export const syncStatusView = mutation({
         .unique();
     
     if (!customer) {
-        await ctx.db.insert("customers", {
+        const customerId = await ctx.db.insert("customers", {
             businessId: args.businessId,
             phone: args.viewerPhone,
             name: args.viewerPhone, // We don't have a name yet
             totalValue: 0,
             lastInteraction: args.timestamp,
+            leadSource: "status_view",
+            funnelStage: "viewer",
+            lastStatusViewedAt: args.timestamp,
             tags: ["status-viewer", "new-lead"],
         });
+        customer = await ctx.db.get(customerId);
     } else {
         // Tag existing customer as status viewer if not already
-        if (!customer.tags.includes("status-viewer")) {
-            await ctx.db.patch(customer._id, {
-                tags: [...customer.tags, "status-viewer"]
-            });
-        }
+        await ctx.db.patch(customer._id, {
+          tags: customer.tags.includes("status-viewer") ? customer.tags : [...customer.tags, "status-viewer"],
+          leadSource: customer.leadSource || "status_view",
+          funnelStage: customer.funnelStage === "paid" ? "paid" : "viewer",
+          lastStatusViewedAt: args.timestamp,
+        });
+    }
+
+    if (!customer) return;
+
+    const recentInbound = await ctx.db
+      .query("interactions")
+      .withIndex("by_customer", (q) => q.eq("customerId", customer._id))
+      .filter((q) => q.and(
+        q.eq(q.field("role"), "customer"),
+        q.gt(q.field("timestamp"), args.timestamp)
+      ))
+      .first();
+
+    if (!recentInbound) {
+      const existingTask = await ctx.db
+        .query("followUpTasks")
+        .withIndex("by_customer_reason", (q) => q.eq("customerId", customer!._id).eq("reason", "viewed_no_dm"))
+        .filter((q) => q.eq(q.field("status"), "pending"))
+        .first();
+
+      if (!existingTask) {
+        await ctx.db.insert("followUpTasks", {
+          businessId: args.businessId,
+          customerId: customer._id,
+          reason: "viewed_no_dm",
+          dueAt: args.timestamp + VIEWER_FOLLOW_UP_DELAY_MS,
+          status: "pending",
+          createdAt: Date.now(),
+        });
+      }
     }
   },
 });
@@ -486,6 +602,707 @@ export const getStatusViews = query({
   },
 });
 
+export const getMessageTemplates = query({
+  args: { businessId: v.id("businesses") },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("messageTemplates")
+      .withIndex("by_business", (q) => q.eq("businessId", args.businessId))
+      .filter((q) => q.eq(q.field("isActive"), true))
+      .collect();
+  },
+});
+
+export const seedDefaultTemplates = mutation({
+  args: { businessId: v.id("businesses") },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("messageTemplates")
+      .withIndex("by_business", (q) => q.eq("businessId", args.businessId))
+      .collect();
+    if (existing.length > 0) return existing;
+
+    const now = Date.now();
+    const defaults = [
+      { name: "Quick Reopen", type: "reopen_conversation" as const, body: "Hi! Thanks for viewing our status. Do you want the current price list?" },
+      { name: "Checkout Prompt", type: "checkout" as const, body: "Ready to order? Send the item name and quantity, and I will prepare checkout." },
+    ];
+    for (const template of defaults) {
+      await ctx.db.insert("messageTemplates", {
+        businessId: args.businessId,
+        name: template.name,
+        type: template.type,
+        body: template.body,
+        isActive: true,
+        createdAt: now,
+      });
+    }
+
+    return await ctx.db
+      .query("messageTemplates")
+      .withIndex("by_business", (q) => q.eq("businessId", args.businessId))
+      .collect();
+  },
+});
+
+export const getStatusToCashMetrics = query({
+  args: { businessId: v.id("businesses") },
+  handler: async (ctx, args) => {
+    const views = await ctx.db
+      .query("statusViews")
+      .withIndex("by_business", (q) => q.eq("businessId", args.businessId))
+      .collect();
+
+    const uniquePhones = new Set(views.map((view) => view.viewerPhone));
+    const customers = await Promise.all(
+      [...uniquePhones].map((phone) =>
+        ctx.db.query("customers").withIndex("by_business_phone", (q) => q.eq("businessId", args.businessId).eq("phone", phone)).unique()
+      )
+    );
+
+    const engaged = customers.filter((c) => !!c && (c.lastInboundAt || c.lastIntent)).length;
+    const orders = await ctx.db.query("orders").withIndex("by_business", (q) => q.eq("businessId", args.businessId)).collect();
+    const paidOrders = orders.filter((o) => o.status === "paid" || o.status === "delivered");
+
+    return {
+      statusViews: views.length,
+      conversationsStarted: engaged,
+      ordersCreated: orders.length,
+      paymentsCompleted: paidOrders.length,
+    };
+  },
+});
+
+export const getViewersWithoutEngagement = query({
+  args: {
+    businessId: v.id("businesses"),
+    hours: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const cutoff = Date.now() - args.hours * 60 * 60 * 1000;
+    const views = await ctx.db
+      .query("statusViews")
+      .withIndex("by_business", (q) => q.eq("businessId", args.businessId))
+      .filter((q) => q.gt(q.field("timestamp"), cutoff))
+      .collect();
+
+    const uniqueViewerPhones = [...new Set(views.map((view) => view.viewerPhone))];
+    const results: Array<{ phone: string; customerId: string; viewedAt: number }> = [];
+
+    for (const viewerPhone of uniqueViewerPhones) {
+      const customer = await ctx.db
+        .query("customers")
+        .withIndex("by_business_phone", (q) => q.eq("businessId", args.businessId).eq("phone", viewerPhone))
+        .unique();
+
+      if (!customer) continue;
+      const hasInbound = !!customer.lastInboundAt && customer.lastInboundAt > cutoff;
+      if (hasInbound) continue;
+      results.push({ phone: viewerPhone, customerId: customer._id, viewedAt: customer.lastStatusViewedAt || customer.lastInteraction });
+    }
+
+    return results;
+  },
+});
+
+export const bulkRetargetViewers = mutation({
+  args: {
+    businessId: v.id("businesses"),
+    templateId: v.id("messageTemplates"),
+    viewerPhones: v.optional(v.array(v.string())),
+    hours: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const template = await ctx.db.get(args.templateId);
+    if (!template || template.businessId !== args.businessId || !template.isActive) {
+      throw new Error("Template not found or inactive.");
+    }
+
+    const minTimestamp = Date.now() - ((args.hours || 24) * 60 * 60 * 1000);
+    const phones = args.viewerPhones || [...new Set((await ctx.db.query("statusViews").withIndex("by_business", (q) => q.eq("businessId", args.businessId)).filter((q) => q.gt(q.field("timestamp"), minTimestamp)).collect()).map((v) => v.viewerPhone))];
+
+    let sent = 0;
+    for (const phone of phones) {
+      const customer = await ctx.db
+        .query("customers")
+        .withIndex("by_business_phone", (q) => q.eq("businessId", args.businessId).eq("phone", phone))
+        .unique();
+      if (!customer) continue;
+
+      await ctx.db.insert("interactions", {
+        businessId: args.businessId,
+        customerId: customer._id,
+        role: "owner",
+        content: template.body,
+        timestamp: Date.now(),
+        messageType: "text",
+      });
+      await ctx.db.patch(customer._id, {
+        lastOutboundAt: Date.now(),
+        funnelStage: customer.funnelStage === "viewer" ? "engaged" : customer.funnelStage,
+      });
+      sent += 1;
+    }
+
+    return {
+      success: true,
+      sent,
+      template: template.name,
+    };
+  },
+});
+
+export const openChatFromViewer = mutation({
+  args: {
+    businessId: v.id("businesses"),
+    viewerPhone: v.string(),
+  },
+  handler: async (ctx, args) => {
+    let customer = await ctx.db
+      .query("customers")
+      .withIndex("by_business_phone", (q) => q.eq("businessId", args.businessId).eq("phone", args.viewerPhone))
+      .unique();
+
+    if (!customer) {
+      const id = await ctx.db.insert("customers", {
+        businessId: args.businessId,
+        phone: args.viewerPhone,
+        name: args.viewerPhone,
+        totalValue: 0,
+        lastInteraction: Date.now(),
+        leadSource: "status_view",
+        funnelStage: "engaged",
+        tags: ["status-viewer", "lead"],
+      });
+      customer = await ctx.db.get(id);
+    } else {
+      await ctx.db.patch(customer._id, {
+        funnelStage: customer.funnelStage === "viewer" ? "engaged" : customer.funnelStage,
+      });
+    }
+
+    return {
+      customerId: customer?._id,
+      normalizedPhone: normalizePhoneForWhatsApp(args.viewerPhone),
+      deepLink: `https://wa.me/${normalizePhoneForWhatsApp(args.viewerPhone)}`,
+    };
+  },
+});
+
+export const promoteChatToOrderDraft = mutation({
+  args: {
+    businessId: v.id("businesses"),
+    customerId: v.id("customers"),
+    fallbackAmount: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const customer = await ctx.db.get(args.customerId);
+    if (!customer || customer.businessId !== args.businessId) {
+      throw new Error("Customer not found.");
+    }
+
+    const recent = await ctx.db
+      .query("interactions")
+      .withIndex("by_customer", (q) => q.eq("customerId", args.customerId))
+      .order("desc")
+      .take(8);
+
+    const joined = recent.map((item) => item.content).join(" ").toLowerCase();
+    const amountMatch = joined.match(/(?:₦|ngn|n)\s?(\d[\d,]*)|(\d[\d,]{3,})/i);
+    const parsed = amountMatch ? parseInt((amountMatch[1] || amountMatch[2] || "0").replace(/,/g, ""), 10) : 0;
+    const amount = parsed > 0 ? parsed : args.fallbackAmount || 0;
+
+    const skuHints = ["shoe", "sneaker", "bag", "watch", "shirt", "dress"];
+    const inferred = skuHints.find((term) => joined.includes(term)) || "Requested Item";
+
+    const orderId = await ctx.db.insert("orders", {
+      businessId: args.businessId,
+      customerId: args.customerId,
+      items: [{ name: inferred, quantity: 1, price: amount }],
+      totalAmount: amount,
+      status: "pending",
+      createdAt: Date.now(),
+    });
+
+    await ctx.db.patch(args.customerId, {
+      funnelStage: "order_created",
+      lastIntent: "ready_to_buy",
+    });
+
+    return { orderId, amount, item: inferred };
+  },
+});
+
+export const sendCheckoutForOrder = action({
+  args: {
+    businessId: v.id("businesses"),
+    orderId: v.id("orders"),
+  },
+  handler: async (ctx, args) => {
+    const workerUrl = process.env.WHATSAPP_WORKER_URL || "http://localhost:3005";
+    const order = await ctx.runQuery(api.orders.getOrderById, { businessId: args.businessId, orderId: args.orderId });
+    if (!order) throw new Error("Order not found.");
+
+    const checkoutMessage = `Checkout ready. Amount: NGN ${order.totalAmount.toLocaleString()}. Reply with payment confirmation after transfer.`;
+    const sendRes = await fetch(`${workerUrl}/message/send`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        businessId: args.businessId,
+        to: order.customerPhone,
+        content: checkoutMessage,
+      }),
+    });
+
+    if (!sendRes.ok) {
+      throw new Error(`Worker send failed: ${await sendRes.text()}`);
+    }
+
+    await ctx.runMutation(api.orders.updateOrderStatus, {
+      businessId: args.businessId,
+      orderId: args.orderId,
+      status: "awaiting_payment",
+    });
+
+    await ctx.runMutation(api.whatsapp.createAwaitingPaymentTask, {
+      businessId: args.businessId,
+      customerId: order.customerId,
+      dueAt: Date.now() + AWAITING_PAYMENT_REMINDER_DELAY_MS,
+      reason: "awaiting_payment",
+    });
+
+    return { success: true };
+  },
+});
+
+export const createAwaitingPaymentTask = mutation({
+  args: {
+    businessId: v.id("businesses"),
+    customerId: v.id("customers"),
+    dueAt: v.number(),
+    reason: v.union(v.literal("awaiting_payment"), v.literal("asked_no_order"), v.literal("viewed_no_dm")),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.insert("followUpTasks", {
+      businessId: args.businessId,
+      customerId: args.customerId,
+      reason: args.reason,
+      dueAt: args.dueAt,
+      status: "pending",
+      createdAt: Date.now(),
+    });
+  },
+});
+
+export const processPaymentFollowUps = action({
+  args: { businessId: v.id("businesses") },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const tasks = await ctx.runQuery(api.whatsapp.getDuePaymentTasks, {
+      businessId: args.businessId,
+      now,
+    });
+    let processed = 0;
+    for (const task of tasks) {
+      await ctx.runAction(api.whatsapp.sendRetargetMessage, {
+        businessId: args.businessId,
+        customerId: task.customerId,
+        content: "Quick reminder: your payment is still pending. Reply if you need help completing checkout.",
+      });
+      await ctx.runMutation(api.whatsapp.markTaskDone, { taskId: task._id });
+      await ctx.runMutation(api.whatsapp.createAwaitingPaymentTask, {
+        businessId: args.businessId,
+        customerId: task.customerId,
+        dueAt: now + SECOND_REMINDER_DELAY_MS,
+        reason: "awaiting_payment",
+      });
+      processed += 1;
+    }
+    return { processed };
+  },
+});
+
+export const getDuePaymentTasks = query({
+  args: { businessId: v.id("businesses"), now: v.number() },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("followUpTasks")
+      .withIndex("by_business_due", (q) => q.eq("businessId", args.businessId).lte("dueAt", args.now))
+      .filter((q) => q.and(q.eq(q.field("status"), "pending"), q.eq(q.field("reason"), "awaiting_payment")))
+      .collect();
+  },
+});
+
+export const markTaskDone = mutation({
+  args: { taskId: v.id("followUpTasks") },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.taskId, { status: "done" });
+  },
+});
+
+export const getRetargetSegments = query({
+  args: { businessId: v.id("businesses") },
+  handler: async (ctx, args) => {
+    const customers = await ctx.db
+      .query("customers")
+      .withIndex("by_business_last_interaction", (q) => q.eq("businessId", args.businessId))
+      .collect();
+
+    const viewedNotReplied = customers.filter((c) => c.lastStatusViewedAt && (!c.lastInboundAt || c.lastInboundAt < c.lastStatusViewedAt));
+    const repliedNotOrdered = customers.filter((c) => c.lastInboundAt && c.funnelStage !== "order_created" && c.funnelStage !== "awaiting_payment" && c.funnelStage !== "paid");
+    const orderedNotPaid = customers.filter((c) => c.funnelStage === "awaiting_payment" || c.funnelStage === "order_created");
+    const paidCrossSell = customers.filter((c) => c.funnelStage === "paid");
+
+    return {
+      viewed_not_replied: viewedNotReplied.map((c) => ({ customerId: c._id, phone: c.phone })),
+      replied_not_ordered: repliedNotOrdered.map((c) => ({ customerId: c._id, phone: c.phone })),
+      ordered_not_paid: orderedNotPaid.map((c) => ({ customerId: c._id, phone: c.phone })),
+      paid_cross_sell_candidate: paidCrossSell.map((c) => ({ customerId: c._id, phone: c.phone })),
+    };
+  },
+});
+
+export const createAutomationRun = mutation({
+  args: {
+    businessId: v.id("businesses"),
+    segment: v.string(),
+    templateId: v.id("messageTemplates"),
+    mode: v.union(v.literal("manual"), v.literal("scheduled")),
+    scheduledAt: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db.insert("automationRuns", {
+      businessId: args.businessId,
+      segment: args.segment,
+      templateId: args.templateId,
+      mode: args.mode,
+      scheduledAt: args.scheduledAt,
+      status: args.mode === "manual" ? "running" : "pending",
+      sentCount: 0,
+      createdAt: Date.now(),
+    });
+  },
+});
+
+export const executeAutomationRun = action({
+  args: { businessId: v.id("businesses"), runId: v.id("automationRuns") },
+  handler: async (ctx, args) => {
+    const run = await ctx.runQuery(api.whatsapp.getAutomationRunById, { runId: args.runId });
+    if (!run) throw new Error("Run not found.");
+    const template = await ctx.runQuery(api.whatsapp.getTemplateById, { templateId: run.templateId });
+    if (!template) throw new Error("Template not found.");
+    const segments = await ctx.runQuery(api.whatsapp.getRetargetSegments, { businessId: args.businessId });
+    const targets = (
+      segments as Record<string, Array<{ customerId: Id<"customers"> }>>
+    )[run.segment] || [];
+
+    let sent = 0;
+    for (const target of targets) {
+      const allowed = await ctx.runQuery(api.whatsapp.canSendToCustomerNow, { businessId: args.businessId, customerId: target.customerId });
+      if (!allowed) continue;
+      await ctx.runAction(api.whatsapp.sendRetargetMessage, {
+        businessId: args.businessId,
+        customerId: target.customerId,
+        content: template.body,
+      });
+      sent += 1;
+    }
+
+    await ctx.runMutation(api.whatsapp.finishAutomationRun, { runId: args.runId, sentCount: sent });
+    return { sent };
+  },
+});
+
+export const processScheduledAutomationRuns = action({
+  args: { businessId: v.id("businesses") },
+  handler: async (ctx, args) => {
+    const dueRuns = await ctx.runQuery(api.whatsapp.getDueAutomationRuns, { businessId: args.businessId, now: Date.now() });
+    let processed = 0;
+    for (const run of dueRuns) {
+      await ctx.runMutation(api.whatsapp.markAutomationRunRunning, { runId: run._id });
+      await ctx.runAction(api.whatsapp.executeAutomationRun, { businessId: args.businessId, runId: run._id });
+      processed += 1;
+    }
+    return { processed };
+  },
+});
+
+export const sendRetargetMessage = action({
+  args: {
+    businessId: v.id("businesses"),
+    customerId: v.id("customers"),
+    content: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const workerUrl = process.env.WHATSAPP_WORKER_URL || "http://localhost:3005";
+    const customer = await ctx.runQuery(api.whatsapp.getCustomerLiteById, { customerId: args.customerId });
+    if (!customer) return { sent: false };
+
+    const response = await fetch(`${workerUrl}/message/send`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        businessId: args.businessId,
+        to: customer.phone,
+        content: args.content,
+      }),
+    });
+    if (!response.ok) return { sent: false };
+
+    await ctx.runMutation(api.whatsapp.logOutboundMessage, {
+      businessId: args.businessId,
+      customerId: args.customerId,
+      content: args.content,
+    });
+    return { sent: true };
+  },
+});
+
+export const getCustomerLiteById = query({
+  args: { customerId: v.id("customers") },
+  handler: async (ctx, args) => await ctx.db.get(args.customerId),
+});
+
+export const getOrderSuggestion = query({
+  args: { businessId: v.id("businesses"), customerId: v.id("customers") },
+  handler: async (ctx, args) => {
+    const customer = await ctx.db.get(args.customerId);
+    if (!customer || customer.businessId !== args.businessId) return null;
+    const topic = customer.memoryLastAskedTopic || "product details";
+    const category = customer.memoryPreferredCategory || "best sellers";
+    const objection = customer.memoryLastObjection;
+
+    return {
+      suggestedReply: objection === "price"
+        ? "I can share a lower-price option and current promo. What budget should we target?"
+        : `Thanks for your interest. I can send details on ${topic} right away.`,
+      suggestedUpsell: `Offer a matching add-on from ${category}.`,
+      suggestedFollowUpTiming: customer.lastInboundAt ? "Follow up in 2-4 hours if no response." : "Follow up in 12 hours.",
+    };
+  },
+});
+
+export const getDueAutomationRuns = query({
+  args: { businessId: v.id("businesses"), now: v.number() },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("automationRuns")
+      .withIndex("by_business_status", (q) => q.eq("businessId", args.businessId).eq("status", "pending"))
+      .filter((q) => q.lte(q.field("scheduledAt"), args.now))
+      .collect();
+  },
+});
+
+export const getAutomationRunById = query({
+  args: { runId: v.id("automationRuns") },
+  handler: async (ctx, args) => await ctx.db.get(args.runId),
+});
+
+export const getTemplateById = query({
+  args: { templateId: v.id("messageTemplates") },
+  handler: async (ctx, args) => await ctx.db.get(args.templateId),
+});
+
+export const markAutomationRunRunning = mutation({
+  args: { runId: v.id("automationRuns") },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.runId, { status: "running" });
+  },
+});
+
+export const finishAutomationRun = mutation({
+  args: { runId: v.id("automationRuns"), sentCount: v.number() },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.runId, {
+      status: "completed",
+      sentCount: args.sentCount,
+      executedAt: Date.now(),
+    });
+  },
+});
+
+export const logOutboundMessage = mutation({
+  args: {
+    businessId: v.id("businesses"),
+    customerId: v.id("customers"),
+    content: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.insert("interactions", {
+      businessId: args.businessId,
+      customerId: args.customerId,
+      role: "owner",
+      content: args.content,
+      timestamp: Date.now(),
+      messageType: "text",
+    });
+    await ctx.db.patch(args.customerId, {
+      lastOutboundAt: Date.now(),
+      funnelStage: "engaged",
+      memorySummaryUpdatedAt: Date.now(),
+    });
+  },
+});
+
+export const canSendToCustomerNow = query({
+  args: {
+    businessId: v.id("businesses"),
+    customerId: v.id("customers"),
+  },
+  handler: async (ctx, args) => {
+    const now = new Date();
+    const hour = now.getHours();
+    if (hour < 7 || hour >= 22) return false;
+
+    const since = Date.now() - 24 * 60 * 60 * 1000;
+    const messages = await ctx.db
+      .query("interactions")
+      .withIndex("by_customer", (q) => q.eq("customerId", args.customerId))
+      .filter((q) => q.and(q.eq(q.field("role"), "owner"), q.gt(q.field("timestamp"), since)))
+      .collect();
+    if (messages.length >= 3) return false;
+
+    const businessMsgs = await ctx.db
+      .query("interactions")
+      .withIndex("by_business", (q) => q.eq("businessId", args.businessId))
+      .filter((q) => q.and(q.eq(q.field("role"), "owner"), q.gt(q.field("timestamp"), since)))
+      .collect();
+    if (businessMsgs.length >= 250) return false;
+
+    return true;
+  },
+});
+
+function buildSuggestedMessage(lastIntent: string | undefined, customerName: string): string {
+  if (lastIntent === "payment_signal") {
+    return `Hi ${customerName}, your checkout is still open. Want me to resend payment details now?`;
+  }
+  if (lastIntent === "ready_to_buy") {
+    return `Hi ${customerName}, I can reserve this for you now. Should I proceed with your order?`;
+  }
+  if (lastIntent === "price_request") {
+    return `Hi ${customerName}, quick follow-up: should I send the best option in your budget?`;
+  }
+  return `Hi ${customerName}, still interested? I can help you complete this today.`;
+}
+
+function estimateCustomerValue(totalValue: number, lastIntent: string | undefined): number {
+  const base = totalValue > 0 ? totalValue : 15000;
+  if (lastIntent === "payment_signal") return Math.round(base * 1.2);
+  if (lastIntent === "ready_to_buy") return base;
+  if (lastIntent === "price_request") return Math.round(base * 0.75);
+  return Math.round(base * 0.5);
+}
+
+export const getInvisibleCrmOverview = query({
+  args: { businessId: v.id("businesses") },
+  handler: async (ctx, args) => {
+    const customers = await ctx.db
+      .query("customers")
+      .withIndex("by_business_last_interaction", (q) => q.eq("businessId", args.businessId))
+      .take(300);
+
+    const now = Date.now();
+    let hotLeads = 0;
+    let stalledAfterQuote = 0;
+    let unattendedHotLeads = 0;
+    let potentialRevenueAtRisk = 0;
+
+    for (const customer of customers) {
+      const isHot = customer.lastIntent === "ready_to_buy" || customer.lastIntent === "payment_signal" || customer.funnelStage === "awaiting_payment";
+      const isStalled = customer.lastIntent === "price_request" && !!customer.lastInboundAt && (now - customer.lastInboundAt) > 12 * 60 * 60 * 1000;
+      const unattended = isHot && (!customer.lastOutboundAt || (now - customer.lastOutboundAt) > 2 * 60 * 60 * 1000);
+
+      if (isHot) hotLeads += 1;
+      if (isStalled) stalledAfterQuote += 1;
+      if (unattended) unattendedHotLeads += 1;
+      if (isHot || isStalled) potentialRevenueAtRisk += estimateCustomerValue(customer.totalValue, customer.lastIntent);
+    }
+
+    return {
+      hotLeads,
+      stalledAfterQuote,
+      unattendedHotLeads,
+      potentialRevenueAtRisk,
+    };
+  },
+});
+
+export const getRevenueActionFeed = query({
+  args: { businessId: v.id("businesses"), limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const customers = await ctx.db
+      .query("customers")
+      .withIndex("by_business_last_interaction", (q) => q.eq("businessId", args.businessId))
+      .order("desc")
+      .take(250);
+
+    const now = Date.now();
+    const limit = Math.min(args.limit || 25, 50);
+
+    const actions = customers.map((customer) => {
+      const inactivityMs = now - (customer.lastInteraction || now);
+      const hoursSilent = inactivityMs / (1000 * 60 * 60);
+      const isHot = customer.lastIntent === "payment_signal" || customer.lastIntent === "ready_to_buy" || customer.funnelStage === "awaiting_payment";
+      const isWarm = customer.lastIntent === "price_request" || customer.lastIntent === "availability_check" || customer.funnelStage === "intent";
+
+      const shouldReplyNow = isHot && (!customer.lastOutboundAt || (now - customer.lastOutboundAt) > 90 * 60 * 1000);
+      const shouldNudge = isWarm && hoursSilent > 6;
+
+      const priorityScore = (isHot ? 80 : isWarm ? 50 : 25) + Math.min(Math.round(hoursSilent * 2), 30);
+      const priority = priorityScore >= 90 ? "high" : priorityScore >= 60 ? "medium" : "low";
+      const customerName = customer.name || customer.phone.split("@")[0];
+
+      let reason = "Re-engage inactive lead";
+      if (shouldReplyNow) reason = "Hot lead waiting for response";
+      if (customer.lastIntent === "payment_signal") reason = "Payment intent detected";
+      if (shouldNudge && customer.lastIntent === "price_request") reason = "Asked for price, no follow-up yet";
+
+      return {
+        customerId: customer._id,
+        customerName,
+        customerPhone: customer.phone,
+        priority,
+        reason,
+        suggestedMessage: buildSuggestedMessage(customer.lastIntent, customerName),
+        dueAt: now,
+        estimatedValue: estimateCustomerValue(customer.totalValue, customer.lastIntent),
+        priorityScore,
+      };
+    });
+
+    return actions
+      .filter((a) => a.priorityScore >= 55)
+      .sort((a, b) => b.priorityScore - a.priorityScore)
+      .slice(0, limit)
+      .map(({ priorityScore, ...rest }) => rest);
+  },
+});
+
+export const executeRevenueAction = action({
+  args: {
+    businessId: v.id("businesses"),
+    customerId: v.id("customers"),
+    message: v.string(),
+  },
+  handler: async (ctx, args): Promise<{ sent: boolean; reason?: string }> => {
+    const allowed = await ctx.runQuery(api.whatsapp.canSendToCustomerNow, {
+      businessId: args.businessId,
+      customerId: args.customerId,
+    });
+
+    if (!allowed) {
+      return { sent: false, reason: "send_limit_guardrail" };
+    }
+
+    const result = await ctx.runAction(api.whatsapp.sendRetargetMessage, {
+      businessId: args.businessId,
+      customerId: args.customerId,
+      content: args.message,
+    });
+    return { sent: !!result?.sent };
+  },
+});
 
 export const requestPairingCodeAction = action({
   args: {

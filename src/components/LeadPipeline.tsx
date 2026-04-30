@@ -101,7 +101,7 @@ export default function LeadPipeline({ orders, isLoading }: LeadPipelineProps) {
                     </div>
 
                     <div className={styles.orderValue}>
-                      ₦{order.totalAmount.toLocaleString()}
+                      NGN {order.totalAmount.toLocaleString()}
                     </div>
                     
                     <div className="flex items-center justify-between mt-3">
@@ -128,3 +128,4 @@ export default function LeadPipeline({ orders, isLoading }: LeadPipelineProps) {
     </div>
   );
 }
+

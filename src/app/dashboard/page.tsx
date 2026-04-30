@@ -10,25 +10,25 @@ import { LayoutDashboard, MessageSquare, Users, TrendingUp, type LucideIcon } fr
 import styles from "./dashboard.module.css";
 import Loader from "@/components/Loader";
 import LeadPipeline from "@/components/LeadPipeline";
-import { ChatThread, PooledOrders } from "@/types";
+import InvisibleCrmPanel from "@/components/InvisibleCrmPanel";
+import { PooledOrders } from "@/types";
 
 
 export default function DashboardPage() {
   const { data: session, status: sessionStatus } = useSession();
   const router = useRouter();
 
-  const business = useQuery(api.businesses.getBusiness, 
+  const business = useQuery(api.businesses.getBusiness,
     session?.user?.id ? { ownerId: session.user.id } : "skip"
   );
-
-  const chats = useQuery(api.interactions.getRecentChats,
-    business ? { businessId: business._id } : "skip"
-  ) as ChatThread[] | undefined;
 
   const orders = useQuery(api.orders.getOrdersByBusiness,
     business ? { businessId: business._id } : "skip"
   ) as PooledOrders | undefined;
 
+  const statusMetrics = useQuery(api.whatsapp.getStatusToCashMetrics,
+    business ? { businessId: business._id } : "skip"
+  );
 
   useEffect(() => {
     if (sessionStatus === "unauthenticated") {
@@ -58,33 +58,33 @@ export default function DashboardPage() {
         </header>
 
         <div className={styles.statsGrid}>
-          <StatCard 
-            icon={MessageSquare} 
-            label="Daily Inquiries" 
-            value={chats?.length.toString() || "0"} 
-            color="rgba(59, 130, 246, 0.1)" 
-            iconColor="#3b82f6" 
+          <StatCard
+            icon={MessageSquare}
+            label="Status Views"
+            value={statusMetrics?.statusViews?.toString() || "0"}
+            color="rgba(59, 130, 246, 0.1)"
+            iconColor="#3b82f6"
           />
-          <StatCard 
-            icon={Users} 
-            label="Customers" 
-            value={chats?.length.toString() || "0"} 
-            color="rgba(16, 185, 129, 0.1)" 
-            iconColor="#10b981" 
+          <StatCard
+            icon={Users}
+            label="Conversations Started"
+            value={statusMetrics?.conversationsStarted?.toString() || "0"}
+            color="rgba(16, 185, 129, 0.1)"
+            iconColor="#10b981"
           />
-          <StatCard 
-            icon={TrendingUp} 
-            label="Weekly Revenue" 
-            value="₦0" 
-            color="rgba(139, 92, 246, 0.1)" 
-            iconColor="#8b5cf6" 
+          <StatCard
+            icon={TrendingUp}
+            label="Orders Created"
+            value={statusMetrics?.ordersCreated?.toString() || "0"}
+            color="rgba(139, 92, 246, 0.1)"
+            iconColor="#8b5cf6"
           />
-          <StatCard 
-            icon={LayoutDashboard} 
-            label="Active Pipeline" 
-            value={((orders?.pending.length || 0) + (orders?.awaiting_payment.length || 0)).toString()} 
-            color="rgba(245, 158, 11, 0.1)" 
-            iconColor="#f59e0b" 
+          <StatCard
+            icon={LayoutDashboard}
+            label="Payments Completed"
+            value={statusMetrics?.paymentsCompleted?.toString() || "0"}
+            color="rgba(245, 158, 11, 0.1)"
+            iconColor="#f59e0b"
           />
         </div>
 
@@ -95,12 +95,12 @@ export default function DashboardPage() {
                 {!business ? "Welcome to PIPELIXR! Connect your WhatsApp" : business.whatsappStatus === "error" ? "Connection Error" : "WhatsApp Not Connected"}
               </h3>
               <p className={styles.connectDesc}>
-                {!business 
+                {!business
                   ? "Finalize your setup to start capturing leads and managing your pipeline automatically."
                   : "Reconnect your WhatsApp to continue syncing your messages and leads."}
               </p>
             </div>
-            <button 
+            <button
               onClick={() => router.push("/onboarding")}
               className={styles.connectButton}
             >
@@ -112,6 +112,7 @@ export default function DashboardPage() {
 
         <div className={styles.dashboardGrid}>
           <div className="flex flex-col gap-6">
+            {business && <InvisibleCrmPanel businessId={business._id} />}
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-bold text-slate-500 uppercase tracking-widest px-1">Lead Pipeline</h3>
               {business?.whatsappStatus === "connected" && (

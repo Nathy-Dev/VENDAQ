@@ -27,9 +27,28 @@ export default defineSchema({
     totalValue: v.number(),
     lastInteraction: v.number(),
     lastIntent: v.optional(v.string()), // Added for Status-to-Cash Engine
+    leadSource: v.optional(v.union(v.literal("status_view"), v.literal("dm"), v.literal("imported"))),
+    funnelStage: v.optional(v.union(
+      v.literal("viewer"),
+      v.literal("engaged"),
+      v.literal("intent"),
+      v.literal("order_created"),
+      v.literal("awaiting_payment"),
+      v.literal("paid"),
+      v.literal("lost")
+    )),
+    lastStatusViewedAt: v.optional(v.number()),
+    lastOutboundAt: v.optional(v.number()),
+    lastInboundAt: v.optional(v.number()),
+    memoryLastAskedTopic: v.optional(v.string()),
+    memoryPreferredCategory: v.optional(v.string()),
+    memoryLastObjection: v.optional(v.string()),
+    memoryIgnoredOffers: v.optional(v.array(v.string())),
+    memorySummaryUpdatedAt: v.optional(v.number()),
     tags: v.array(v.string()),
   }).index("by_business_phone", ["businessId", "phone"])
-    .index("by_business_last_interaction", ["businessId", "lastInteraction"]),
+    .index("by_business_last_interaction", ["businessId", "lastInteraction"])
+    .index("by_business_funnel_stage", ["businessId", "funnelStage"]),
 
   orders: defineTable({
     businessId: v.id("businesses"),
@@ -44,6 +63,8 @@ export default defineSchema({
       v.literal("pending"),
       v.literal("awaiting_payment"),
       v.literal("paid"),
+      v.literal("payment_failed"),
+      v.literal("expired"),
       v.literal("processing"),
       v.literal("shipped"),
       v.literal("delivered"),
@@ -102,6 +123,69 @@ export default defineSchema({
     timestamp: v.number(),
   }).index("by_business", ["businessId"])
     .index("by_status", ["whatsappStatusId"]),
+
+  automations: defineTable({
+    businessId: v.id("businesses"),
+    name: v.string(),
+    ruleType: v.union(
+      v.literal("viewed_no_dm"),
+      v.literal("asked_no_order"),
+      v.literal("awaiting_payment"),
+      v.literal("reopen_conversation")
+    ),
+    audienceCriteria: v.any(),
+    templateId: v.id("messageTemplates"),
+    cooldownMinutes: v.number(),
+    quietHoursStart: v.optional(v.number()),
+    quietHoursEnd: v.optional(v.number()),
+    perContactDailyCap: v.optional(v.number()),
+    dailySendCap: v.optional(v.number()),
+    isActive: v.boolean(),
+    createdAt: v.number(),
+  }).index("by_business", ["businessId"]),
+
+  followUpTasks: defineTable({
+    businessId: v.id("businesses"),
+    customerId: v.id("customers"),
+    reason: v.union(
+      v.literal("viewed_no_dm"),
+      v.literal("asked_no_order"),
+      v.literal("awaiting_payment")
+    ),
+    dueAt: v.number(),
+    status: v.union(v.literal("pending"), v.literal("done"), v.literal("skipped")),
+    createdAt: v.number(),
+  }).index("by_business_due", ["businessId", "dueAt"])
+    .index("by_customer_reason", ["customerId", "reason"]),
+
+  messageTemplates: defineTable({
+    businessId: v.id("businesses"),
+    name: v.string(),
+    type: v.union(
+      v.literal("price_list"),
+      v.literal("checkout"),
+      v.literal("payment_reminder"),
+      v.literal("reopen_conversation")
+    ),
+    body: v.string(),
+    isActive: v.boolean(),
+    createdAt: v.number(),
+  }).index("by_business", ["businessId"])
+    .index("by_business_type", ["businessId", "type"]),
+
+  automationRuns: defineTable({
+    businessId: v.id("businesses"),
+    automationId: v.optional(v.id("automations")),
+    segment: v.string(),
+    templateId: v.id("messageTemplates"),
+    mode: v.union(v.literal("manual"), v.literal("scheduled")),
+    scheduledAt: v.optional(v.number()),
+    executedAt: v.optional(v.number()),
+    status: v.union(v.literal("pending"), v.literal("running"), v.literal("completed"), v.literal("failed")),
+    sentCount: v.number(),
+    createdAt: v.number(),
+  }).index("by_business_status", ["businessId", "status"])
+    .index("by_scheduled_status", ["status", "scheduledAt"]),
 
 
   users: defineTable({
