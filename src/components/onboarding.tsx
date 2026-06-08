@@ -55,6 +55,7 @@ export default function Onboarding({ initialStep = 0 }: OnboardingProps) {
   const [phoneNumber, setPhoneNumber] = useState("");
   const [isGeneratingCode, setIsGeneratingCode] = useState(false);
   const [localPairingCode, setLocalPairingCode] = useState<string | null>(null);
+  const [tosAccepted, setTosAccepted] = useState(false);
   
   const router = useRouter();
   const { createOrUpdateBusiness } = usePipelixrActions();
@@ -274,17 +275,31 @@ export default function Onboarding({ initialStep = 0 }: OnboardingProps) {
                 {selectedMode === 'unofficial' && (
                   <div className={styles.warningBox}>
                     <ShieldAlert size={18} className={styles.warningIcon} />
-                    <p className={styles.warningText}>
-                      <strong>Guardians enabled:</strong> We implement human-like typing delays and rate limits to keep your account safe in unofficial mode.
-                    </p>
+                    <div style={{display: 'flex', flexDirection: 'column', gap: '0.5rem', textAlign: 'left'}}>
+                      <p className={styles.warningText}>
+                        <strong>Terms of Service & Risk:</strong> PIPELIXR Standard operates by reverse-engineering WhatsApp's Web protocol. This violates WhatsApp's Terms of Service. While our core reactive behavior minimizes risk, your number could still be banned. 
+                      </p>
+                      <label style={{display: 'flex', alignItems: 'flex-start', gap: '0.5rem', cursor: 'pointer', fontSize: '0.85rem', color: '#cbd5e1', marginTop: '0.5rem'}}>
+                        <input 
+                          type="checkbox" 
+                          checked={tosAccepted}
+                          onChange={(e) => setTosAccepted(e.target.checked)}
+                          style={{marginTop: '0.2rem'}}
+                        />
+                        I understand the risks and acknowledge that PIPELIXR enforces behavioral guards (rate limits, delays, no bulk cold messaging) which I cannot disable.
+                      </label>
+                    </div>
                   </div>
                 )}
 
                 <button 
-                  disabled={!selectedMode}
+                  disabled={!selectedMode || (selectedMode === 'unofficial' && !tosAccepted)}
                   onClick={handleConfirmMode}
                   className={styles.primaryButton}
-                  style={{ background: selectedMode ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : '#1e293b' }}
+                  style={{ 
+                    background: selectedMode && (selectedMode !== 'unofficial' || tosAccepted) ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : '#1e293b',
+                    opacity: (!selectedMode || (selectedMode === 'unofficial' && !tosAccepted)) ? 0.5 : 1
+                  }}
                 >
                   Confirm & Connect
                 </button>

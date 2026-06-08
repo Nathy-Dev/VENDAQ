@@ -4,61 +4,31 @@ import { api } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 
 const VIEWER_FOLLOW_UP_DELAY_MS = 2 * 60 * 60 * 1000;
+const BUYING_SIGNAL_FOLLOW_UP_DELAY_MS = 2 * 60 * 60 * 1000;
 const AWAITING_PAYMENT_REMINDER_DELAY_MS = 3 * 60 * 60 * 1000;
 const SECOND_REMINDER_DELAY_MS = 9 * 60 * 60 * 1000;
+const DEFAULT_ESTIMATED_ORDER_VALUE = 15000;
 
-type IntentScore = {
-  intent: "price_request" | "availability_check" | "ready_to_buy" | "payment_signal" | "general";
-  score: number;
-};
+type MessageClassification = "BUYING_SIGNAL" | "GENERAL_INQUIRY" | "NOISE";
 
-function normalizePhoneForWhatsApp(phone: string): string {
-  const raw = phone.split("@")[0] || phone;
-  const digits = raw.replace(/\D/g, "");
-  return digits.length > 0 ? digits : raw;
-}
+const BUYING_SIGNAL_KEYWORDS = [
+  "how much", "price", "cost", "rate", "available", "in stock",
+  "do you have", "i want", "i need", "send me", "order", "buy",
+  "discount", "best price"
+];
 
-function normalizePhoneDigits(phone: string): string {
-  return phone.split("@")[0].replace(/\D/g, "");
-}
-
-function getWorkerUrlOrThrow(): string {
-  const workerUrl = process.env.WHATSAPP_WORKER_URL || "";
-  if (!workerUrl) {
-    throw new Error(
-      "WHATSAPP_WORKER_URL is not configured in Convex environment variables. Set it to your public wa-worker URL."
-    );
+function classifyMessage(content: string, messageType?: string): { classification: MessageClassification; matchedKeywords: string[] } {
+  const text = content.trim().toLowerCase();
+  if (!text && messageType && messageType !== "text") {
+    return { classification: "GENERAL_INQUIRY", matchedKeywords: [] };
   }
-  if (workerUrl.includes("localhost") || workerUrl.includes("127.0.0.1")) {
-    throw new Error(
-      `WHATSAPP_WORKER_URL=${workerUrl} is not reachable from Convex cloud. Use a public HTTPS URL for wa-worker.`
-    );
+
+  const matched = BUYING_SIGNAL_KEYWORDS.filter(kw => text.includes(kw));
+  if (matched.length > 0) return { classification: "BUYING_SIGNAL", matchedKeywords: matched };
+  if (text.includes("?") || /^(what|where|when|how|who|why|can|do|is|are|will|could)\b/.test(text)) {
+    return { classification: "GENERAL_INQUIRY", matchedKeywords: [] };
   }
-  return workerUrl;
-}
-
-function scoreIntentFromContent(content: string): IntentScore {
-  const text = content.toLowerCase();
-  let price = 0;
-  let availability = 0;
-  let ready = 0;
-  let payment = 0;
-
-  if (/(price|how much|cost|rate|budget)/.test(text)) price += 2;
-  if (/(available|in stock|have|size|color|variant)/.test(text)) availability += 2;
-  if (/(buy|order|take|i want|i need|send it)/.test(text)) ready += 3;
-  if (/(pay|payment|account|transfer|receipt|checkout)/.test(text)) payment += 3;
-  if (/(today|now|urgent|asap)/.test(text)) ready += 1;
-
-  const ranking: IntentScore[] = [
-    { intent: "price_request", score: price },
-    { intent: "availability_check", score: availability },
-    { intent: "ready_to_buy", score: ready },
-    { intent: "payment_signal", score: payment },
-  ];
-  ranking.sort((a, b) => b.score - a.score);
-
-  return ranking[0].score > 0 ? ranking[0] : { intent: "general", score: 0 };
+  return { classification: "NOISE", matchedKeywords: [] };
 }
 
 function inferMemoryPatch(content: string): Record<string, unknown> {
@@ -86,6 +56,29 @@ function isRawName(name: string | undefined, phone: string): boolean {
     if (/^\d+$/.test(cleaned)) return true;
     
     return false;
+}
+
+function normalizePhoneDigits(phone: string | undefined): string {
+  return (phone || "").replace(/\D/g, "");
+}
+
+function normalizePhoneForWhatsApp(phone: string): string {
+  return normalizePhoneDigits(phone);
+}
+
+function getWorkerUrlOrThrow(): string {
+  const workerUrl = process.env.WHATSAPP_WORKER_URL || "";
+  if (!workerUrl) {
+    throw new Error(
+      "WHATSAPP_WORKER_URL is not configured in Convex environment variables. Set it to your public wa-worker URL."
+    );
+  }
+  if (workerUrl.includes("localhost") || workerUrl.includes("127.0.0.1")) {
+    throw new Error(
+      `WHATSAPP_WORKER_URL=${workerUrl} is not reachable from Convex cloud. Use a public HTTPS URL for wa-worker.`
+    );
+  }
+  return workerUrl;
 }
 
 // Called by the external Node.js Worker to emit the generated QR code
@@ -318,23 +311,20 @@ export const receiveMessage = mutation({
 
     if (!customer) return;
 
-    // --- Intent Detection (Status-to-Cash Engine) ---
-    const intentScore = scoreIntentFromContent(args.content);
-    const intent = intentScore.intent === "general" ? undefined : intentScore.intent;
+    const { classification } = classifyMessage(args.content, args.messageType || "text");
     const memoryPatch = inferMemoryPatch(args.content);
     if (!args.fromMe) {
       await ctx.db.patch(customer._id, {
         ...memoryPatch,
-        lastIntent: intent,
-        funnelStage: intent === "payment_signal" ? "awaiting_payment" : intent ? "intent" : "engaged",
+        lastIntent: classification,
+        funnelStage: classification === "BUYING_SIGNAL" ? "intent" : "engaged",
       });
     } else {
       await ctx.db.patch(customer._id, memoryPatch);
     }
-    // ------------------------------------------------
 
     // 2. Insert the interaction
-    await ctx.db.insert("interactions", {
+    const interactionId = await ctx.db.insert("interactions", {
       businessId: args.businessId,
       customerId: customer._id,
       role: args.fromMe ? "owner" : "customer",
@@ -344,8 +334,49 @@ export const receiveMessage = mutation({
       mediaId: args.mediaId,
       fileName: args.fileName,
       whatsappMessageId: args.whatsappMessageId,
-      intent: intent,
+      intent: classification,
     });
+
+    if (args.fromMe) {
+      const pendingSignalTasks = await ctx.db
+        .query("followUpTasks")
+        .withIndex("by_customer_reason", (q) => q.eq("customerId", customer._id).eq("reason", "buying_signal"))
+        .filter((q) => q.eq(q.field("status"), "pending"))
+        .collect();
+
+      for (const task of pendingSignalTasks) {
+        if (task.scheduledFunctionId) {
+          try {
+            await ctx.scheduler.cancel(task.scheduledFunctionId as any);
+          } catch (error) {
+            console.warn(`[receiveMessage] Could not cancel scheduled follow-up ${task.scheduledFunctionId}`, error);
+          }
+        }
+        await ctx.db.patch(task._id, { status: "cancelled" });
+      }
+    }
+
+    if (!args.fromMe && classification === "BUYING_SIGNAL") {
+      const taskId = await ctx.db.insert("followUpTasks", {
+        businessId: args.businessId,
+        customerId: customer._id,
+        reason: "buying_signal",
+        dueAt: args.timestamp + BUYING_SIGNAL_FOLLOW_UP_DELAY_MS,
+        status: "pending",
+        createdAt: args.timestamp,
+      });
+      const scheduledFunctionId = await ctx.scheduler.runAfter(
+        BUYING_SIGNAL_FOLLOW_UP_DELAY_MS,
+        api.whatsapp.processBuyingSignalFollowUp,
+        {
+          businessId: args.businessId,
+          customerId: customer._id,
+          taskId,
+          interactionId,
+        }
+      );
+      await ctx.db.patch(taskId, { scheduledFunctionId });
+    }
 
     if (!args.fromMe) {
       const recentSentOutcome = await ctx.db
@@ -898,7 +929,7 @@ export const promoteChatToOrderDraft = mutation({
 
     await ctx.db.patch(args.customerId, {
       funnelStage: "order_created",
-      lastIntent: "ready_to_buy",
+      lastIntent: "BUYING_SIGNAL",
     });
 
     return { orderId, amount, item: inferred };
@@ -1009,6 +1040,113 @@ export const markTaskDone = mutation({
   args: { taskId: v.id("followUpTasks") },
   handler: async (ctx, args) => {
     await ctx.db.patch(args.taskId, { status: "done" });
+  },
+});
+
+export const markTaskSkipped = mutation({
+  args: { taskId: v.id("followUpTasks") },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.taskId, { status: "skipped" });
+  },
+});
+
+export const markTaskCancelled = mutation({
+  args: { taskId: v.id("followUpTasks") },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.taskId, { status: "cancelled" });
+  },
+});
+
+export const getFollowUpTaskById = query({
+  args: { taskId: v.id("followUpTasks") },
+  handler: async (ctx, args) => await ctx.db.get(args.taskId),
+});
+
+export const getOwnerRepliesForCustomerSince = query({
+  args: {
+    customerId: v.id("customers"),
+    since: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const replies = await ctx.db
+      .query("interactions")
+      .withIndex("by_customer", (q) => q.eq("customerId", args.customerId))
+      .filter((q) =>
+        q.and(
+          q.eq(q.field("role"), "owner"),
+          q.gt(q.field("timestamp"), args.since)
+        )
+      )
+      .take(1);
+    return replies.length;
+  },
+});
+
+function buildBuyingSignalFollowUp(customerName: string): string {
+  return `Hi ${customerName}, thanks for reaching out. We saw your message and will get back to you shortly. What exactly were you looking for today?`;
+}
+
+export const processBuyingSignalFollowUp = action({
+  args: {
+    businessId: v.id("businesses"),
+    customerId: v.id("customers"),
+    taskId: v.id("followUpTasks"),
+    interactionId: v.id("interactions"),
+  },
+  handler: async (ctx, args): Promise<{ sent: boolean; reason?: string }> => {
+    const task = await ctx.runQuery(api.whatsapp.getFollowUpTaskById, { taskId: args.taskId });
+    if (!task || task.status !== "pending" || task.reason !== "buying_signal") {
+      return { sent: false, reason: "task_not_pending" };
+    }
+
+    const ownerReplies = await ctx.runQuery(api.whatsapp.getOwnerRepliesForCustomerSince, {
+      customerId: args.customerId,
+      since: task.createdAt,
+    });
+    if (ownerReplies > 0) {
+      await ctx.runMutation(api.whatsapp.markTaskCancelled, { taskId: args.taskId });
+      return { sent: false, reason: "owner_replied" };
+    }
+
+    const allowed = await ctx.runQuery(api.whatsapp.canSendToCustomerNow, {
+      businessId: args.businessId,
+      customerId: args.customerId,
+    });
+    if (!allowed) {
+      await ctx.runMutation(api.whatsapp.markTaskSkipped, { taskId: args.taskId });
+      return { sent: false, reason: "guardrail_blocked" };
+    }
+
+    const customer = await ctx.runQuery(api.whatsapp.getCustomerLiteById, { customerId: args.customerId });
+    if (!customer) {
+      await ctx.runMutation(api.whatsapp.markTaskSkipped, { taskId: args.taskId });
+      return { sent: false, reason: "customer_not_found" };
+    }
+
+    const customerName = customer.name || customer.phone.split("@")[0];
+    const content = buildBuyingSignalFollowUp(customerName);
+    const result = await ctx.runAction(api.whatsapp.sendRetargetMessage, {
+      businessId: args.businessId,
+      customerId: args.customerId,
+      content,
+    });
+
+    if (!result?.sent) {
+      await ctx.runMutation(api.whatsapp.markTaskSkipped, { taskId: args.taskId });
+      return { sent: false, reason: "send_failed" };
+    }
+
+    await ctx.runMutation(api.whatsapp.markTaskDone, { taskId: args.taskId });
+    await ctx.runMutation(api.whatsapp.logActionOutcomeSent, {
+      businessId: args.businessId,
+      customerId: args.customerId,
+      suggestedMessage: content,
+      initialIntent: "BUYING_SIGNAL",
+      scoreAtSend: 100,
+      estimatedValue: estimateCustomerValue(customer.totalValue, "BUYING_SIGNAL"),
+    });
+
+    return { sent: true };
   },
 });
 
@@ -1152,17 +1290,11 @@ function buildRealtimeAssistantReply(
   lastIntent: string | undefined,
   inboundContent: string
 ): string {
-  if (lastIntent === "payment_signal") {
-    return `Perfect ${customerName}, I can send payment details now and confirm your order immediately.`;
+  if (lastIntent === "BUYING_SIGNAL") {
+    return `Sure ${customerName}, I can help with that. Tell me the exact item, size, color, or budget you have in mind.`;
   }
-  if (lastIntent === "ready_to_buy") {
-    return `Great ${customerName}, I can lock this in for you now. Share your delivery location and preferred payment method.`;
-  }
-  if (lastIntent === "price_request") {
-    return `Sure ${customerName}, I can help with pricing. Tell me your budget and I will suggest the best option right away.`;
-  }
-  if (lastIntent === "availability_check") {
-    return `Yes ${customerName}, I can confirm availability for you now. Tell me the exact item, size, and color.`;
+  if (lastIntent === "GENERAL_INQUIRY") {
+    return `Thanks ${customerName}. What product are you looking for today?`;
   }
   if (/(hello|hi|hey|good morning|good afternoon|good evening)/i.test(inboundContent)) {
     return `Hi ${customerName}, welcome to Pipelixr sales desk. What product are you looking for today?`;
@@ -1339,23 +1471,15 @@ export const canSendToCustomerNow = query({
 });
 
 function buildSuggestedMessage(lastIntent: string | undefined, customerName: string): string {
-  if (lastIntent === "payment_signal") {
-    return `Hi ${customerName}, your checkout is still open. Want me to resend payment details now?`;
-  }
-  if (lastIntent === "ready_to_buy") {
-    return `Hi ${customerName}, I can reserve this for you now. Should I proceed with your order?`;
-  }
-  if (lastIntent === "price_request") {
+  if (lastIntent === "BUYING_SIGNAL") {
     return `Hi ${customerName}, quick follow-up: should I send the best option in your budget?`;
   }
   return `Hi ${customerName}, still interested? I can help you complete this today.`;
 }
 
 function estimateCustomerValue(totalValue: number, lastIntent: string | undefined): number {
-  const base = totalValue > 0 ? totalValue : 15000;
-  if (lastIntent === "payment_signal") return Math.round(base * 1.2);
-  if (lastIntent === "ready_to_buy") return base;
-  if (lastIntent === "price_request") return Math.round(base * 0.75);
+  const base = totalValue > 0 ? totalValue : DEFAULT_ESTIMATED_ORDER_VALUE;
+  if (lastIntent === "BUYING_SIGNAL") return base;
   return Math.round(base * 0.5);
 }
 
@@ -1368,8 +1492,8 @@ function computeBasePriorityScore(
 ): number {
   const inactivityMs = now - lastInteraction;
   const hoursSilent = inactivityMs / (1000 * 60 * 60);
-  const isHot = lastIntent === "payment_signal" || lastIntent === "ready_to_buy" || funnelStage === "awaiting_payment";
-  const isWarm = lastIntent === "price_request" || lastIntent === "availability_check" || funnelStage === "intent";
+  const isHot = funnelStage === "awaiting_payment";
+  const isWarm = lastIntent === "BUYING_SIGNAL" || funnelStage === "intent";
   const shouldReplyNow = isHot && (!lastOutboundAt || (now - lastOutboundAt) > 90 * 60 * 1000);
   const urgencyBoost = shouldReplyNow ? 8 : 0;
   return (isHot ? 80 : isWarm ? 50 : 25) + Math.min(Math.round(hoursSilent * 2), 30) + urgencyBoost;
@@ -1390,8 +1514,8 @@ export const getInvisibleCrmOverview = query({
     let potentialRevenueAtRisk = 0;
 
     for (const customer of customers) {
-      const isHot = customer.lastIntent === "ready_to_buy" || customer.lastIntent === "payment_signal" || customer.funnelStage === "awaiting_payment";
-      const isStalled = customer.lastIntent === "price_request" && !!customer.lastInboundAt && (now - customer.lastInboundAt) > 12 * 60 * 60 * 1000;
+      const isHot = customer.lastIntent === "BUYING_SIGNAL" || customer.funnelStage === "awaiting_payment";
+      const isStalled = customer.lastIntent === "BUYING_SIGNAL" && !!customer.lastInboundAt && (now - customer.lastInboundAt) > 12 * 60 * 60 * 1000;
       const unattended = isHot && (!customer.lastOutboundAt || (now - customer.lastOutboundAt) > 2 * 60 * 60 * 1000);
 
       if (isHot) hotLeads += 1;
@@ -1437,8 +1561,8 @@ export const getRevenueActionFeed = query({
     const actions = customers.map((customer) => {
       const inactivityMs = now - (customer.lastInteraction || now);
       const hoursSilent = inactivityMs / (1000 * 60 * 60);
-      const isHot = customer.lastIntent === "payment_signal" || customer.lastIntent === "ready_to_buy" || customer.funnelStage === "awaiting_payment";
-      const isWarm = customer.lastIntent === "price_request" || customer.lastIntent === "availability_check" || customer.funnelStage === "intent";
+      const isHot = customer.funnelStage === "awaiting_payment";
+      const isWarm = customer.lastIntent === "BUYING_SIGNAL" || customer.funnelStage === "intent";
 
       const shouldReplyNow = isHot && (!customer.lastOutboundAt || (now - customer.lastOutboundAt) > 90 * 60 * 1000);
       const shouldNudge = isWarm && hoursSilent > 6;
@@ -1460,8 +1584,8 @@ export const getRevenueActionFeed = query({
 
       let reason = "Re-engage inactive lead";
       if (shouldReplyNow) reason = "Hot lead waiting for response";
-      if (customer.lastIntent === "payment_signal") reason = "Payment intent detected";
-      if (shouldNudge && customer.lastIntent === "price_request") reason = "Asked for price, no follow-up yet";
+      if (customer.lastIntent === "BUYING_SIGNAL") reason = "Buying signal detected";
+      if (shouldNudge && customer.lastIntent === "BUYING_SIGNAL") reason = "Asked to buy, no follow-up yet";
 
       return {
         customerId: customer._id,
@@ -1625,6 +1749,38 @@ export const getRevenueLoopMetrics = query({
   },
 });
 
+export const getMvpRevenueMetrics = query({
+  args: { businessId: v.id("businesses") },
+  handler: async (ctx, args) => {
+    const tasks = await ctx.db
+      .query("followUpTasks")
+      .withIndex("by_business_due", (q) => q.eq("businessId", args.businessId))
+      .filter((q) => q.eq(q.field("reason"), "buying_signal"))
+      .collect();
+
+    const totalSignals = tasks.length;
+    const replied = tasks.filter((task) => task.status === "cancelled").length;
+    const followedUp = tasks.filter((task) => task.status === "done").length;
+    const lost = tasks.filter((task) => task.status === "skipped").length;
+
+    const orders = await ctx.db
+      .query("orders")
+      .withIndex("by_business", (q) => q.eq("businessId", args.businessId))
+      .collect();
+    const averageOrderValue = orders.length > 0
+      ? Math.round(orders.reduce((sum, order) => sum + order.totalAmount, 0) / orders.length)
+      : DEFAULT_ESTIMATED_ORDER_VALUE;
+
+    return {
+      totalSignals,
+      replied,
+      followedUp,
+      lost,
+      estimatedLostRevenue: lost * averageOrderValue,
+    };
+  },
+});
+
 export const requestPairingCodeAction = action({
   args: {
     businessId: v.id("businesses"),
@@ -1720,8 +1876,7 @@ export const getOwnerAssistantSnapshot = query({
 
     const totalLeads = customers.length;
     const hotLeads = customers.filter((c) =>
-      c.lastIntent === "ready_to_buy" ||
-      c.lastIntent === "payment_signal" ||
+      c.lastIntent === "BUYING_SIGNAL" ||
       c.funnelStage === "awaiting_payment"
     ).length;
     const todayInbound = customers.filter((c) => (c.lastInboundAt || 0) >= since).length;

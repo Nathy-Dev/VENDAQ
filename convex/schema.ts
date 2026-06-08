@@ -152,12 +152,14 @@ export default defineSchema({
     businessId: v.id("businesses"),
     customerId: v.id("customers"),
     reason: v.union(
+      v.literal("buying_signal"),
       v.literal("viewed_no_dm"),
       v.literal("asked_no_order"),
       v.literal("awaiting_payment")
     ),
     dueAt: v.number(),
-    status: v.union(v.literal("pending"), v.literal("done"), v.literal("skipped")),
+    status: v.union(v.literal("pending"), v.literal("done"), v.literal("skipped"), v.literal("cancelled")),
+    scheduledFunctionId: v.optional(v.string()),
     createdAt: v.number(),
   }).index("by_business_due", ["businessId", "dueAt"])
     .index("by_customer_reason", ["customerId", "reason"]),

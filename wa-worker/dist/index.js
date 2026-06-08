@@ -6,589 +6,174 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const cors_1 = __importDefault(require("cors"));
 const dotenv_1 = __importDefault(require("dotenv"));
-const baileys_1 = require("@whiskeysockets/baileys");
-const pino_1 = __importDefault(require("pino"));
-const fs_1 = __importDefault(require("fs"));
+const http_1 = __importDefault(require("http"));
 const path_1 = __importDefault(require("path"));
-const qrcode_terminal_1 = __importDefault(require("qrcode-terminal"));
+const SocketManager_1 = require("./SocketManager");
+const BackendService_1 = require("./BackendService");
 dotenv_1.default.config();
 const app = (0, express_1.default)();
 app.use((0, cors_1.default)());
 app.use(express_1.default.json());
 const PORT = process.env.PORT || 3005;
 const SESSIONS_DIR = process.env.SESSIONS_PATH || path_1.default.join(__dirname, '../sessions');
-// Health Check for Render/Fly.io
+// Initialize SocketManager
+SocketManager_1.SocketManager.init(SESSIONS_DIR);
+// --- Basic Endpoints ---
 app.get('/', (req, res) => {
-    res.json({ status: 'active', service: 'wa-worker' });
+    res.json({ status: 'active', service: 'wa-worker', version: '2.0.0' });
 });
-// Configuration for Backend (Direct Convex HTTP Actions or Next.js Proxy)
-// The Convex HTTP actions endpoint format: https://<deployment-name>.convex.site/api/worker
-const CONVEX_SITE_URL = process.env.CONVEX_SITE_URL || 'https://original-sparrow-842.eu-west-1.convex.site';
-const NEXT_JS_URL = process.env.NEXT_JS_URL || 'http://localhost:3000/api/worker';
-const BACKEND_URL = process.env.NODE_ENV === 'production' || !!process.env.RAILWAY_ENVIRONMENT
-    ? `${CONVEX_SITE_URL}/api/worker`
-    : NEXT_JS_URL;
-console.log(`[Worker] Using backend for sync: ${BACKEND_URL}`);
-// Ensure sessions directory exists
-if (!fs_1.default.existsSync(SESSIONS_DIR)) {
-    fs_1.default.mkdirSync(SESSIONS_DIR, { recursive: true });
-}
-// Store active sockets in memory
-const activeSockets = {};
-const retries = {};
-class MessageQueue {
-    constructor() {
-        this.queue = [];
-        this.isProcessing = false;
-    }
-    add(task) {
-        this.queue.push(task);
-        this.process();
-    }
-    async process() {
-        if (this.isProcessing)
-            return;
-        this.isProcessing = true;
-        while (this.queue.length > 0) {
-            const task = this.queue.shift();
-            if (task) {
-                try {
-                    await task();
-                    // Add jitter delay (500ms - 1500ms)
-                    await new Promise(r => setTimeout(r, 500 + Math.random() * 1000));
-                }
-                catch (e) {
-                    console.error("[Worker] Queue task failed", e);
-                }
-            }
-        }
-        this.isProcessing = false;
-    }
-}
-const messageQueues = {};
-// Helper to update backend
-async function updateBackend(body) {
-    try {
-        const response = await fetch(BACKEND_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body)
-        });
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error(`[Worker DEBUG] Failed to sync ${body.action} with backend. Status: ${response.status}`, errorText);
-            return null;
-        }
-        else {
-            console.log(`[Worker DEBUG] Successfully synced ${body.action} with backend.`);
-            try {
-                return await response.json();
-            }
-            catch (e) {
-                return null;
-            }
-        }
-    }
-    catch (e) {
-        console.error('[Worker DEBUG] Failed to connect to backend:', e.message);
-        return null;
-    }
-}
-async function uploadMedia(businessId, message) {
-    const messageType = Object.keys(message.message || {})[0];
-    if (!['imageMessage', 'videoMessage', 'audioMessage', 'documentMessage'].includes(messageType))
-        return null;
-    try {
-        console.log(`[Worker] Downloading media of type: ${messageType}`);
-        const buffer = await (0, baileys_1.downloadMediaMessage)(message, 'buffer', {}, {
-            logger: (0, pino_1.default)({ level: 'silent' }),
-            reuploadRequest: activeSockets[businessId].updateMediaMessage
-        });
-        // 1. Get upload URL from Convex
-        const urlResponse = await updateBackend({
-            action: 'generateUploadUrl',
-            businessId
-        });
-        if (!urlResponse || !urlResponse.uploadUrl) {
-            console.error("[Worker] Failed to get upload URL");
-            return null;
-        }
-        // 2. Upload to Convex
-        const messageContent = message.message ? message.message[messageType] : null;
-        const uploadResponse = await fetch(urlResponse.uploadUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': messageContent?.mimetype || 'application/octet-stream' },
-            body: buffer
-        });
-        if (!uploadResponse.ok) {
-            console.error("[Worker] Failed to upload media to Convex");
-            return null;
-        }
-        const { storageId } = await uploadResponse.json();
-        console.log(`[Worker] Media uploaded successfully: ${storageId}`);
-        return storageId;
-    }
-    catch (error) {
-        console.error("[Worker] Error uploading media:", error);
-        return null;
-    }
-}
-async function startSession(businessId, pairingNumber) {
-    console.log(`[Worker] Starting session for business: ${businessId}${pairingNumber ? ` with pairing number ${pairingNumber}` : ""}`);
-    // Path for this specific business's auth state
-    const sessionPath = path_1.default.join(SESSIONS_DIR, `session-${businessId}`);
-    // If we want to pair by phone, we MUST have a clean slate
-    if (pairingNumber && fs_1.default.existsSync(sessionPath)) {
-        console.log(`[Worker] Clearing existing session for fresh pairing: ${sessionPath}`);
-        fs_1.default.rmSync(sessionPath, { recursive: true, force: true });
-    }
-    const { state, saveCreds } = await (0, baileys_1.useMultiFileAuthState)(sessionPath);
-    // Fetch the latest version to avoid 405 errors
-    const { version, isLatest } = await (0, baileys_1.fetchLatestBaileysVersion)();
-    console.log(`[Worker] Using WhatsApp Web version: ${version.join('.')}, isLatest: ${isLatest}`);
-    const sock = (0, baileys_1.makeWASocket)({
-        version,
-        auth: state,
-        logger: (0, pino_1.default)({ level: 'info' }), // Re-enabled logs for debugging
-        browser: ["PIPELIXR", "Chrome", "1.0.0"],
-        syncFullHistory: true,
-        shouldSyncHistoryMessage: () => true
-    });
-    if (pairingNumber && !state.creds.registered) {
-        // We will handle this in the request handler for immediate feedback
-        console.log(`[Worker] Socket ready for pairing request: ${businessId}`);
-    }
-    sock.ev.on('connection.update', async (update) => {
-        const { connection, lastDisconnect, qr } = update;
-        if (qr) {
-            console.log(`[Worker] New QR generated for business: ${businessId}`);
-            // Render in terminal for testing
-            qrcode_terminal_1.default.generate(qr, { small: true });
-            // Post QR to backend
-            await updateBackend({
-                action: 'updateQRCode',
-                businessId,
-                qrCodeString: qr
-            });
-        }
-        if (connection === 'close') {
-            const errorReason = lastDisconnect?.error?.output?.statusCode;
-            console.log(`[Worker] Connection closed for ${businessId}: Reason: ${errorReason}`);
-            if (activeSockets[businessId]?.ws) {
-                try {
-                    activeSockets[businessId].ws.close();
-                }
-                catch (e) { }
-            }
-            delete activeSockets[businessId];
-            const isLoggedOut = errorReason === baileys_1.DisconnectReason.loggedOut || errorReason === 403;
-            if (isLoggedOut) {
-                console.log(`[Worker] Device logged out natively for ${businessId}`);
-                await updateBackend({ action: 'updateStatus', businessId, status: 'disconnected' });
-                if (fs_1.default.existsSync(sessionPath))
-                    fs_1.default.rmSync(sessionPath, { recursive: true, force: true });
-                delete retries[businessId];
-            }
-            else if (errorReason === baileys_1.DisconnectReason.restartRequired) {
-                console.log(`[Worker] Restart required for ${businessId}, restarting immediately`);
-                startSession(businessId);
-            }
-            else {
-                const currentRetry = retries[businessId] || 0;
-                retries[businessId] = currentRetry + 1;
-                // Exponential backoff: 5s, 7.5s, 11.25s... up to 1 minute
-                const retryMs = Math.min(5000 * Math.pow(1.5, currentRetry), 60000);
-                console.log(`[Worker] Reconnecting in ${retryMs}ms for ${businessId} (Retry ${currentRetry + 1})`);
-                setTimeout(() => startSession(businessId), retryMs);
-            }
-        }
-        else if (connection === 'open') {
-            console.log(`[Worker] Connection opened for business: ${businessId}`);
-            delete retries[businessId];
-            // Update backend to connected
-            await updateBackend({
-                action: 'updateStatus',
-                businessId,
-                status: 'connected'
-            });
-            // Ensure queue exists
-            if (!messageQueues[businessId]) {
-                messageQueues[businessId] = new MessageQueue();
-            }
-        }
-    });
-    sock.ev.on('creds.update', saveCreds);
-    sock.ev.on('contacts.upsert', async (contacts) => {
-        for (const contact of contacts) {
-            const name = contact.name || contact.verifiedName || contact.publicName || contact.notify;
-            if (name && contact.id) {
-                console.log(`[Worker] Updating contact name for ${contact.id}: ${name}`);
-                await updateBackend({
-                    action: 'updateContactName',
-                    businessId,
-                    phone: contact.id,
-                    name: name,
-                    isGroup: contact.id.endsWith('@g.us'),
-                });
-            }
-        }
-    });
-    sock.ev.on('contacts.update', async (updates) => {
-        for (const update of updates) {
-            const name = update.name || update.verifiedName || update.notify;
-            if (name && update.id) {
-                console.log(`[Worker] contacts.update for ${update.id}: ${name}`);
-                await updateBackend({
-                    action: 'updateContactName',
-                    businessId,
-                    phone: update.id,
-                    name: name,
-                    isGroup: update.id.endsWith('@g.us'),
-                });
-            }
-        }
-    });
-    // Handle historical sync (like WhatsApp Web)
-    sock.ev.on('messaging-history.set', async ({ chats, contacts, messages }) => {
-        console.log(`[Worker DEBUG] Received history sync: ${chats.length} chats, ${contacts.length} contacts, ${messages.length} messages`);
-        const syncData = [];
-        const contactMap = new Map();
-        // 1. Build name map from contacts
-        contacts.forEach(c => {
-            const name = c.name || c.verifiedName || c.publicName || c.notify;
-            if (name) {
-                contactMap.set(c.id, name);
-                contactMap.set(c.id.split('@')[0], name);
-            }
-        });
-        // 2. Also pull names from messages (pushName)
-        messages.forEach(m => {
-            if (m.key.remoteJid && m.pushName) {
-                // Only set if we don't already have a better name from contacts
-                if (!contactMap.has(m.key.remoteJid)) {
-                    contactMap.set(m.key.remoteJid, m.pushName);
-                    contactMap.set(m.key.remoteJid.split('@')[0], m.pushName);
-                }
-            }
-        });
-        // 3. Also pull names from chat objects (Baileys chat.name)
-        chats.forEach(chat => {
-            if (chat.id && chat.name && !contactMap.has(chat.id)) {
-                contactMap.set(chat.id, chat.name);
-                contactMap.set(chat.id.split('@')[0], chat.name);
-            }
-        });
-        // 4. Aggressively push ALL resolved names to the backend
-        const sentNames = new Set();
-        for (const [jid, name] of contactMap) {
-            // Only send for full JIDs (not bare number keys), and deduplicate
-            if (jid.includes('@') && !sentNames.has(jid)) {
-                sentNames.add(jid);
-                await updateBackend({
-                    action: 'updateContactName',
-                    businessId,
-                    phone: jid,
-                    name: name,
-                    isGroup: jid.endsWith('@g.us'),
-                });
-            }
-        }
-        console.log(`[Worker] Pushed ${sentNames.size} contact names to backend from history sync`);
-        for (const chat of chats) {
-            const remoteJid = chat.id;
-            if (!remoteJid)
-                continue;
-            const isGroup = remoteJid.endsWith('@g.us');
-            const idKey = remoteJid.split('@')[0];
-            const name = contactMap.get(remoteJid) || contactMap.get(idKey) || chat.name || (isGroup ? "Group Chat" : undefined);
-            // Sync the last 10 messages for each chat
-            const chatMessages = messages
-                .filter(m => m.key && m.key.remoteJid === remoteJid)
-                .sort((a, b) => (a.messageTimestamp || 0) - (b.messageTimestamp || 0))
-                .slice(-10);
-            if (chatMessages.length === 0) {
-                // If no messages found, still record the chat existence
-                if (chat.lastMessageRecvTimestamp) {
-                    syncData.push({
-                        sender: remoteJid,
-                        content: "Existing conversation",
-                        timestamp: chat.lastMessageRecvTimestamp * 1000,
-                        fromMe: false,
-                        name,
-                        isGroup,
-                        messageType: "text"
-                    });
-                }
-                continue;
-            }
-            for (const msg of chatMessages) {
-                const content = msg.message?.conversation ||
-                    msg.message?.extendedTextMessage?.text ||
-                    msg.message?.imageMessage?.caption ||
-                    msg.message?.videoMessage?.caption ||
-                    "[Media]";
-                let messageType = "text";
-                if (msg.message?.imageMessage)
-                    messageType = "image";
-                else if (msg.message?.videoMessage)
-                    messageType = "video";
-                else if (msg.message?.audioMessage)
-                    messageType = "audio";
-                else if (msg.message?.documentMessage)
-                    messageType = "document";
-                syncData.push({
-                    sender: remoteJid,
-                    content,
-                    timestamp: (msg.messageTimestamp || 0) * 1000 || Date.now(),
-                    fromMe: !!msg.key.fromMe,
-                    name: name || msg.pushName,
-                    isGroup,
-                    messageType
-                });
-            }
-        }
-        if (syncData.length > 0) {
-            for (let i = 0; i < syncData.length; i += 25) {
-                const chunk = syncData.slice(i, i + 25);
-                await updateBackend({
-                    action: 'syncHistory',
-                    businessId,
-                    history: chunk
-                });
-            }
-        }
-    });
-    // Handle incoming messages
-    sock.ev.on('messages.upsert', async (m) => {
-        if (m.type !== 'notify')
-            return;
-        for (const msg of m.messages) {
-            const remoteJid = msg.key.remoteJid;
-            if (!remoteJid)
-                continue;
-            // Skip messages to/from ourselves (prevents phantom self-chat)
-            const myJid = sock.user?.id;
-            const myNumber = myJid?.split(':')[0]?.split('@')[0];
-            const remoteNumber = remoteJid.split('@')[0].split(':')[0];
-            if (myNumber && remoteNumber === myNumber) {
-                console.log(`[Worker] Skipping self-message to ${remoteJid}`);
-                continue;
-            }
-            // Handle Status
-            if (remoteJid === 'status@broadcast') {
-                console.log(`[Worker] New status from ${msg.pushName || msg.key.participant}`);
-                const mediaId = await uploadMedia(businessId, msg);
-                const content = msg.message?.conversation ||
-                    msg.message?.extendedTextMessage?.text ||
-                    msg.message?.imageMessage?.caption ||
-                    msg.message?.videoMessage?.caption;
-                await updateBackend({
-                    action: 'syncStatus',
-                    businessId,
-                    sender: msg.pushName || msg.key.participant || "Unknown",
-                    content,
-                    mediaId,
-                    mediaType: Object.keys(msg.message || {})[0],
-                    timestamp: (msg.messageTimestamp || 0) * 1000 || Date.now()
-                });
-                continue;
-            }
-            const isGroup = remoteJid.endsWith('@g.us');
-            let content = msg.message?.conversation ||
-                msg.message?.extendedTextMessage?.text ||
-                msg.message?.imageMessage?.caption ||
-                msg.message?.videoMessage?.caption;
-            let messageType = "text";
-            if (msg.message?.imageMessage)
-                messageType = "image";
-            else if (msg.message?.videoMessage)
-                messageType = "video";
-            else if (msg.message?.audioMessage)
-                messageType = "audio";
-            else if (msg.message?.documentMessage)
-                messageType = "document";
-            if (!content && messageType === "text")
-                continue;
-            if (!content)
-                content = `[${messageType}]`;
-            console.log(`[Worker] New message from ${remoteJid}: ${content.substring(0, 30)}...`);
-            let mediaId = undefined;
-            if (messageType !== "text") {
-                mediaId = await uploadMedia(businessId, msg);
-            }
-            let groupMetadata = undefined;
-            if (isGroup) {
-                try {
-                    const metadata = await sock.groupMetadata(remoteJid);
-                    groupMetadata = {
-                        owner: metadata.owner,
-                        participants: metadata.participants.map(p => p.id)
-                    };
-                }
-                catch (e) {
-                    console.error(`[Worker] Failed to fetch group metadata for ${remoteJid}`);
-                }
-            }
-            // Extract the best available display name
-            const contactName = msg.pushName || undefined;
-            // If we got a pushName, also proactively sync it as the contact name
-            if (msg.pushName && !msg.key.fromMe) {
-                updateBackend({
-                    action: 'updateContactName',
-                    businessId,
-                    phone: remoteJid,
-                    name: msg.pushName,
-                    isGroup,
-                });
-            }
-            // Forward to backend
-            await updateBackend({
-                action: 'newMessage',
-                businessId,
-                sender: remoteJid,
-                content,
-                timestamp: msg.messageTimestamp * 1000 || Date.now(),
-                fromMe: msg.key.fromMe,
-                isGroup,
-                groupMetadata,
-                messageType,
-                mediaId,
-                fileName: msg.message?.documentMessage?.fileName,
-                name: contactName
-            });
-        }
-    });
-    activeSockets[businessId] = sock;
-    return { success: true, message: `Session starting for ${businessId}` };
-}
-// --- API Endpoints ---
-// Start or retrieve a session for a business
+// Start a session
 app.post('/session/start', async (req, res) => {
     const { businessId } = req.body;
-    if (!businessId) {
-        return res.status(400).json({ error: 'businessId is required' });
-    }
-    if (activeSockets[businessId]) {
+    if (!businessId)
+        return res.status(400).json({ error: 'businessId required' });
+    if (SocketManager_1.SocketManager.getSocket(businessId)) {
         return res.json({ success: true, message: 'Session already active' });
     }
     try {
-        const result = await startSession(businessId);
-        res.json(result);
+        await SocketManager_1.SocketManager.startSession(businessId);
+        res.json({ success: true, message: `Session starting for ${businessId}` });
     }
     catch (error) {
-        console.error(`[Worker] Error starting session for ${businessId}:`, error);
-        res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+        res.status(500).json({ error: String(error) });
     }
-});
-// Health check
-app.get("/", (req, res) => {
-    res.send("PIPELIXR WhatsApp Worker is running");
 });
 // Pairing code request
 app.post("/pairing/request", async (req, res) => {
     const { businessId, phone } = req.body;
-    if (!businessId || !phone) {
+    if (!businessId || !phone)
         return res.status(400).json({ error: "Missing businessId or phone" });
+    const phoneDigits = String(phone).replace(/\D/g, "");
+    if (phoneDigits.length < 10 || phoneDigits.length > 15) {
+        return res.status(400).json({ error: "Invalid phone format. Use country code + number (digits only)." });
     }
-    const sock = activeSockets[businessId];
-    if (sock) {
-        console.log(`[Worker] Closing existing session to allow fresh pairing for ${businessId}`);
-        try {
-            // Check if socket/ws exists before closing
-            if (sock.ws)
-                sock.ws.close();
-            delete activeSockets[businessId];
-        }
-        catch (e) {
-            console.error(`[Worker] Error closing socket:`, e);
-        }
-    }
+    await SocketManager_1.SocketManager.closeSession(businessId);
     try {
-        console.log(`[Worker] Initiating fresh pairing for ${businessId} with phone ${phone}`);
-        await startSession(businessId, phone);
-        // Wait a small bit for socket to be ready
-        const sock = activeSockets[businessId];
-        if (!sock)
-            throw new Error("Failed to initialize socket");
-        console.log(`[Worker] Requesting code from Baileys...`);
-        // Add a timeout for the Baileys request itself
-        const codePromise = sock.requestPairingCode(phone.replace(/\D/g, ''));
-        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Baileys pairing code request timed out")), 15000));
-        const code = await Promise.race([codePromise, timeoutPromise]);
-        console.log(`[Worker] Generated pairing code: ${code}`);
-        // Sync to backend anyway for permanence
-        await updateBackend({
-            action: 'updatePairingCode',
-            businessId,
-            pairingCode: code
-        });
+        await SocketManager_1.SocketManager.startSession(businessId, phone);
+        const sock = SocketManager_1.SocketManager.getSocket(businessId);
+        if (!sock) {
+            throw new Error("WhatsApp socket unavailable for pairing request.");
+        }
+        await waitForSocketReady(sock);
+        let code = "";
+        let lastError = null;
+        for (let attempt = 1; attempt <= 3; attempt++) {
+            try {
+                if (sock.authState?.creds?.registered) {
+                    throw new Error("This WhatsApp session is already registered. Disconnect first, then retry pairing.");
+                }
+                code = await sock.requestPairingCode(phoneDigits);
+                break;
+            }
+            catch (error) {
+                lastError = error;
+                if (attempt < 3) {
+                    await new Promise((r) => setTimeout(r, 1200 * attempt));
+                }
+            }
+        }
+        if (!code) {
+            throw lastError || new Error("Failed to generate pairing code.");
+        }
+        await BackendService_1.BackendService.updatePairingCode(businessId, code);
         res.json({ success: true, code });
     }
     catch (error) {
-        console.error(`[Worker] Pairing initiation error for ${businessId}:`, error);
         res.status(500).json({ error: String(error) });
     }
 });
-// Outgoing message endpoint
+async function waitForSocketReady(sock, timeoutMs = 12000) {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+        if (sock?.ws?.readyState === 1)
+            return;
+        await new Promise((r) => setTimeout(r, 250));
+    }
+    throw new Error("WhatsApp socket not ready for pairing request. Please retry.");
+}
+// --- Message Operations ---
 app.post('/message/send', async (req, res) => {
     const { businessId, to, content } = req.body;
-    if (!businessId || !to || !content) {
-        return res.status(400).json({ error: 'businessId, to, and content are required' });
-    }
-    const sock = activeSockets[businessId];
-    if (!sock) {
-        return res.status(404).json({ error: `No active session for business ${businessId}` });
-    }
+    if (!businessId || !to || !content)
+        return res.status(400).json({ error: 'Missing parameters' });
+    const adapter = SocketManager_1.SocketManager.getAdapter(businessId);
+    if (!adapter)
+        return res.status(404).json({ error: 'No active session' });
     try {
-        // Ensure ID is properly formatted for WhatsApp
-        // 1. Strip '+' if present
-        const cleanTo = to.startsWith('+') ? to.substring(1) : to;
-        // 2. Add suffix if not present
-        const jid = cleanTo.includes('@') ? cleanTo : `${cleanTo}@s.whatsapp.net`;
-        if (!sock.user) {
-            return res.status(503).json({ error: 'WhatsApp session is active but not fully connected' });
-        }
-        const task = async () => {
-            console.log(`[Worker] Attempting to send message to JID: "${jid}"`);
-            console.log(`[Worker] Content: "${content.substring(0, 50)}${content.length > 50 ? '...' : ''}"`);
-            const result = await sock.sendMessage(jid, { text: content });
-            console.log(`[Worker] Message sent successfully. Baileys result ID: ${result?.key?.id}`);
-        };
-        if (!messageQueues[businessId]) {
-            messageQueues[businessId] = new MessageQueue();
-        }
-        messageQueues[businessId].add(task);
+        SocketManager_1.SocketManager.enqueueTask(businessId, async () => {
+            await adapter.sendMessage(to, content);
+        });
         res.json({ success: true, queued: true });
     }
     catch (error) {
-        console.error(`[Worker] Error sending message for ${businessId}:`, error);
-        res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+        res.status(500).json({ error: String(error) });
     }
 });
-const http_1 = __importDefault(require("http"));
+// --- Chat States & Modification ---
+app.post('/presence/update', async (req, res) => {
+    const { businessId, to, state } = req.body; // state: 'composing' | 'recording' | 'paused'
+    if (!businessId || !to || !state)
+        return res.status(400).json({ error: 'Missing parameters' });
+    const sock = SocketManager_1.SocketManager.getSocket(businessId);
+    if (!sock)
+        return res.status(404).json({ error: 'No active session' });
+    try {
+        const jid = to.includes('@') ? to : `${to.replace(/\D/g, '')}@s.whatsapp.net`;
+        await sock.sendPresenceUpdate(state, jid);
+        res.json({ success: true });
+    }
+    catch (error) {
+        res.status(500).json({ error: String(error) });
+    }
+});
+app.post('/chat/modify', async (req, res) => {
+    const { businessId, to, action } = req.body; // action: 'archive' | 'unarchive' | 'mute' | 'unmute' | 'delete'
+    if (!businessId || !to || !action)
+        return res.status(400).json({ error: 'Missing parameters' });
+    const sock = SocketManager_1.SocketManager.getSocket(businessId);
+    if (!sock)
+        return res.status(404).json({ error: 'No active session' });
+    try {
+        const jid = to.includes('@') ? to : `${to.replace(/\D/g, '')}@s.whatsapp.net`;
+        if (action === 'archive') {
+            await sock.chatModify({ archive: true }, jid);
+        }
+        else if (action === 'unarchive') {
+            await sock.chatModify({ archive: false }, jid);
+        }
+        else if (action === 'mute') {
+            // Mute for 8 hours by default if not specified
+            await sock.chatModify({ mute: 8 * 60 * 60 * 1000 }, jid);
+        }
+        else if (action === 'unmute') {
+            await sock.chatModify({ mute: null }, jid);
+        }
+        else if (action === 'delete') {
+            await sock.chatModify({ delete: true }, jid);
+        }
+        res.json({ success: true });
+    }
+    catch (error) {
+        res.status(500).json({ error: String(error) });
+    }
+});
+// --- Initialization ---
 const server = http_1.default.createServer(app);
 async function initWorker() {
-    console.log("[Worker] Initializing worker, fetching connected businesses...");
+    console.log("[Worker] Initializing, fetching connected businesses...");
     try {
-        const response = await updateBackend({ action: 'getConnectedBusinesses' });
-        if (response && response.businesses) {
-            for (const business of response.businesses) {
-                console.log(`[Worker] Auto-starting session for ${business._id}`);
-                startSession(business._id);
-                // Stagger starts slightly to avoid thundering herd
-                await new Promise(r => setTimeout(r, 1000));
-            }
+        const businesses = await BackendService_1.BackendService.getConnectedBusinesses();
+        for (const business of businesses) {
+            console.log(`[Worker] Auto-starting session for ${business._id}`);
+            SocketManager_1.SocketManager.startSession(business._id).catch(console.error);
+            await new Promise(r => setTimeout(r, 1000));
         }
     }
     catch (e) {
-        console.error("[Worker] Failed to fetch connected businesses on boot", e);
+        console.error("[Worker] Initialization failed", e);
     }
 }
 server.listen(PORT, () => {
     console.log(`WhatsApp Worker running on port ${PORT}`);
     initWorker();
 });
-// Force event loop to stay alive
-setInterval(() => {
-    // Keep alive
-}, 1000 * 60 * 60);

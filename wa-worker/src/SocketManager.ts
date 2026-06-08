@@ -1,12 +1,8 @@
-import { 
-    makeWASocket, 
-    useMultiFileAuthState as getMultiFileAuthState, 
-    fetchLatestBaileysVersion,
-} from '@whiskeysockets/baileys';
-import pino from 'pino';
+import { EventHandler } from './EventHandler';
 import fs from 'fs';
 import path from 'path';
-import { EventHandler } from './EventHandler';
+import { BaileysAdapter } from './adapters/BaileysAdapter';
+import { WhatsAppAdapter } from './adapters/WhatsAppAdapter';
 
 class MessageQueue {
     queue: (() => Promise<void>)[] = [];
@@ -25,7 +21,9 @@ class MessageQueue {
             if (task) {
                 try {
                     await task();
-                    await new Promise(r => setTimeout(r, 500 + Math.random() * 1000));
+                    // Randomized delay between 3 and 12 seconds as per PRD
+                    const delayMs = 3000 + Math.random() * 9000;
+                    await new Promise(r => setTimeout(r, delayMs));
                 } catch (e) {
                     console.error("[MessageQueue] Task failed", e);
                 }
@@ -36,7 +34,7 @@ class MessageQueue {
 }
 
 export class SocketManager {
-    private static activeSockets: Record<string, any> = {};
+    private static adapters: Record<string, WhatsAppAdapter> = {};
     private static messageQueues: Record<string, MessageQueue> = {};
     private static sessionsDir: string;
 
@@ -48,63 +46,48 @@ export class SocketManager {
         }
     }
 
-    static async startSession(businessId: string, pairingNumber?: string) {
-        console.log(`[SocketManager] Starting session for ${businessId}`);
-        const sessionPath = path.join(this.sessionsDir, `session-${businessId}`);
-
-        // Prevent duplicate sessions
+    static async startSession(businessId: string, pairingNumber?: string, mode: 'official' | 'unofficial' = 'unofficial') {
+        console.log(`[SocketManager] Starting session for ${businessId} in mode ${mode}`);
+        
         await this.closeSession(businessId);
 
-        if (pairingNumber && fs.existsSync(sessionPath)) {
-            fs.rmSync(sessionPath, { recursive: true, force: true });
+        let adapter: WhatsAppAdapter;
+        
+        if (mode === 'unofficial') {
+            const baileysAdapter = new BaileysAdapter(businessId, this.sessionsDir);
+            await baileysAdapter.init(pairingNumber, 
+                (update) => EventHandler.onConnectionUpdate(businessId, update, baileysAdapter.sock, (bid) => this.startSession(bid)),
+                {
+                    onContactsUpsert: (contacts: any) => EventHandler.onContactsUpsert(businessId, contacts),
+                    onMessagesUpsert: (m: any) => EventHandler.onMessagesUpsert(businessId, m, baileysAdapter.sock),
+                    onHistorySet: (data: any) => EventHandler.onHistorySet(businessId, data, baileysAdapter.sock),
+                    onMessagesUpdate: async (updates: any) => { EventHandler.onMessagesUpdate(businessId, updates).catch(console.error); },
+                    onMessageReceiptUpdate: (receipts: any) => { EventHandler.onMessageReceiptUpdate(businessId, receipts).catch(console.error); }
+                }
+            );
+            adapter = baileysAdapter;
+        } else {
+            // Cloud API would go here eventually
+            throw new Error("Cloud API adapter not fully implemented in SocketManager yet");
         }
 
-        const { state, saveCreds } = await getMultiFileAuthState(sessionPath);
-        const { version } = await fetchLatestBaileysVersion();
-
-        const sock = makeWASocket({
-            version,
-            auth: state,
-            logger: pino({ level: 'info' }) as any,
-            browser: ["Pipelixr", "Chrome", "1.0.0"],
-            syncFullHistory: false,
-            shouldSyncHistoryMessage: () => true
-        });
-
-        this.activeSockets[businessId] = sock;
+        this.adapters[businessId] = adapter;
         this.messageQueues[businessId] = new MessageQueue();
 
-        sock.ev.on('connection.update', (update) => 
-            EventHandler.onConnectionUpdate(businessId, update, sock, (bid) => this.startSession(bid))
-        );
-
-        sock.ev.on('creds.update', saveCreds);
-
-        sock.ev.on('contacts.upsert', (contacts) => 
-            EventHandler.onContactsUpsert(businessId, contacts)
-        );
-
-        sock.ev.on('messages.upsert', (m) => 
-            EventHandler.onMessagesUpsert(businessId, m, sock)
-        );
-
-        sock.ev.on('messaging-history.set', (data) => 
-            EventHandler.onHistorySet(businessId, data, sock)
-        );
-
-        sock.ev.on('messages.update', async (updates) => {
-            EventHandler.onMessagesUpdate(businessId, updates).catch(console.error);
-        });
-
-        sock.ev.on('message-receipt.update', (receipts) => {
-            EventHandler.onMessageReceiptUpdate(businessId, receipts).catch(console.error);
-        });
-
-        return sock;
+        return adapter;
     }
 
-    static getSocket(businessId: string) {
-        return this.activeSockets[businessId];
+    static getAdapter(businessId: string): WhatsAppAdapter {
+        return this.adapters[businessId];
+    }
+
+    static getSocket(businessId: string): any {
+        // Compatibility for existing code
+        const adapter = this.adapters[businessId];
+        if (adapter instanceof BaileysAdapter) {
+            return adapter.sock;
+        }
+        return null;
     }
 
     static async enqueueTask(businessId: string, task: () => Promise<void>) {
@@ -115,13 +98,16 @@ export class SocketManager {
     }
 
     static async closeSession(businessId: string) {
-        const sock = this.activeSockets[businessId];
-        if (sock) {
+        const adapter = this.adapters[businessId];
+        if (adapter) {
             try {
-                if (sock.ws) sock.ws.close();
+                if (adapter instanceof BaileysAdapter && adapter.sock?.ws) {
+                    adapter.sock.ws.close();
+                }
             } catch (e) {}
-            delete this.activeSockets[businessId];
+            delete this.adapters[businessId];
             delete this.messageQueues[businessId];
         }
     }
 }
+

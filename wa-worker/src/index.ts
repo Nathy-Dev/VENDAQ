@@ -53,7 +53,11 @@ app.post("/pairing/request", async (req, res) => {
     await SocketManager.closeSession(businessId);
 
     try {
-        const sock = await SocketManager.startSession(businessId, phone);
+        await SocketManager.startSession(businessId, phone);
+        const sock = SocketManager.getSocket(businessId);
+        if (!sock) {
+            throw new Error("WhatsApp socket unavailable for pairing request.");
+        }
         await waitForSocketReady(sock);
         let code = "";
         let lastError: unknown = null;
@@ -97,14 +101,12 @@ app.post('/message/send', async (req, res) => {
     const { businessId, to, content } = req.body;
     if (!businessId || !to || !content) return res.status(400).json({ error: 'Missing parameters' });
     
-    const sock = SocketManager.getSocket(businessId);
-    if (!sock) return res.status(404).json({ error: 'No active session' });
+    const adapter = SocketManager.getAdapter(businessId);
+    if (!adapter) return res.status(404).json({ error: 'No active session' });
     
     try {
-        const jid = to.includes('@') ? to : `${to.replace(/\D/g, '')}@s.whatsapp.net`;
-        
         SocketManager.enqueueTask(businessId, async () => {
-            await sock.sendMessage(jid, { text: content });
+            await adapter.sendMessage(to, content);
         });
         
         res.json({ success: true, queued: true });

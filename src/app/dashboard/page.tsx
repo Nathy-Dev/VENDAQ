@@ -6,12 +6,11 @@ import { api } from "../../../convex/_generated/api";
 
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
-import { LayoutDashboard, MessageSquare, Users, TrendingUp, type LucideIcon } from "lucide-react";
+import { AlertTriangle, Banknote, MessageSquare, Reply, Send, type LucideIcon } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import styles from "./dashboard.module.css";
 import Loader from "@/components/Loader";
 import LeadPipeline from "@/components/LeadPipeline";
-import InvisibleCrmPanel from "@/components/InvisibleCrmPanel";
 import { PooledOrders } from "@/types";
 
 
@@ -27,7 +26,7 @@ export default function DashboardPage() {
     business ? { businessId: business._id } : "skip"
   ) as PooledOrders | undefined;
 
-  const statusMetrics = useQuery(api.whatsapp.getStatusToCashMetrics,
+  const mvpMetrics = useQuery(api.whatsapp.getMvpRevenueMetrics,
     business ? { businessId: business._id } : "skip"
   );
 
@@ -66,31 +65,38 @@ export default function DashboardPage() {
         <div className={styles.statsGrid}>
           <StatCard
             icon={MessageSquare}
-            label="Status Views"
-            value={statusMetrics?.statusViews?.toString() || "0"}
+            label="Total Signals"
+            value={mvpMetrics?.totalSignals?.toString() || "0"}
             color="rgba(59, 130, 246, 0.1)"
             iconColor="#3b82f6"
           />
           <StatCard
-            icon={Users}
-            label="Conversations Started"
-            value={statusMetrics?.conversationsStarted?.toString() || "0"}
+            icon={Reply}
+            label="Replied"
+            value={mvpMetrics?.replied?.toString() || "0"}
             color="rgba(16, 185, 129, 0.1)"
             iconColor="#10b981"
           />
           <StatCard
-            icon={TrendingUp}
-            label="Orders Created"
-            value={statusMetrics?.ordersCreated?.toString() || "0"}
+            icon={Send}
+            label="Followed Up"
+            value={mvpMetrics?.followedUp?.toString() || "0"}
             color="rgba(139, 92, 246, 0.1)"
             iconColor="#8b5cf6"
           />
           <StatCard
-            icon={LayoutDashboard}
-            label="Payments Completed"
-            value={statusMetrics?.paymentsCompleted?.toString() || "0"}
+            icon={AlertTriangle}
+            label="Lost"
+            value={mvpMetrics?.lost?.toString() || "0"}
             color="rgba(245, 158, 11, 0.1)"
             iconColor="#f59e0b"
+          />
+          <StatCard
+            icon={Banknote}
+            label="Estimated Lost Revenue"
+            value={`NGN ${(mvpMetrics?.estimatedLostRevenue || 0).toLocaleString()}`}
+            color="rgba(239, 68, 68, 0.1)"
+            iconColor="#ef4444"
           />
         </div>
 
@@ -118,7 +124,6 @@ export default function DashboardPage() {
 
         <div className={styles.dashboardGrid}>
           <div className="flex flex-col gap-6">
-            {business && <InvisibleCrmPanel businessId={business._id} />}
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-bold text-slate-500 uppercase tracking-widest px-1">Lead Pipeline</h3>
               {business?.whatsappStatus === "connected" && (
