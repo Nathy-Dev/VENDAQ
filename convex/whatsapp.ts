@@ -1809,7 +1809,12 @@ export const provisionEvolutionGoInstance = action({
 
     const exists = await evoClient.instanceExists(instanceName);
     if (!exists) {
-      await evoClient.createInstance(instanceName);
+      try {
+        await evoClient.createInstance(instanceName);
+      } catch (e: any) {
+        // 400 means it already exists despite instanceExists returning false (shape mismatch) — safe to continue
+        console.warn("[provisionEvolutionGoInstance] createInstance error (may already exist):", e?.message);
+      }
     }
 
     try {
