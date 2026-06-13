@@ -43,13 +43,23 @@ async function evoFetch(path: string, method: string, body?: unknown): Promise<u
 export async function instanceExists(instanceName: string): Promise<boolean> {
   try {
     const data = await evoFetch("/instance/all", "GET") as Array<Record<string, unknown>>;
-    if (!Array.isArray(data)) return false;
-    return data.some((d) => {
+    if (!Array.isArray(data)) {
+      console.warn("[instanceExists] Expected array, got:", typeof data);
+      return false;
+    }
+    
+    const exists = data.some((d) => {
       const flat = d?.instanceName as string | undefined;
       const nested = (d?.instance as Record<string, unknown> | undefined)?.instanceName as string | undefined;
       return flat === instanceName || nested === instanceName;
     });
-  } catch {
+
+    if (!exists) {
+      console.warn(`[instanceExists] Instance ${instanceName} not found. Data sample:`, data.slice(0, 2));
+    }
+    return exists;
+  } catch (error) {
+    console.error("[instanceExists] Error:", error);
     return false;
   }
 }
