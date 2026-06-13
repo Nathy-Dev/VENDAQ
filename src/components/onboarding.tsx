@@ -282,13 +282,21 @@ export default function Onboarding({ initialStep = 0 }: OnboardingProps) {
                   <h1 className={styles.title} style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>Connect WhatsApp</h1>
                   <p className={styles.description} style={{ fontSize: '0.875rem' }}>
                     {(selectedMode === 'unofficial' || existingBusiness?.whatsappMode === "unofficial")
-                      ? "Scan the QR code with your WhatsApp Link Device feature." 
+                      ? "Scan the QR code or use the pairing code with WhatsApp Link Device." 
                       : "Enter your Meta Developer tokens to establish connection."}
                   </p>
                 </div>
 
                 <div className={styles.qrContainer} style={{ background: qrData?.qrCode ? 'white' : undefined, padding: qrData?.qrCode ? '1rem' : undefined }}>
-                    {qrData?.qrCode ? (
+                    {qrData?.pairingCode ? (
+                      <div className={styles.pairingCodeBox}>
+                        {qrData.pairingCode.split("").map((char, index) => (
+                          <span key={`${char}-${index}`} className={styles.codeChar}>
+                            {char}
+                          </span>
+                        ))}
+                      </div>
+                    ) : qrData?.qrCode ? (
                         (qrData.qrCode.startsWith('data:image') || qrData.qrCode.length > 500) ? (
                             <img 
                                 src={qrData.qrCode.startsWith('data:image') ? qrData.qrCode : `data:image/png;base64,${qrData.qrCode}`} 
@@ -300,7 +308,7 @@ export default function Onboarding({ initialStep = 0 }: OnboardingProps) {
                         )
                     ) : (
                         <span style={{ fontSize: '0.875rem', color: '#64748b' }}>
-                            {qrData?.status === 'pending' ? 'Generating fresh QR...' : 'Waiting for worker...'}
+                            {qrData?.status === 'pending' ? 'Generating connection code...' : 'Waiting for worker...'}
                         </span>
                     )}
                 </div>

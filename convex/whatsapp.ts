@@ -81,6 +81,7 @@ export const updateQRCode = mutation({
   handler: async (ctx, args) => {
     await ctx.db.patch(args.businessId, {
       qrCode: args.qrCodeString,
+      pairingCode: undefined,
       whatsappStatus: "pending", // Emitting QR means connection is pending scan
     });
   },
@@ -94,11 +95,16 @@ export const updateConnectionStatus = mutation({
   },
   handler: async (ctx, args) => {
     // If we are fully connected, clear the QR code so the UI can proceed
-    const patchData: { whatsappStatus: "connected" | "disconnected" | "error" | "pending"; qrCode?: string } = {
+    const patchData: {
+      whatsappStatus: "connected" | "disconnected" | "error" | "pending";
+      qrCode?: string;
+      pairingCode?: string;
+    } = {
       whatsappStatus: args.status,
     };
     if (args.status === "connected") {
         patchData.qrCode = undefined;
+        patchData.pairingCode = undefined;
     }
     
     await ctx.db.patch(args.businessId, patchData);
@@ -113,6 +119,7 @@ export const updatePairingCode = mutation({
   handler: async (ctx, args) => {
     await ctx.db.patch(args.businessId, {
       pairingCode: args.pairingCode,
+      qrCode: undefined,
       whatsappStatus: "pending", 
     });
   },
@@ -1804,22 +1811,34 @@ export const provisionEvolutionGoInstance = action({
   args: { businessId: v.id("businesses") },
   handler: async (ctx, args): Promise<{ instanceName: string }> => {
     const instanceName = getEvolutionInstanceName(args.businessId);
-    const convexSiteUrl = process.env.CONVEX_SITE_URL || "";
+    const convexSiteUrl = process.env.CONVEX_SITE_URL || process.env.NEXT_PUBLIC_CONVEX_SITE_URL || "";
     const webhookUrl = `${convexSiteUrl}/api/webhook/evolution`;
 
     const exists = await evoClient.instanceExists(instanceName);
-    if (exists) {
-      // Delete the stale/broken instance before recreating it clean
-      await evoClient.deleteInstanceSilently(instanceName);
-      // Small delay so Evolution Go processes the deletion before create
-      await new Promise((r) => setTimeout(r, 1500));
+    let initialQr: string | null = null;
+    let pairingCode: string | null = null;
+
+    if (!convexSiteUrl) {
+      console.warn(
+        "[provisionEvolutionGoInstance] No CONVEX_SITE_URL or NEXT_PUBLIC_CONVEX_SITE_URL configured; webhook delivery may fail."
+      );
     }
 
-    let initialQr: string | null = null;
-    try {
-      initialQr = await evoClient.createInstance(instanceName, webhookUrl);
-    } catch (e: any) {
-      console.warn("[provisionEvolutionGoInstance] createInstance error:", e?.message);
+    if (exists) {
+      console.warn(`[provisionEvolutionGoInstance] Instance ${instanceName} already exists; reusing it instead of deleting.`);
+    } else {
+      try {
+        const created = await evoClient.createInstance(instanceName, webhookUrl);
+        initialQr = created.qrCode;
+        pairingCode = created.pairingCode;
+      } catch (e: any) {
+        const message = e?.message || "";
+        if (!message.toLowerCase().includes("already exists")) {
+          console.warn("[provisionEvolutionGoInstance] createInstance error:", message);
+        } else {
+          console.warn(`[provisionEvolutionGoInstance] Instance ${instanceName} already exists during create; continuing.`);
+        }
+      }
     }
 
     try {
@@ -1828,15 +1847,18 @@ export const provisionEvolutionGoInstance = action({
       console.warn("[provisionEvolutionGoInstance] Error setting webhook:", e);
     }
 
-    // Fetch initial QR right away to avoid webhook race conditions.
-    // If endpoints fail, fallback to the QR returned during creation.
+    // Fetch connection artifacts right away to avoid webhook race conditions.
+    // If the instance already emitted a QR or pairing code, persist it immediately.
     try {
-        const fetchedQr = await evoClient.getQR(instanceName);
-        if (fetchedQr) {
-            initialQr = fetchedQr;
-        }
+      const connection = await evoClient.getConnectionArtifacts(instanceName);
+      if (connection.qrCode) {
+        initialQr = connection.qrCode;
+      }
+      if (connection.pairingCode) {
+        pairingCode = connection.pairingCode;
+      }
     } catch (e: any) {
-        console.warn("[provisionEvolutionGoInstance] getQR error:", e?.message);
+      console.warn("[provisionEvolutionGoInstance] getConnectionArtifacts error:", e?.message);
     }
 
     await ctx.runMutation(api.businesses.setEvolutionInstance, {
@@ -1849,7 +1871,14 @@ export const provisionEvolutionGoInstance = action({
         businessId: args.businessId,
         qrCodeString: initialQr,
       });
-    } else {
+    }
+    if (pairingCode) {
+      await ctx.runMutation(api.whatsapp.updatePairingCode, {
+        businessId: args.businessId,
+        pairingCode,
+      });
+    }
+    if (!initialQr && !pairingCode) {
       await ctx.runMutation(api.whatsapp.updateConnectionStatus, {
         businessId: args.businessId,
         status: "pending",

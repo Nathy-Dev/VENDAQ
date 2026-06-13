@@ -6,8 +6,44 @@
  * Required Convex environment variables:
  *   EVOLUTION_GO_URL     - e.g. https://your-vps.hostinger.com:8080
  *   EVOLUTION_GO_API_KEY - global API key from Evolution Go config
- *   CONVEX_SITE_URL      - public Convex site URL (already set)
+ *   CONVEX_SITE_URL      - public Convex site URL (preferred)
+ *   NEXT_PUBLIC_CONVEX_SITE_URL - fallback for local/dev setups
  */
+
+type ConnectionArtifacts = {
+  qrCode: string | null;
+  pairingCode: string | null;
+};
+
+function parseConnectionArtifacts(rawData: unknown): ConnectionArtifacts {
+  const data = rawData as Record<string, any> | null | undefined;
+  const qr = data?.qrcode;
+  const instance = data?.instance;
+
+  const qrCode =
+    qr?.base64 ||
+    qr?.code ||
+    data?.base64 ||
+    data?.code ||
+    instance?.qrcode?.base64 ||
+    instance?.qrcode?.code ||
+    instance?.qrcode ||
+    null;
+
+  const pairingCode =
+    data?.pairingCode ||
+    data?.pairing_code ||
+    qr?.pairingCode ||
+    qr?.pairing_code ||
+    instance?.pairingCode ||
+    instance?.pairing_code ||
+    null;
+
+  return {
+    qrCode: typeof qrCode === "string" ? qrCode : null,
+    pairingCode: typeof pairingCode === "string" ? pairingCode : null,
+  };
+}
 
 export function getEvolutionConfig(): { url: string; apiKey: string } {
   const url = process.env.EVOLUTION_GO_URL || "";
@@ -93,7 +129,7 @@ export async function deleteInstanceSilently(instanceName: string): Promise<void
 }
 
 /** Creates a new WhatsApp instance on Evolution Go and returns the initial QR base64 if available. */
-export async function createInstance(instanceName: string, webhookUrl: string): Promise<string | null> {
+export async function createInstance(instanceName: string, webhookUrl: string): Promise<ConnectionArtifacts> {
   const { apiKey } = getEvolutionConfig();
   const res = await evoFetch("/instance/create", "POST", {
     name: instanceName, // Evolution Go (Go port) uses 'name'
@@ -101,7 +137,9 @@ export async function createInstance(instanceName: string, webhookUrl: string): 
     token: apiKey, // Provide token as required by the API
     qrcode: true,
     integration: "WHATSAPP-BAILEYS",
-    webhook: webhookUrl, // Sometimes it accepts a simple string
+    webhook: webhookUrl, // Some versions expect a simple string
+    webhookUrl: webhookUrl,
+    webhook_url: webhookUrl,
     webhook_by_events: false,
     webhook_base64: false,
     events: [
@@ -115,8 +153,7 @@ export async function createInstance(instanceName: string, webhookUrl: string): 
     ],
   }) as any;
 
-  // Many Evolution API versions return the QR in the creation response
-  return res?.qrcode?.base64 || res?.qrcode?.code || res?.base64 || res?.code || res?.instance?.qrcode || null;
+  return parseConnectionArtifacts(res);
 }
 
 /**
@@ -125,6 +162,18 @@ export async function createInstance(instanceName: string, webhookUrl: string): 
  */
 export async function setWebhook(instanceName: string, webhookUrl: string): Promise<void> {
   const payload = {
+    url: webhookUrl,
+    webhook_by_events: false,
+    webhook_base64: false,
+    events: [
+      "QRCODE",
+      "QRCODE_UPDATED",
+      "MESSAGE",
+      "MESSAGES_UPSERT",
+      "CONNECTION",
+      "CONNECTION_UPDATE",
+      "SEND_MESSAGE",
+    ],
     webhook: {
         enabled: true,
         url: webhookUrl,
@@ -159,14 +208,33 @@ export async function setWebhook(instanceName: string, webhookUrl: string): Prom
   }
 }
 
-/** Returns the current QR code string for an instance, or null if not pending. */
-export async function getQR(instanceName: string): Promise<string | null> {
-  try {
-    const data = await evoFetch(`/instance/connect/${instanceName}`, "GET") as { base64?: string; code?: string };
-    return data?.base64 || data?.code || null;
-  } catch {
-    return null;
+/** Returns the current connection artifacts for an instance. */
+export async function getConnectionArtifacts(instanceName: string): Promise<ConnectionArtifacts> {
+  const paths = [
+    `/instance/connect/${instanceName}`,
+    `/instance/qrcode/${instanceName}`,
+    `/instance/qr/${instanceName}`,
+  ];
+
+  for (const path of paths) {
+    try {
+      const data = await evoFetch(path, "GET");
+      const artifacts = parseConnectionArtifacts(data);
+      if (artifacts.qrCode || artifacts.pairingCode) {
+        return artifacts;
+      }
+    } catch {
+      // Try the next compatible endpoint shape.
+    }
   }
+
+  return { qrCode: null, pairingCode: null };
+}
+
+/** Backwards-compatible helper used by older call sites. */
+export async function getQR(instanceName: string): Promise<string | null> {
+  const { qrCode } = await getConnectionArtifacts(instanceName);
+  return qrCode;
 }
 
 /** Returns the connection state: "open" | "close" | "connecting" */
