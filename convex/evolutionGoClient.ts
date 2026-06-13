@@ -154,8 +154,11 @@ export async function deleteInstanceSilently(instanceName: string): Promise<void
 
 /** Creates a new WhatsApp instance on Evolution Go and returns any immediate connection artifacts. */
 export async function createInstance(instanceName: string): Promise<ConnectionArtifacts> {
+  const { apiKey } = getEvolutionConfig();
   const res = await evoFetch("/instance/create", "POST", {
     name: instanceName,
+    instanceName,
+    token: apiKey,
     qrcode: true,
   }) as any;
 
@@ -164,8 +167,10 @@ export async function createInstance(instanceName: string): Promise<ConnectionAr
 
 /** Starts the connection flow for an instance. */
 export async function connectInstance(instanceName: string, number?: string): Promise<unknown> {
+  const { apiKey } = getEvolutionConfig();
   return await evoFetch("/instance/connect", "POST", {
     instanceName,
+    token: apiKey,
     ...(number ? { number } : {}),
   });
 }
