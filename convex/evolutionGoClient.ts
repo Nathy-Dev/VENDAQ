@@ -42,20 +42,39 @@ async function evoFetch(path: string, method: string, body?: unknown): Promise<u
  */
 export async function instanceExists(instanceName: string): Promise<boolean> {
   try {
-    const data = await evoFetch("/instance/all", "GET") as Array<Record<string, unknown>>;
-    if (!Array.isArray(data)) {
-      console.warn("[instanceExists] Expected array, got:", typeof data);
+    const rawData = await evoFetch("/instance/all", "GET") as any;
+    
+    // Sometimes it's an array, sometimes it's an object like { instances: [...] } or a record of instances
+    let dataArray: Array<Record<string, unknown>> = [];
+    if (Array.isArray(rawData)) {
+      dataArray = rawData;
+    } else if (rawData && typeof rawData === "object") {
+      if (Array.isArray(rawData.instances)) {
+        dataArray = rawData.instances;
+      } else if (Array.isArray(rawData.data)) {
+        dataArray = rawData.data;
+      } else {
+        // If it's a map { [name]: {...} }
+        const values = Object.values(rawData);
+        if (values.length > 0 && typeof values[0] === "object") {
+          dataArray = values as Array<Record<string, unknown>>;
+        }
+      }
+    }
+    
+    if (dataArray.length === 0) {
+      // It might genuinely be empty, or we failed to parse the shape. Let's assume it doesn't exist for now.
       return false;
     }
     
-    const exists = data.some((d) => {
-      const flat = d?.instanceName as string | undefined;
-      const nested = (d?.instance as Record<string, unknown> | undefined)?.instanceName as string | undefined;
-      return flat === instanceName || nested === instanceName;
+    const exists = dataArray.some((d) => {
+      const flatName = (d?.instanceName || d?.name) as string | undefined;
+      const nestedName = (d?.instance as any)?.instanceName || (d?.instance as any)?.name as string | undefined;
+      return flatName === instanceName || nestedName === instanceName;
     });
 
     if (!exists) {
-      console.warn(`[instanceExists] Instance ${instanceName} not found. Data sample:`, data.slice(0, 2));
+      console.warn(`[instanceExists] Instance ${instanceName} not found. Data sample:`, dataArray.slice(0, 2));
     }
     return exists;
   } catch (error) {
@@ -76,7 +95,8 @@ export async function deleteInstanceSilently(instanceName: string): Promise<void
 /** Creates a new WhatsApp instance on Evolution Go. */
 export async function createInstance(instanceName: string): Promise<void> {
   await evoFetch("/instance/create", "POST", {
-    instanceName,
+    name: instanceName, // Evolution Go (Go port) uses 'name'
+    instanceName: instanceName, // Send both just in case
     qrcode: true,
     integration: "WHATSAPP-BAILEYS",
   });
