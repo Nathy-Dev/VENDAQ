@@ -163,10 +163,10 @@ export async function createInstance(instanceName: string): Promise<ConnectionAr
 }
 
 /** Starts the connection flow for an instance. */
-export async function connectInstance(instanceName: string): Promise<unknown> {
+export async function connectInstance(instanceName: string, number?: string): Promise<unknown> {
   return await evoFetch("/instance/connect", "POST", {
-    name: instanceName,
     instanceName,
+    ...(number ? { number } : {}),
   });
 }
 
@@ -193,16 +193,12 @@ export async function getConnectionArtifacts(instanceName: string): Promise<Conn
   }
 
   const paths = [
-    `/instance/qr`,
-    `/instance/${instanceName}/qr`,
-    `/instance/${instanceName}/qrcode`,
+    `/instance/qr?instanceName=${encodeURIComponent(instanceName)}`,
   ];
 
   for (const path of paths) {
     try {
-      const data = path === "/instance/qr"
-        ? await evoFetch(path, "GET")
-        : await evoFetch(path, "GET");
+      const data = await evoFetch(path, "GET");
       const artifacts = parseConnectionArtifacts(data);
       if (artifacts.qrCode || artifacts.pairingCode) {
         return artifacts;

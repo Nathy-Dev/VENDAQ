@@ -1811,6 +1811,10 @@ export const provisionEvolutionGoInstance = action({
   args: { businessId: v.id("businesses") },
   handler: async (ctx, args): Promise<{ instanceName: string }> => {
     const instanceName = getEvolutionInstanceName(args.businessId);
+    const business = await ctx.runQuery(api.whatsapp.getBusinessForAssistantAuth, {
+      businessId: args.businessId,
+    });
+    const preferredNumber = business?.assistantAdminPhones?.[0];
 
     const exists = await evoClient.instanceExists(instanceName);
     let initialQr: string | null = null;
@@ -1863,7 +1867,7 @@ export const provisionEvolutionGoInstance = action({
     }
 
     try {
-      const connectResult = await evoClient.connectInstance(instanceName);
+      const connectResult = await evoClient.connectInstance(instanceName, preferredNumber);
       console.log(`[provisionEvolutionGoInstance] connectInstance result for ${instanceName}`, connectResult);
     } catch (e: any) {
       console.warn("[provisionEvolutionGoInstance] connectInstance error:", e?.message);
