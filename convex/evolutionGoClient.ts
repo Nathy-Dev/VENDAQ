@@ -37,6 +37,17 @@ async function evoFetch(path: string, method: string, body?: unknown): Promise<u
   return res.json();
 }
 
+/** Returns true if the named instance already exists on Evolution Go. */
+export async function instanceExists(instanceName: string): Promise<boolean> {
+  try {
+    const data = await evoFetch("/instance/all", "GET") as Array<{ instance?: { instanceName?: string } }>;
+    if (!Array.isArray(data)) return false;
+    return data.some((d) => d?.instance?.instanceName === instanceName);
+  } catch {
+    return false;
+  }
+}
+
 /** Creates a new WhatsApp instance on Evolution Go. */
 export async function createInstance(instanceName: string): Promise<void> {
   await evoFetch("/instance/create", "POST", {
@@ -55,9 +66,13 @@ export async function setWebhook(instanceName: string, webhookUrl: string): Prom
     url: webhookUrl,
     webhook_by_events: false,
     webhook_base64: false,
+    // Evolution Go (Go port) uses these event names; keep both common variants
     events: [
+      "QRCODE",
       "QRCODE_UPDATED",
+      "MESSAGE",
       "MESSAGES_UPSERT",
+      "CONNECTION",
       "CONNECTION_UPDATE",
       "SEND_MESSAGE",
     ],

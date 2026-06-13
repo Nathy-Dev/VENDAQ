@@ -1807,10 +1807,9 @@ export const provisionEvolutionGoInstance = action({
     const convexSiteUrl = process.env.CONVEX_SITE_URL || "";
     const webhookUrl = `${convexSiteUrl}/api/webhook/evolution`;
 
-    try {
+    const exists = await evoClient.instanceExists(instanceName);
+    if (!exists) {
       await evoClient.createInstance(instanceName);
-    } catch (e: any) {
-      console.warn("[provisionEvolutionGoInstance] Error creating instance (it might already exist):", e);
     }
 
     try {

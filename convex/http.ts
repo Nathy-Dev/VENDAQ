@@ -34,17 +34,19 @@ http.route({
 
       const eventUpper = (event || "").toUpperCase();
 
-      if (eventUpper === "QRCODE_UPDATED") {
+      // Handle both Evolution Go (Go port) and Evolution API (Node.js) event name variants
+      if (eventUpper === "QRCODE_UPDATED" || eventUpper === "QRCODE") {
         const qr = (data as { qrcode?: { base64?: string; code?: string } })?.qrcode;
-        const qrString = qr?.base64 || qr?.code || "";
+        // Evolution Go may put the base64 directly on data
+        const qrString = qr?.base64 || qr?.code || (data as { base64?: string })?.base64 || (data as { code?: string })?.code || "";
         if (qrString) {
           await ctx.runMutation(api.whatsapp.updateQRCode, {
             businessId: businessId as Id<"businesses">,
             qrCodeString: qrString,
           });
         }
-      } else if (eventUpper === "CONNECTION_UPDATE") {
-        const state = (data as { state?: string })?.state || "close";
+      } else if (eventUpper === "CONNECTION_UPDATE" || eventUpper === "CONNECTION") {
+        const state = (data as { state?: string; status?: string })?.state || (data as { status?: string })?.status || "close";
         const status =
           state === "open" ? "connected" :
           state === "connecting" ? "pending" :
@@ -53,7 +55,8 @@ http.route({
           businessId: businessId as Id<"businesses">,
           status,
         });
-      } else if (eventUpper === "MESSAGES_UPSERT") {
+      } else if (eventUpper === "MESSAGES_UPSERT" || eventUpper === "MESSAGE") {
+        // Evolution Go sends individual message objects; Node.js wraps in { messages: [] }
         const messages = (data as { messages?: unknown[] })?.messages || [data];
         for (const msg of messages) {
           const m = msg as {
@@ -73,6 +76,8 @@ http.route({
           const isGroup = remoteJid.endsWith("@g.us");
           const timestamp = (m.messageTimestamp || Date.now() / 1000) * 1000;
 
+          if (!remoteJid) continue;
+
           await ctx.runMutation(api.whatsapp.receiveMessage, {
             businessId: businessId as Id<"businesses">,
             sender: remoteJid,
@@ -85,7 +90,7 @@ http.route({
           });
         }
       }
-      // SEND_MESSAGE and other events are intentionally ignored
+      // SEND_MESSAGE, READ_RECEIPT, PRESENCE and other events are intentionally ignored
 
       return new Response(JSON.stringify({ ok: true }), {
         status: 200,
