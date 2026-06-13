@@ -17,6 +17,12 @@ export default defineSchema({
     lastHistorySyncWindowHours: v.optional(v.number()),
     industry: v.optional(v.string()),
     onboardingStep: v.number(),
+    // Evolution Go integration
+    evolutionInstanceName: v.optional(v.string()),
+    // Automation configuration
+    averageOrderValue: v.optional(v.number()),
+    responseWindowMinutes: v.optional(v.number()),
+    followUpTemplate: v.optional(v.string()),
   }).index("by_owner", ["ownerId"]),
 
   customers: defineTable({

@@ -11,6 +11,11 @@ export const getBusiness = query({
   },
 });
 
+export const getBusinessById = query({
+  args: { businessId: v.id("businesses") },
+  handler: async (ctx, args) => ctx.db.get(args.businessId),
+});
+
 export const createOrUpdateBusiness = mutation({
   args: {
     name: v.string(),
@@ -61,9 +66,25 @@ export const updateBusinessDetails = mutation({
     businessId: v.id("businesses"),
     name: v.optional(v.string()),
     industry: v.optional(v.string()),
+    averageOrderValue: v.optional(v.number()),
+    responseWindowMinutes: v.optional(v.number()),
+    followUpTemplate: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const { businessId, ...updates } = args;
-    await ctx.db.patch(businessId, updates);
+    const filtered = Object.fromEntries(
+      Object.entries(updates).filter(([, v]) => v !== undefined)
+    );
+    await ctx.db.patch(businessId, filtered);
+  },
+});
+
+export const setEvolutionInstance = mutation({
+  args: {
+    businessId: v.id("businesses"),
+    instanceName: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.businessId, { evolutionInstanceName: args.instanceName });
   },
 });

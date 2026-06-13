@@ -51,15 +51,11 @@ export default function Onboarding({ initialStep = 0 }: OnboardingProps) {
   const [step, setStep] = useState(initialStep); // 0-2: Features, 3: Mode Selection, 4: Connection
   const [featureIndex, setFeatureIndex] = useState(0);
   const [selectedMode, setSelectedMode] = useState<'official' | 'unofficial' | null>(null);
-  const [usePairingCode, setUsePairingCode] = useState(false);
-  const [phoneNumber, setPhoneNumber] = useState("");
-  const [isGeneratingCode, setIsGeneratingCode] = useState(false);
-  const [localPairingCode, setLocalPairingCode] = useState<string | null>(null);
   const [tosAccepted, setTosAccepted] = useState(false);
   
   const router = useRouter();
   const { createOrUpdateBusiness } = usePipelixrActions();
-  const requestPairingCode = useAction(api.whatsapp.requestPairingCodeAction);
+  const provisionInstance = useAction(api.whatsapp.provisionEvolutionGoInstance);
   const { data: session } = useSession();
 
   // Query Convex for QR code and status
@@ -110,49 +106,16 @@ export default function Onboarding({ initialStep = 0 }: OnboardingProps) {
     
     setStep(4);
 
-    // If unofficial, ping the local worker to start generating a QR code
+    // Provision an Evolution Go instance for this business
     if (selectedMode === "unofficial" && newBusinessId) {
-        try {
-            const workerUrl = process.env.NEXT_PUBLIC_WORKER_URL || "http://localhost:3005";
-            await fetch(`${workerUrl}/session/start`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ businessId: newBusinessId })
-            });
-        } catch (e) {
-            console.error("Failed to start worker session", e);
-        }
+      try {
+        await provisionInstance({ businessId: newBusinessId });
+      } catch (e) {
+        console.error("[Onboarding] Failed to provision Evolution Go instance:", e);
+      }
     }
   };
 
-  const handleRequestPairingCode = async () => {
-    console.log("[Onboarding] Starting handleRequestPairingCode. Business ID:", existingBusiness?._id);
-    if (!phoneNumber) return;
-    if (!existingBusiness) {
-        console.error("[Onboarding] Business not found yet.");
-        alert("Business profile is still loading. Please wait a moment.");
-        return;
-    }
-    
-    setIsGeneratingCode(true);
-    try {
-        console.log("[Onboarding] Calling requestPairingCodeAction...");
-        const result = await requestPairingCode({
-            businessId: existingBusiness._id,
-            phone: phoneNumber
-        });
-        console.log("[Onboarding] Action returned successfully. Result:", result);
-        if (result) {
-          setLocalPairingCode(result);
-        }
-    } catch (e) {
-        console.error("[Onboarding] Action failed:", e);
-        alert(`Failed to request pairing code: ${e instanceof Error ? e.message : String(e)}`);
-    } finally {
-        console.log("[Onboarding] Function finished (finally)");
-        setIsGeneratingCode(false);
-    }
-  };
 
   return (
     <div className={styles.onboardingContainer}>
@@ -277,7 +240,7 @@ export default function Onboarding({ initialStep = 0 }: OnboardingProps) {
                     <ShieldAlert size={18} className={styles.warningIcon} />
                     <div style={{display: 'flex', flexDirection: 'column', gap: '0.5rem', textAlign: 'left'}}>
                       <p className={styles.warningText}>
-                        <strong>Terms of Service & Risk:</strong> PIPELIXR Standard operates by reverse-engineering WhatsApp's Web protocol. This violates WhatsApp's Terms of Service. While our core reactive behavior minimizes risk, your number could still be banned. 
+                        <strong>Terms of Service & Risk:</strong> PIPELIXR Standard operates by reverse-engineering WhatsApp&apos;s Web protocol. This violates WhatsApp&apos;s Terms of Service. While our core reactive behavior minimizes risk, your number could still be banned. 
                       </p>
                       <label style={{display: 'flex', alignItems: 'flex-start', gap: '0.5rem', cursor: 'pointer', fontSize: '0.85rem', color: '#cbd5e1', marginTop: '0.5rem'}}>
                         <input 
@@ -324,72 +287,15 @@ export default function Onboarding({ initialStep = 0 }: OnboardingProps) {
                   </p>
                 </div>
 
-                <div className={styles.linkToggle}>
-                    <button 
-                        className={clsx(styles.toggleBtn, !usePairingCode && styles.toggleBtnActive)}
-                        onClick={() => setUsePairingCode(false)}
-                    >
-                        QR Code
-                    </button>
-                    <button 
-                        className={clsx(styles.toggleBtn, usePairingCode && styles.toggleBtnActive)}
-                        onClick={() => setUsePairingCode(true)}
-                    >
-                        Phone Number
-                    </button>
+                <div className={styles.qrContainer} style={{ background: qrData?.qrCode ? 'white' : undefined, padding: qrData?.qrCode ? '1rem' : undefined }}>
+                    {qrData?.qrCode ? (
+                        <QRCode value={qrData.qrCode} size={200} />
+                    ) : (
+                        <span style={{ fontSize: '0.875rem', color: '#64748b' }}>
+                            {qrData?.status === 'pending' ? 'Generating fresh QR...' : 'Waiting for worker...'}
+                        </span>
+                    )}
                 </div>
-
-                {!usePairingCode ? (
-                    <div className={styles.qrContainer} style={{ background: qrData?.qrCode ? 'white' : undefined, padding: qrData?.qrCode ? '1rem' : undefined }}>
-                        {qrData?.qrCode ? (
-                            <QRCode value={qrData.qrCode} size={200} />
-                        ) : (
-                            <span style={{ fontSize: '0.875rem', color: '#64748b' }}>
-                                {qrData?.status === 'pending' ? 'Generating fresh QR...' : 'Waiting for worker...'}
-                            </span>
-                        )}
-                    </div>
-                ) : (
-                    <div className={styles.phoneInputContainer}>
-                        {!(qrData?.pairingCode || localPairingCode) ? (
-                            <>
-                                <input 
-                                    className={styles.phoneInput}
-                                    placeholder="Phone: +234..."
-                                    value={phoneNumber}
-                                    onChange={(e) => setPhoneNumber(e.target.value)}
-                                />
-                                <button 
-                                    className={styles.primaryButton}
-                                    disabled={!phoneNumber || isGeneratingCode}
-                                    onClick={handleRequestPairingCode}
-                                >
-                                    {isGeneratingCode ? "Initiating Pairing..." : "Generate Pairing Code"}
-                                </button>
-                                <p className={styles.helpText}> Enter your phone number (e.g., +234...) and we will generate a secure link code.</p>
-                            </>
-                        ) : (
-                            <>
-                                <div className={styles.pairingCodeBox}>
-                                    <span className={styles.codeChar}>{qrData?.pairingCode || localPairingCode}</span>
-                                </div>
-                                <p className={styles.helpText} style={{ textAlign: 'center', marginTop: '1rem' }}>
-                                    Open WhatsApp on your phone → Settings → Linked Devices → Link with phone number instead → Enter this code.
-                                </p>
-                                <button 
-                                    className={styles.backButton}
-                                    style={{ marginTop: '0.5rem' }}
-                                    onClick={() => {
-                                        setPhoneNumber("");
-                                        setLocalPairingCode(null);
-                                    }} 
-                                >
-                                    Use a different number
-                                </button>
-                            </>
-                        )}
-                    </div>
-                )}
 
                 <div style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                     <div style={{ fontSize: '0.875rem', color: '#94a3b8' }}>

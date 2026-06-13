@@ -2,12 +2,14 @@ import { v } from "convex/values";
 import { mutation, query, action } from "./_generated/server";
 import { api } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
+import * as evoClient from "./evolutionGoClient";
 
 const VIEWER_FOLLOW_UP_DELAY_MS = 2 * 60 * 60 * 1000;
 const BUYING_SIGNAL_FOLLOW_UP_DELAY_MS = 2 * 60 * 60 * 1000;
 const AWAITING_PAYMENT_REMINDER_DELAY_MS = 3 * 60 * 60 * 1000;
 const SECOND_REMINDER_DELAY_MS = 9 * 60 * 60 * 1000;
 const DEFAULT_ESTIMATED_ORDER_VALUE = 15000;
+const DEFAULT_RESPONSE_WINDOW_MS = 2 * 60 * 60 * 1000; // 2 hours
 
 type MessageClassification = "BUYING_SIGNAL" | "GENERAL_INQUIRY" | "NOISE";
 
@@ -66,19 +68,8 @@ function normalizePhoneForWhatsApp(phone: string): string {
   return normalizePhoneDigits(phone);
 }
 
-function getWorkerUrlOrThrow(): string {
-  const workerUrl = process.env.WHATSAPP_WORKER_URL || "";
-  if (!workerUrl) {
-    throw new Error(
-      "WHATSAPP_WORKER_URL is not configured in Convex environment variables. Set it to your public wa-worker URL."
-    );
-  }
-  if (workerUrl.includes("localhost") || workerUrl.includes("127.0.0.1")) {
-    throw new Error(
-      `WHATSAPP_WORKER_URL=${workerUrl} is not reachable from Convex cloud. Use a public HTTPS URL for wa-worker.`
-    );
-  }
-  return workerUrl;
+function getEvolutionInstanceName(businessId: string): string {
+  return `pipelixr_${businessId}`;
 }
 
 // Called by the external Node.js Worker to emit the generated QR code
@@ -357,16 +348,20 @@ export const receiveMessage = mutation({
     }
 
     if (!args.fromMe && classification === "BUYING_SIGNAL") {
+      const biz = await ctx.db.get(args.businessId);
+      const windowMs = biz?.responseWindowMinutes
+        ? biz.responseWindowMinutes * 60 * 1000
+        : DEFAULT_RESPONSE_WINDOW_MS;
       const taskId = await ctx.db.insert("followUpTasks", {
         businessId: args.businessId,
         customerId: customer._id,
         reason: "buying_signal",
-        dueAt: args.timestamp + BUYING_SIGNAL_FOLLOW_UP_DELAY_MS,
+        dueAt: args.timestamp + windowMs,
         status: "pending",
         createdAt: args.timestamp,
       });
       const scheduledFunctionId = await ctx.scheduler.runAfter(
-        BUYING_SIGNAL_FOLLOW_UP_DELAY_MS,
+        windowMs,
         api.whatsapp.processBuyingSignalFollowUp,
         {
           businessId: args.businessId,
@@ -1082,7 +1077,10 @@ export const getOwnerRepliesForCustomerSince = query({
   },
 });
 
-function buildBuyingSignalFollowUp(customerName: string): string {
+function buildBuyingSignalFollowUp(customerName: string, template?: string): string {
+  if (template) {
+    return template.replace(/\[Customer Name\]/gi, customerName);
+  }
   return `Hi ${customerName}, thanks for reaching out. We saw your message and will get back to you shortly. What exactly were you looking for today?`;
 }
 
@@ -1123,8 +1121,9 @@ export const processBuyingSignalFollowUp = action({
       return { sent: false, reason: "customer_not_found" };
     }
 
+    const biz = await ctx.runQuery(api.whatsapp.getBusinessForAssistantAuth, { businessId: args.businessId });
     const customerName = customer.name || customer.phone.split("@")[0];
-    const content = buildBuyingSignalFollowUp(customerName);
+    const content = buildBuyingSignalFollowUp(customerName, biz?.followUpTemplate);
     const result = await ctx.runAction(api.whatsapp.sendRetargetMessage, {
       businessId: args.businessId,
       customerId: args.customerId,
@@ -1243,21 +1242,19 @@ export const sendRetargetMessage = action({
     customerId: v.id("customers"),
     content: v.string(),
   },
-  handler: async (ctx, args) => {
-    const workerUrl = process.env.WHATSAPP_WORKER_URL || "http://localhost:3005";
+  handler: async (ctx, args): Promise<{ sent: boolean; reason?: string }> => {
     const customer = await ctx.runQuery(api.whatsapp.getCustomerLiteById, { customerId: args.customerId });
-    if (!customer) return { sent: false };
+    if (!customer) return { sent: false, reason: "customer_not_found" };
 
-    const response = await fetch(`${workerUrl}/message/send`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        businessId: args.businessId,
-        to: customer.phone,
-        content: args.content,
-      }),
-    });
-    if (!response.ok) return { sent: false };
+    const biz = await ctx.runQuery(api.whatsapp.getBusinessForAssistantAuth, { businessId: args.businessId });
+    const instanceName = biz?.evolutionInstanceName || getEvolutionInstanceName(args.businessId);
+
+    try {
+      await evoClient.sendText(instanceName, customer.phone, args.content);
+    } catch (e) {
+      console.error("[sendRetargetMessage] Evolution Go send failed:", e);
+      return { sent: false, reason: "evolution_send_failed" };
+    }
 
     await ctx.runMutation(api.whatsapp.logOutboundMessage, {
       businessId: args.businessId,
@@ -1604,7 +1601,7 @@ export const getRevenueActionFeed = query({
       .filter((a) => a.priorityScore >= 55)
       .sort((a, b) => b.priorityScore - a.priorityScore)
       .slice(0, limit)
-      .map(({ priorityScore, ...rest }) => rest);
+      .map(({ priorityScore: _, ...rest }) => rest);
   },
 });
 
@@ -1750,83 +1747,100 @@ export const getRevenueLoopMetrics = query({
 });
 
 export const getMvpRevenueMetrics = query({
-  args: { businessId: v.id("businesses") },
+  args: {
+    businessId: v.id("businesses"),
+    period: v.optional(v.union(v.literal("today"), v.literal("week"), v.literal("month"))),
+  },
   handler: async (ctx, args) => {
-    const tasks = await ctx.db
+    const now = Date.now();
+    const periodStart = args.period === "today"
+      ? (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); })()
+      : args.period === "week"
+        ? now - 7 * 24 * 60 * 60 * 1000
+        : args.period === "month"
+          ? now - 30 * 24 * 60 * 60 * 1000
+          : 0;
+
+    const allTasks = await ctx.db
       .query("followUpTasks")
       .withIndex("by_business_due", (q) => q.eq("businessId", args.businessId))
       .filter((q) => q.eq(q.field("reason"), "buying_signal"))
       .collect();
 
-    const totalSignals = tasks.length;
-    const replied = tasks.filter((task) => task.status === "cancelled").length;
-    const followedUp = tasks.filter((task) => task.status === "done").length;
-    const lost = tasks.filter((task) => task.status === "skipped").length;
+    const tasks = periodStart > 0
+      ? allTasks.filter((t) => t.createdAt >= periodStart)
+      : allTasks;
 
-    const orders = await ctx.db
-      .query("orders")
-      .withIndex("by_business", (q) => q.eq("businessId", args.businessId))
-      .collect();
-    const averageOrderValue = orders.length > 0
-      ? Math.round(orders.reduce((sum, order) => sum + order.totalAmount, 0) / orders.length)
-      : DEFAULT_ESTIMATED_ORDER_VALUE;
+    const totalSignals = tasks.length;
+    const replied = tasks.filter((t) => t.status === "cancelled").length;
+    const followedUp = tasks.filter((t) => t.status === "done").length;
+    const lost = tasks.filter((t) => t.status === "skipped").length;
+
+    // Use owner-configured AOV if set, else fall back to order history average
+    const biz = await ctx.db.get(args.businessId);
+    let aov = biz?.averageOrderValue ?? 0;
+    if (!aov) {
+      const orders = await ctx.db
+        .query("orders")
+        .withIndex("by_business", (q) => q.eq("businessId", args.businessId))
+        .collect();
+      aov = orders.length > 0
+        ? Math.round(orders.reduce((sum, o) => sum + o.totalAmount, 0) / orders.length)
+        : DEFAULT_ESTIMATED_ORDER_VALUE;
+    }
 
     return {
       totalSignals,
       replied,
       followedUp,
       lost,
-      estimatedLostRevenue: lost * averageOrderValue,
+      estimatedLostRevenue: lost * aov,
     };
   },
 });
 
-export const requestPairingCodeAction = action({
-  args: {
-    businessId: v.id("businesses"),
-    phone: v.string(),
-  },
-  handler: async (ctx, args): Promise<string> => {
-    const workerUrl = getWorkerUrlOrThrow();
-    const normalizedDigits = args.phone.replace(/\D/g, "");
-    if (normalizedDigits.length < 10 || normalizedDigits.length > 15) {
-      throw new Error("Enter a valid phone number with country code (10-15 digits).");
-    }
-    
-    await ctx.runMutation(api.whatsapp.setAssistantAdminPhone, {
+/** Provisions a new Evolution Go instance for a business and sets the webhook. */
+export const provisionEvolutionGoInstance = action({
+  args: { businessId: v.id("businesses") },
+  handler: async (ctx, args): Promise<{ instanceName: string }> => {
+    const instanceName = getEvolutionInstanceName(args.businessId);
+    const convexSiteUrl = process.env.CONVEX_SITE_URL || "";
+    const webhookUrl = `${convexSiteUrl}/api/webhook/evolution`;
+
+    await evoClient.createInstance(instanceName);
+    await evoClient.setWebhook(instanceName, webhookUrl);
+
+    await ctx.runMutation(api.businesses.setEvolutionInstance, {
       businessId: args.businessId,
-      phone: args.phone,
-    });
-    await ctx.runMutation(api.whatsapp.clearPairingCode, {
-      businessId: args.businessId,
+      instanceName,
     });
     await ctx.runMutation(api.whatsapp.updateConnectionStatus, {
       businessId: args.businessId,
       status: "pending",
     });
 
-    try {
-        const response = await fetch(`${workerUrl}/pairing/request`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                businessId: args.businessId,
-                phone: normalizedDigits,
-            }),
-        });
-
-        if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`Worker rejected pairing request: ${errorText}`);
-        }
-        
-        const data = await response.json();
-        return data.code;
-    } catch (e) {
-        throw new Error(`Failed to reach WhatsApp worker. Error: ${e instanceof Error ? e.message : String(e)}`);
-    }
+    return { instanceName };
   },
 });
+
+/** Deletes the Evolution Go instance for a business (e.g., on cancellation). */
+export const deleteEvolutionGoInstance = action({
+  args: { businessId: v.id("businesses") },
+  handler: async (ctx, args): Promise<void> => {
+    const biz = await ctx.runQuery(api.whatsapp.getBusinessForAssistantAuth, { businessId: args.businessId });
+    const instanceName = biz?.evolutionInstanceName || getEvolutionInstanceName(args.businessId);
+    try {
+      await evoClient.deleteInstance(instanceName);
+    } catch (e) {
+      console.warn("[deleteEvolutionGoInstance] Could not delete instance:", e);
+    }
+    await ctx.runMutation(api.whatsapp.updateConnectionStatus, {
+      businessId: args.businessId,
+      status: "disconnected",
+    });
+  },
+});
+
 
 export const setAssistantAdminPhone = mutation({
   args: {

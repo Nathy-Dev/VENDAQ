@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Bell, Shield, Building, Moon, ChevronRight, Save, Store, Factory } from "lucide-react";
+import { Bell, Shield, Building, Moon, ChevronRight, Save, Store, Factory, Zap, Clock, Banknote, MessageSquare } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
@@ -20,6 +20,7 @@ const SETTINGS_GROUPS: { title: string; items: SettingsItem[] }[] = [
     title: "Account",
     items: [
       { id: "business", label: "Business Profile", icon: <Building size={18} /> },
+      { id: "automation", label: "Automation Config", icon: <Zap size={18} /> },
       { id: "notifications", label: "Notifications", icon: <Bell size={18} /> },
       { id: "security", label: "Security", icon: <Shield size={18} /> },
     ]
@@ -44,6 +45,9 @@ export default function SettingsPage() {
 
   const [bizName, setBizName] = useState("");
   const [bizIndustry, setBizIndustry] = useState("");
+  const [aov, setAov] = useState(15000);
+  const [responseWindow, setResponseWindow] = useState(120);
+  const [followUpTemplate, setFollowUpTemplate] = useState("Hi [Customer Name], thanks for reaching out. We saw your message and will get back to you shortly. What exactly were you looking for today?");
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
@@ -51,6 +55,9 @@ export default function SettingsPage() {
     if (business) {
       setBizName(business.name || "");
       setBizIndustry(business.industry || "");
+      if (business.averageOrderValue) setAov(business.averageOrderValue);
+      if (business.responseWindowMinutes) setResponseWindow(business.responseWindowMinutes);
+      if (business.followUpTemplate) setFollowUpTemplate(business.followUpTemplate);
     }
   }, [business]);
 
@@ -64,6 +71,9 @@ export default function SettingsPage() {
         businessId: business._id,
         name: bizName,
         industry: bizIndustry,
+        averageOrderValue: aov,
+        responseWindowMinutes: responseWindow,
+        followUpTemplate: followUpTemplate,
       });
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
@@ -177,6 +187,93 @@ export default function SettingsPage() {
                 </div>
               )}
 
+              {/* AUTOMATION TAB */}
+              {activeTab === "automation" && (
+                <div>
+                  <div className={styles.tabHeader}>
+                    <div className={styles.tabHeaderIcon}>
+                      <Zap size={22} />
+                    </div>
+                    <h3 className={styles.tabHeaderTitle}>Automation Config</h3>
+                  </div>
+                  <p className={styles.tabHeaderDesc}>
+                    Configure how PIPELIXR automated workflows handle your leads.
+                  </p>
+                  
+                  <form onSubmit={handleSaveBusiness} className={styles.form}>
+                    <div className={styles.fieldGroup}>
+                      <label className={styles.fieldLabel}>
+                        <Banknote size={14} className={styles.fieldLabelIcon} /> Average Order Value (AOV)
+                      </label>
+                      <p className={styles.helpText} style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '0.5rem', marginTop: '-0.25rem' }}>
+                        Used to calculate Estimated Lost Revenue in the dashboard.
+                      </p>
+                      <input 
+                        type="number" 
+                        value={aov}
+                        onChange={(e) => setAov(parseInt(e.target.value) || 0)}
+                        className={styles.fieldInput}
+                        min="0"
+                        required
+                      />
+                    </div>
+                    
+                    <div className={styles.fieldGroup}>
+                      <label className={styles.fieldLabel}>
+                        <Clock size={14} className={styles.fieldLabelIcon} /> Response Window (Minutes)
+                      </label>
+                      <p className={styles.helpText} style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '0.5rem', marginTop: '-0.25rem' }}>
+                        How long to wait for your manual reply before PIPELIXR sends an automated follow-up.
+                      </p>
+                      <input 
+                        type="number" 
+                        value={responseWindow}
+                        onChange={(e) => setResponseWindow(parseInt(e.target.value) || 0)}
+                        className={styles.fieldInput}
+                        min="1"
+                        required
+                      />
+                    </div>
+
+                    <div className={styles.fieldGroup}>
+                      <label className={styles.fieldLabel}>
+                        <MessageSquare size={14} className={styles.fieldLabelIcon} /> Follow-up Template
+                      </label>
+                      <p className={styles.helpText} style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '0.5rem', marginTop: '-0.25rem' }}>
+                        The message sent if you miss the response window. Use <code>[Customer Name]</code> as a placeholder.
+                      </p>
+                      <textarea 
+                        value={followUpTemplate}
+                        onChange={(e) => setFollowUpTemplate(e.target.value)}
+                        className={styles.fieldInput}
+                        rows={3}
+                        required
+                        style={{ resize: 'vertical' }}
+                      />
+                    </div>
+
+                    <div className={styles.submitArea}>
+                      <button 
+                        type="submit" 
+                        disabled={isSaving || !business}
+                        className={styles.saveBtn}
+                      >
+                        {isSaving ? (
+                          <div className={styles.spinner} />
+                        ) : (
+                          <><Save size={18} /> Save Changes</>
+                        )}
+                      </button>
+                      {saveSuccess && (
+                        <span className={styles.successMsg}>
+                          <span className={styles.successDot}></span> Config Updated
+                        </span>
+                      )}
+                    </div>
+                  </form>
+                </div>
+              )}
+
               {/* NOTIFICATIONS TAB */}
               {activeTab === "notifications" && (
                 <div>
@@ -206,7 +303,7 @@ export default function SettingsPage() {
               )}
               
               {/* OTHER TABS */}
-              {(activeTab !== "business" && activeTab !== "notifications") && (
+              {(activeTab !== "business" && activeTab !== "notifications" && activeTab !== "automation") && (
                 <div className={styles.emptyState}>
                   <div className={styles.emptyIcon}>
                     <Shield size={36} strokeWidth={1.5} />

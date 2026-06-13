@@ -5,7 +5,7 @@ import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useState, useEffect } from "react";
 import { AlertTriangle, Banknote, MessageSquare, Reply, Send, type LucideIcon } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import styles from "./dashboard.module.css";
@@ -13,10 +13,10 @@ import Loader from "@/components/Loader";
 import LeadPipeline from "@/components/LeadPipeline";
 import { PooledOrders } from "@/types";
 
-
 export default function DashboardPage() {
   const { data: session, status: sessionStatus } = useSession();
   const router = useRouter();
+  const [period, setPeriod] = useState<"today" | "week" | "month">("today");
 
   const business = useQuery(api.businesses.getBusiness,
     session?.user?.id ? { ownerId: session.user.id } : "skip"
@@ -27,7 +27,7 @@ export default function DashboardPage() {
   ) as PooledOrders | undefined;
 
   const mvpMetrics = useQuery(api.whatsapp.getMvpRevenueMetrics,
-    business ? { businessId: business._id } : "skip"
+    business ? { businessId: business._id, period } : "skip"
   );
 
   useEffect(() => {
@@ -59,6 +59,13 @@ export default function DashboardPage() {
                 Recent sync: {business.lastHistorySyncCount || 0} messages in last {business.lastHistorySyncWindowHours || 24}h, updated {formatDistanceToNow(business.lastHistorySyncAt, { addSuffix: true })}.
               </p>
             )}
+          </div>
+          <div className={styles.periodFilter}>
+            <select value={period} onChange={(e) => setPeriod(e.target.value as any)} className="bg-slate-800 text-white rounded-lg px-3 py-2 text-sm outline-none border border-slate-700">
+              <option value="today">Today</option>
+              <option value="week">This Week</option>
+              <option value="month">This Month</option>
+            </select>
           </div>
         </header>
 
