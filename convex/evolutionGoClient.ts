@@ -135,87 +135,25 @@ export async function deleteInstanceSilently(instanceName: string): Promise<void
   }
 }
 
-/** Creates a new WhatsApp instance on Evolution Go and returns the initial QR base64 if available. */
-export async function createInstance(instanceName: string, webhookUrl: string): Promise<ConnectionArtifacts> {
+/** Creates a new WhatsApp instance on Evolution Go and returns any immediate connection artifacts. */
+export async function createInstance(instanceName: string): Promise<ConnectionArtifacts> {
   const { apiKey } = getEvolutionConfig();
   const res = await evoFetch("/instance/create", "POST", {
-    name: instanceName, // Evolution Go (Go port) uses 'name'
-    instanceName: instanceName, // Send both just in case
-    token: apiKey, // Provide token as required by the API
+    name: instanceName,
+    instanceName,
+    token: apiKey,
     qrcode: true,
-    integration: "WHATSAPP-BAILEYS",
-    webhook: webhookUrl, // Some versions expect a simple string
-    webhookUrl: webhookUrl,
-    webhook_url: webhookUrl,
-    webhook_by_events: false,
-    webhook_base64: false,
-    events: [
-      "QRCODE",
-      "QRCODE_UPDATED",
-      "MESSAGE",
-      "MESSAGES_UPSERT",
-      "CONNECTION",
-      "CONNECTION_UPDATE",
-      "SEND_MESSAGE",
-    ],
   }) as any;
 
   return parseConnectionArtifacts(res);
 }
 
 /**
- * Sets the webhook URL for an instance.
- * Called immediately after createInstance so all events flow to Convex.
+ * Evolution Go uses a global WEBHOOK_URL configuration on the server.
+ * There is no per-instance webhook setup in the documented API, so this is a no-op.
  */
-export async function setWebhook(instanceName: string, webhookUrl: string): Promise<void> {
-  const payload = {
-    url: webhookUrl,
-    webhook_by_events: false,
-    webhook_base64: false,
-    events: [
-      "QRCODE",
-      "QRCODE_UPDATED",
-      "MESSAGE",
-      "MESSAGES_UPSERT",
-      "CONNECTION",
-      "CONNECTION_UPDATE",
-      "SEND_MESSAGE",
-    ],
-    webhook: {
-        enabled: true,
-        url: webhookUrl,
-        webhookByEvents: false,
-        webhookBase64: false,
-        events: [
-          "QRCODE",
-          "QRCODE_UPDATED",
-          "MESSAGE",
-          "MESSAGES_UPSERT",
-          "CONNECTION",
-          "CONNECTION_UPDATE",
-          "SEND_MESSAGE",
-        ],
-    }
-  };
-  const attempts = [
-    { path: `/webhook/instance/${instanceName}`, method: "POST" },
-    { path: `/webhook/instance/${instanceName}`, method: "PUT" },
-    { path: `/webhook/instance/${instanceName}`, method: "PATCH" },
-    { path: `/webhook/set/${instanceName}`, method: "POST" },
-    { path: `/webhook/set/${instanceName}`, method: "PUT" },
-    { path: `/webhook/set/${instanceName}`, method: "PATCH" },
-  ] as const;
-
-  for (const attempt of attempts) {
-    try {
-      await evoFetch(attempt.path, attempt.method, payload);
-      return;
-    } catch (e: any) {
-      if (!e.message.includes("404")) throw e;
-    }
-  }
-
-  console.warn(`[setWebhook] No compatible webhook endpoint found for ${instanceName}.`);
+export async function setWebhook(_instanceName: string, _webhookUrl: string): Promise<void> {
+  return;
 }
 
 /** Returns the current connection artifacts for an instance. */
@@ -233,22 +171,39 @@ export async function getConnectionArtifacts(instanceName: string): Promise<Conn
   }
 
   const paths = [
-    `/instance/connect/${instanceName}`,
-    `/instance/qrcode/${instanceName}`,
-    `/instance/qr/${instanceName}`,
+    `/instance/${instanceName}/qrcode`,
   ];
 
   for (const path of paths) {
-    for (const method of ["GET", "POST"] as const) {
-      try {
-        const data = await evoFetch(path, method);
-        const artifacts = parseConnectionArtifacts(data);
-        if (artifacts.qrCode || artifacts.pairingCode) {
-          return artifacts;
-        }
-      } catch {
-        // Try the next compatible endpoint shape/method.
+    try {
+      const data = await evoFetch(path, "GET");
+      const artifacts = parseConnectionArtifacts(data);
+      if (artifacts.qrCode || artifacts.pairingCode) {
+        return artifacts;
       }
+    } catch {
+      // Try the next compatible endpoint shape.
+    }
+  }
+
+  return { qrCode: null, pairingCode: null };
+}
+
+/** Polls Evolution Go for a QR or pairing code for a short window after create. */
+export async function waitForConnectionArtifacts(
+  instanceName: string,
+  options?: { attempts?: number; delayMs?: number }
+): Promise<ConnectionArtifacts> {
+  const attempts = options?.attempts ?? 10;
+  const delayMs = options?.delayMs ?? 1500;
+
+  for (let i = 0; i < attempts; i++) {
+    const artifacts = await getConnectionArtifacts(instanceName);
+    if (artifacts.qrCode || artifacts.pairingCode) {
+      return artifacts;
+    }
+    if (i < attempts - 1) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
   }
 
@@ -263,11 +218,12 @@ export async function getQR(instanceName: string): Promise<string | null> {
 
 /** Returns the connection state: "open" | "close" | "connecting" */
 export async function getConnectionState(instanceName: string): Promise<string> {
-  const data = await evoFetch(`/instance/connectionState/${instanceName}`, "GET") as {
+  const data = await evoFetch(`/instance/${instanceName}/status`, "GET") as {
     instance?: { state?: string };
     state?: string;
+    status?: string;
   };
-  return data?.instance?.state || data?.state || "close";
+  return data?.instance?.state || data?.state || data?.status || "close";
 }
 
 /**
@@ -285,5 +241,5 @@ export async function sendText(instanceName: string, to: string, text: string): 
 
 /** Deletes an instance from Evolution Go. */
 export async function deleteInstance(instanceName: string): Promise<void> {
-  await evoFetch(`/instance/delete/${instanceName}`, "DELETE");
+  await evoFetch(`/instance/${instanceName}`, "DELETE");
 }

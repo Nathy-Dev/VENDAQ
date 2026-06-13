@@ -1811,24 +1811,16 @@ export const provisionEvolutionGoInstance = action({
   args: { businessId: v.id("businesses") },
   handler: async (ctx, args): Promise<{ instanceName: string }> => {
     const instanceName = getEvolutionInstanceName(args.businessId);
-    const convexSiteUrl = process.env.CONVEX_SITE_URL || process.env.NEXT_PUBLIC_CONVEX_SITE_URL || "";
-    const webhookUrl = `${convexSiteUrl}/api/webhook/evolution`;
 
     const exists = await evoClient.instanceExists(instanceName);
     let initialQr: string | null = null;
     let pairingCode: string | null = null;
 
-    if (!convexSiteUrl) {
-      console.warn(
-        "[provisionEvolutionGoInstance] No CONVEX_SITE_URL or NEXT_PUBLIC_CONVEX_SITE_URL configured; webhook delivery may fail."
-      );
-    }
-
     if (exists) {
       console.warn(`[provisionEvolutionGoInstance] Instance ${instanceName} already exists; reusing it instead of deleting.`);
     } else {
       try {
-        const created = await evoClient.createInstance(instanceName, webhookUrl);
+        const created = await evoClient.createInstance(instanceName);
         initialQr = created.qrCode;
         pairingCode = created.pairingCode;
       } catch (e: any) {
@@ -1841,16 +1833,10 @@ export const provisionEvolutionGoInstance = action({
       }
     }
 
+    // Evolution Go exposes QR generation through /instance/{name}/qrcode.
+    // Poll for a short window so we capture the QR once the instance finishes booting.
     try {
-      await evoClient.setWebhook(instanceName, webhookUrl);
-    } catch (e: any) {
-      console.warn("[provisionEvolutionGoInstance] Error setting webhook:", e);
-    }
-
-    // Fetch connection artifacts right away to avoid webhook race conditions.
-    // If the instance already emitted a QR or pairing code, persist it immediately.
-    try {
-      const connection = await evoClient.getConnectionArtifacts(instanceName);
+      const connection = await evoClient.waitForConnectionArtifacts(instanceName);
       if (connection.qrCode) {
         initialQr = connection.qrCode;
       }
