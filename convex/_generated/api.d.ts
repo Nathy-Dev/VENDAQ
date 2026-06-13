@@ -16,6 +16,7 @@ import type * as interactions from "../interactions.js";
 import type * as orders from "../orders.js";
 import type * as safeguards from "../safeguards.js";
 import type * as temp_test from "../temp_test.js";
+import type * as test from "../test.js";
 import type * as users from "../users.js";
 import type * as whatsapp from "../whatsapp.js";
 
@@ -34,6 +35,7 @@ declare const fullApi: ApiFromModules<{
   orders: typeof orders;
   safeguards: typeof safeguards;
   temp_test: typeof temp_test;
+  test: typeof test;
   users: typeof users;
   whatsapp: typeof whatsapp;
 }>;

@@ -9,7 +9,7 @@
  *   CONVEX_SITE_URL      - public Convex site URL (already set)
  */
 
-function getEvolutionConfig(): { url: string; apiKey: string } {
+export function getEvolutionConfig(): { url: string; apiKey: string } {
   const url = process.env.EVOLUTION_GO_URL || "";
   const apiKey = process.env.EVOLUTION_GO_API_KEY || "";
   if (!url || !apiKey) {
@@ -20,7 +20,7 @@ function getEvolutionConfig(): { url: string; apiKey: string } {
   return { url: url.replace(/\/$/, ""), apiKey };
 }
 
-async function evoFetch(path: string, method: string, body?: unknown): Promise<unknown> {
+export async function evoFetch(path: string, method: string, body?: unknown): Promise<unknown> {
   const { url, apiKey } = getEvolutionConfig();
   const res = await fetch(`${url}${path}`, {
     method,
@@ -92,28 +92,18 @@ export async function deleteInstanceSilently(instanceName: string): Promise<void
   }
 }
 
-/** Creates a new WhatsApp instance on Evolution Go. */
-export async function createInstance(instanceName: string): Promise<void> {
+/** Creates a new WhatsApp instance on Evolution Go and returns the initial QR base64 if available. */
+export async function createInstance(instanceName: string, webhookUrl: string): Promise<string | null> {
   const { apiKey } = getEvolutionConfig();
-  await evoFetch("/instance/create", "POST", {
+  const res = await evoFetch("/instance/create", "POST", {
     name: instanceName, // Evolution Go (Go port) uses 'name'
     instanceName: instanceName, // Send both just in case
     token: apiKey, // Provide token as required by the API
     qrcode: true,
     integration: "WHATSAPP-BAILEYS",
-  });
-}
-
-/**
- * Sets the webhook URL for an instance.
- * Called immediately after createInstance so all events flow to Convex.
- */
-export async function setWebhook(instanceName: string, webhookUrl: string): Promise<void> {
-  await evoFetch(`/webhook/set/${instanceName}`, "POST", {
-    url: webhookUrl,
+    webhook: webhookUrl, // Sometimes it accepts a simple string
     webhook_by_events: false,
     webhook_base64: false,
-    // Evolution Go (Go port) uses these event names; keep both common variants
     events: [
       "QRCODE",
       "QRCODE_UPDATED",
@@ -123,7 +113,50 @@ export async function setWebhook(instanceName: string, webhookUrl: string): Prom
       "CONNECTION_UPDATE",
       "SEND_MESSAGE",
     ],
-  });
+  }) as any;
+
+  // Many Evolution API versions return the QR in the creation response
+  return res?.qrcode?.base64 || res?.qrcode?.code || res?.base64 || res?.code || res?.instance?.qrcode || null;
+}
+
+/**
+ * Sets the webhook URL for an instance.
+ * Called immediately after createInstance so all events flow to Convex.
+ */
+export async function setWebhook(instanceName: string, webhookUrl: string): Promise<void> {
+  const payload = {
+    webhook: {
+        enabled: true,
+        url: webhookUrl,
+        webhookByEvents: false,
+        webhookBase64: false,
+        events: [
+          "QRCODE",
+          "QRCODE_UPDATED",
+          "MESSAGE",
+          "MESSAGES_UPSERT",
+          "CONNECTION",
+          "CONNECTION_UPDATE",
+          "SEND_MESSAGE",
+        ],
+    }
+  };
+  // Try the v2 endpoint
+  try {
+      await evoFetch(`/webhook/instance/${instanceName}`, "POST", payload);
+      return;
+  } catch (e: any) {
+      if (!e.message.includes("404")) throw e;
+  }
+  
+  // Try the v1.x / Go port alternative endpoint
+  try {
+      await evoFetch(`/webhook/set/${instanceName}`, "POST", payload);
+  } catch (e: any) {
+      // Ignore 404s if the webhook was possibly set during creation
+      if (!e.message.includes("404")) throw e;
+      console.warn(`[setWebhook] endpoints returned 404 for ${instanceName}. Ignoring.`);
+  }
 }
 
 /** Returns the current QR code string for an instance, or null if not pending. */

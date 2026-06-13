@@ -1815,8 +1815,9 @@ export const provisionEvolutionGoInstance = action({
       await new Promise((r) => setTimeout(r, 1500));
     }
 
+    let initialQr: string | null = null;
     try {
-      await evoClient.createInstance(instanceName);
+      initialQr = await evoClient.createInstance(instanceName, webhookUrl);
     } catch (e: any) {
       console.warn("[provisionEvolutionGoInstance] createInstance error:", e?.message);
     }
@@ -1827,8 +1828,16 @@ export const provisionEvolutionGoInstance = action({
       console.warn("[provisionEvolutionGoInstance] Error setting webhook:", e);
     }
 
-    // Fetch initial QR right away to avoid webhook race conditions
-    const initialQr = await evoClient.getQR(instanceName);
+    // Fetch initial QR right away to avoid webhook race conditions.
+    // If endpoints fail, fallback to the QR returned during creation.
+    try {
+        const fetchedQr = await evoClient.getQR(instanceName);
+        if (fetchedQr) {
+            initialQr = fetchedQr;
+        }
+    } catch (e: any) {
+        console.warn("[provisionEvolutionGoInstance] getQR error:", e?.message);
+    }
 
     await ctx.runMutation(api.businesses.setEvolutionInstance, {
       businessId: args.businessId,
