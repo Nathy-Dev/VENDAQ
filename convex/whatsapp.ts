@@ -1807,8 +1807,17 @@ export const provisionEvolutionGoInstance = action({
     const convexSiteUrl = process.env.CONVEX_SITE_URL || "";
     const webhookUrl = `${convexSiteUrl}/api/webhook/evolution`;
 
-    await evoClient.createInstance(instanceName);
-    await evoClient.setWebhook(instanceName, webhookUrl);
+    try {
+      await evoClient.createInstance(instanceName);
+    } catch (e: any) {
+      console.warn("[provisionEvolutionGoInstance] Error creating instance (it might already exist):", e);
+    }
+
+    try {
+      await evoClient.setWebhook(instanceName, webhookUrl);
+    } catch (e: any) {
+      console.warn("[provisionEvolutionGoInstance] Error setting webhook:", e);
+    }
 
     // Fetch initial QR right away to avoid webhook race conditions
     const initialQr = await evoClient.getQR(instanceName);
