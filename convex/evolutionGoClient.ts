@@ -45,6 +45,30 @@ function parseConnectionArtifacts(rawData: unknown): ConnectionArtifacts {
   };
 }
 
+function extractMatchingInstance(rawData: unknown, instanceName: string): Record<string, any> | null {
+  const candidates: any[] = [];
+  const data = rawData as any;
+
+  if (Array.isArray(data)) {
+    candidates.push(...data);
+  } else if (data && typeof data === "object") {
+    if (Array.isArray(data.instances)) {
+      candidates.push(...data.instances);
+    } else if (Array.isArray(data.data)) {
+      candidates.push(...data.data);
+    } else {
+      candidates.push(...Object.values(data));
+    }
+  }
+
+  return candidates.find((candidate) => {
+    if (!candidate || typeof candidate !== "object") return false;
+    const flatName = candidate.instanceName || candidate.name;
+    const nestedName = candidate.instance?.instanceName || candidate.instance?.name;
+    return flatName === instanceName || nestedName === instanceName;
+  }) || null;
+}
+
 export function getEvolutionConfig(): { url: string; apiKey: string } {
   const url = process.env.EVOLUTION_GO_URL || "";
   const apiKey = process.env.EVOLUTION_GO_API_KEY || "";
@@ -79,43 +103,26 @@ export async function evoFetch(path: string, method: string, body?: unknown): Pr
 export async function instanceExists(instanceName: string): Promise<boolean> {
   try {
     const rawData = await evoFetch("/instance/all", "GET") as any;
-    
-    // Sometimes it's an array, sometimes it's an object like { instances: [...] } or a record of instances
-    let dataArray: Array<Record<string, unknown>> = [];
-    if (Array.isArray(rawData)) {
-      dataArray = rawData;
-    } else if (rawData && typeof rawData === "object") {
-      if (Array.isArray(rawData.instances)) {
-        dataArray = rawData.instances;
-      } else if (Array.isArray(rawData.data)) {
-        dataArray = rawData.data;
-      } else {
-        // If it's a map { [name]: {...} }
-        const values = Object.values(rawData);
-        if (values.length > 0 && typeof values[0] === "object") {
-          dataArray = values as Array<Record<string, unknown>>;
-        }
-      }
-    }
-    
-    if (dataArray.length === 0) {
-      // It might genuinely be empty, or we failed to parse the shape. Let's assume it doesn't exist for now.
-      return false;
-    }
-    
-    const exists = dataArray.some((d) => {
-      const flatName = (d?.instanceName || d?.name) as string | undefined;
-      const nestedName = (d?.instance as any)?.instanceName || (d?.instance as any)?.name as string | undefined;
-      return flatName === instanceName || nestedName === instanceName;
-    });
+    const exists = !!extractMatchingInstance(rawData, instanceName);
 
     if (!exists) {
-      console.warn(`[instanceExists] Instance ${instanceName} not found. Data sample:`, dataArray.slice(0, 2));
+      console.warn(`[instanceExists] Instance ${instanceName} not found. Raw payload sample:`, rawData);
     }
     return exists;
   } catch (error) {
     console.error("[instanceExists] Error:", error);
     return false;
+  }
+}
+
+/** Fetches the matching instance record from /instance/all if present. */
+export async function getInstanceRecord(instanceName: string): Promise<Record<string, any> | null> {
+  try {
+    const rawData = await evoFetch("/instance/all", "GET");
+    return extractMatchingInstance(rawData, instanceName);
+  } catch (error) {
+    console.error("[getInstanceRecord] Error:", error);
+    return null;
   }
 }
 
@@ -190,26 +197,41 @@ export async function setWebhook(instanceName: string, webhookUrl: string): Prom
         ],
     }
   };
-  // Try the v2 endpoint
-  try {
-      await evoFetch(`/webhook/instance/${instanceName}`, "POST", payload);
+  const attempts = [
+    { path: `/webhook/instance/${instanceName}`, method: "POST" },
+    { path: `/webhook/instance/${instanceName}`, method: "PUT" },
+    { path: `/webhook/instance/${instanceName}`, method: "PATCH" },
+    { path: `/webhook/set/${instanceName}`, method: "POST" },
+    { path: `/webhook/set/${instanceName}`, method: "PUT" },
+    { path: `/webhook/set/${instanceName}`, method: "PATCH" },
+  ] as const;
+
+  for (const attempt of attempts) {
+    try {
+      await evoFetch(attempt.path, attempt.method, payload);
       return;
-  } catch (e: any) {
+    } catch (e: any) {
       if (!e.message.includes("404")) throw e;
+    }
   }
-  
-  // Try the v1.x / Go port alternative endpoint
-  try {
-      await evoFetch(`/webhook/set/${instanceName}`, "POST", payload);
-  } catch (e: any) {
-      // Ignore 404s if the webhook was possibly set during creation
-      if (!e.message.includes("404")) throw e;
-      console.warn(`[setWebhook] endpoints returned 404 for ${instanceName}. Ignoring.`);
-  }
+
+  console.warn(`[setWebhook] No compatible webhook endpoint found for ${instanceName}.`);
 }
 
 /** Returns the current connection artifacts for an instance. */
 export async function getConnectionArtifacts(instanceName: string): Promise<ConnectionArtifacts> {
+  try {
+    const record = await getInstanceRecord(instanceName);
+    if (record) {
+      const artifacts = parseConnectionArtifacts(record);
+      if (artifacts.qrCode || artifacts.pairingCode) {
+        return artifacts;
+      }
+    }
+  } catch {
+    // fall through to endpoint-specific probes
+  }
+
   const paths = [
     `/instance/connect/${instanceName}`,
     `/instance/qrcode/${instanceName}`,
@@ -217,14 +239,16 @@ export async function getConnectionArtifacts(instanceName: string): Promise<Conn
   ];
 
   for (const path of paths) {
-    try {
-      const data = await evoFetch(path, "GET");
-      const artifacts = parseConnectionArtifacts(data);
-      if (artifacts.qrCode || artifacts.pairingCode) {
-        return artifacts;
+    for (const method of ["GET", "POST"] as const) {
+      try {
+        const data = await evoFetch(path, method);
+        const artifacts = parseConnectionArtifacts(data);
+        if (artifacts.qrCode || artifacts.pairingCode) {
+          return artifacts;
+        }
+      } catch {
+        // Try the next compatible endpoint shape/method.
       }
-    } catch {
-      // Try the next compatible endpoint shape.
     }
   }
 
