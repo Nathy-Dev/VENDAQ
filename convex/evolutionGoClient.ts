@@ -94,9 +94,11 @@ export async function deleteInstanceSilently(instanceName: string): Promise<void
 
 /** Creates a new WhatsApp instance on Evolution Go. */
 export async function createInstance(instanceName: string): Promise<void> {
+  const { apiKey } = getEvolutionConfig();
   await evoFetch("/instance/create", "POST", {
     name: instanceName, // Evolution Go (Go port) uses 'name'
     instanceName: instanceName, // Send both just in case
+    token: apiKey, // Provide token as required by the API
     qrcode: true,
     integration: "WHATSAPP-BAILEYS",
   });
@@ -107,7 +109,7 @@ export async function createInstance(instanceName: string): Promise<void> {
  * Called immediately after createInstance so all events flow to Convex.
  */
 export async function setWebhook(instanceName: string, webhookUrl: string): Promise<void> {
-  await evoFetch(`/webhook/set/${instanceName}`, "PUT", {
+  await evoFetch(`/webhook/set/${instanceName}`, "POST", {
     url: webhookUrl,
     webhook_by_events: false,
     webhook_base64: false,
