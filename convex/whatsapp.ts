@@ -1810,14 +1810,25 @@ export const provisionEvolutionGoInstance = action({
     await evoClient.createInstance(instanceName);
     await evoClient.setWebhook(instanceName, webhookUrl);
 
+    // Fetch initial QR right away to avoid webhook race conditions
+    const initialQr = await evoClient.getQR(instanceName);
+
     await ctx.runMutation(api.businesses.setEvolutionInstance, {
       businessId: args.businessId,
       instanceName,
     });
-    await ctx.runMutation(api.whatsapp.updateConnectionStatus, {
-      businessId: args.businessId,
-      status: "pending",
-    });
+    
+    if (initialQr) {
+      await ctx.runMutation(api.whatsapp.updateQRCode, {
+        businessId: args.businessId,
+        qrCodeString: initialQr,
+      });
+    } else {
+      await ctx.runMutation(api.whatsapp.updateConnectionStatus, {
+        businessId: args.businessId,
+        status: "pending",
+      });
+    }
 
     return { instanceName };
   },

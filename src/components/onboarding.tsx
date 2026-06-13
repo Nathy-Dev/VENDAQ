@@ -289,7 +289,15 @@ export default function Onboarding({ initialStep = 0 }: OnboardingProps) {
 
                 <div className={styles.qrContainer} style={{ background: qrData?.qrCode ? 'white' : undefined, padding: qrData?.qrCode ? '1rem' : undefined }}>
                     {qrData?.qrCode ? (
-                        <QRCode value={qrData.qrCode} size={200} />
+                        (qrData.qrCode.startsWith('data:image') || qrData.qrCode.length > 500) ? (
+                            <img 
+                                src={qrData.qrCode.startsWith('data:image') ? qrData.qrCode : `data:image/png;base64,${qrData.qrCode}`} 
+                                alt="WhatsApp QR Code" 
+                                style={{ width: 200, height: 200 }} 
+                            />
+                        ) : (
+                            <QRCode value={qrData.qrCode} size={200} />
+                        )
                     ) : (
                         <span style={{ fontSize: '0.875rem', color: '#64748b' }}>
                             {qrData?.status === 'pending' ? 'Generating fresh QR...' : 'Waiting for worker...'}
