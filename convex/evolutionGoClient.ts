@@ -37,14 +37,29 @@ async function evoFetch(path: string, method: string, body?: unknown): Promise<u
   return res.json();
 }
 
-/** Returns true if the named instance already exists on Evolution Go. */
+/** Returns true if the named instance already exists on Evolution Go.
+ * Handles both flat ({ instanceName }) and nested ({ instance: { instanceName } }) response shapes.
+ */
 export async function instanceExists(instanceName: string): Promise<boolean> {
   try {
-    const data = await evoFetch("/instance/all", "GET") as Array<{ instance?: { instanceName?: string } }>;
+    const data = await evoFetch("/instance/all", "GET") as Array<Record<string, unknown>>;
     if (!Array.isArray(data)) return false;
-    return data.some((d) => d?.instance?.instanceName === instanceName);
+    return data.some((d) => {
+      const flat = d?.instanceName as string | undefined;
+      const nested = (d?.instance as Record<string, unknown> | undefined)?.instanceName as string | undefined;
+      return flat === instanceName || nested === instanceName;
+    });
   } catch {
     return false;
+  }
+}
+
+/** Deletes an instance, ignoring errors (e.g. if it doesn't exist). */
+export async function deleteInstanceSilently(instanceName: string): Promise<void> {
+  try {
+    await evoFetch(`/instance/delete/${instanceName}`, "DELETE");
+  } catch {
+    // ignore
   }
 }
 

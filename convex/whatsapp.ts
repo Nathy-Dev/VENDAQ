@@ -1808,13 +1808,17 @@ export const provisionEvolutionGoInstance = action({
     const webhookUrl = `${convexSiteUrl}/api/webhook/evolution`;
 
     const exists = await evoClient.instanceExists(instanceName);
-    if (!exists) {
-      try {
-        await evoClient.createInstance(instanceName);
-      } catch (e: any) {
-        // 400 means it already exists despite instanceExists returning false (shape mismatch) — safe to continue
-        console.warn("[provisionEvolutionGoInstance] createInstance error (may already exist):", e?.message);
-      }
+    if (exists) {
+      // Delete the stale/broken instance before recreating it clean
+      await evoClient.deleteInstanceSilently(instanceName);
+      // Small delay so Evolution Go processes the deletion before create
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+
+    try {
+      await evoClient.createInstance(instanceName);
+    } catch (e: any) {
+      console.warn("[provisionEvolutionGoInstance] createInstance error:", e?.message);
     }
 
     try {
