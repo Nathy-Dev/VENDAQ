@@ -15,6 +15,19 @@ type ConnectionArtifacts = {
   pairingCode: string | null;
 };
 
+function isEvolutionGoDebugEnabled(): boolean {
+  return ["1", "true", "yes", "on"].includes((process.env.EVOLUTION_GO_DEBUG || "").toLowerCase());
+}
+
+function logEvolutionGoDebug(message: string, data?: unknown): void {
+  if (!isEvolutionGoDebugEnabled()) return;
+  if (typeof data === "undefined") {
+    console.log(`[EvolutionGo debug] ${message}`);
+    return;
+  }
+  console.log(`[EvolutionGo debug] ${message}`, data);
+}
+
 function parseConnectionArtifacts(rawData: unknown): ConnectionArtifacts {
   const data = rawData as Record<string, any> | null | undefined;
   const qr = data?.qrcode;
@@ -82,6 +95,7 @@ export function getEvolutionConfig(): { url: string; apiKey: string } {
 
 export async function evoFetch(path: string, method: string, body?: unknown): Promise<unknown> {
   const { url, apiKey } = getEvolutionConfig();
+  logEvolutionGoDebug(`request ${method} ${path}`, body);
   const res = await fetch(`${url}${path}`, {
     method,
     headers: {
@@ -92,9 +106,12 @@ export async function evoFetch(path: string, method: string, body?: unknown): Pr
   });
   if (!res.ok) {
     const text = await res.text();
+    logEvolutionGoDebug(`response ${method} ${path} -> ${res.status}`, text);
     throw new Error(`Evolution Go ${method} ${path} → ${res.status}: ${text}`);
   }
-  return res.json();
+  const data = await res.json();
+  logEvolutionGoDebug(`response ${method} ${path} -> ${res.status}`, data);
+  return data;
 }
 
 /** Returns true if the named instance already exists on Evolution Go.
@@ -137,15 +154,20 @@ export async function deleteInstanceSilently(instanceName: string): Promise<void
 
 /** Creates a new WhatsApp instance on Evolution Go and returns any immediate connection artifacts. */
 export async function createInstance(instanceName: string): Promise<ConnectionArtifacts> {
-  const { apiKey } = getEvolutionConfig();
   const res = await evoFetch("/instance/create", "POST", {
     name: instanceName,
-    instanceName,
-    token: apiKey,
     qrcode: true,
   }) as any;
 
   return parseConnectionArtifacts(res);
+}
+
+/** Starts the connection flow for an instance. */
+export async function connectInstance(instanceName: string): Promise<unknown> {
+  return await evoFetch("/instance/connect", "POST", {
+    name: instanceName,
+    instanceName,
+  });
 }
 
 /**
@@ -171,12 +193,16 @@ export async function getConnectionArtifacts(instanceName: string): Promise<Conn
   }
 
   const paths = [
+    `/instance/qr`,
+    `/instance/${instanceName}/qr`,
     `/instance/${instanceName}/qrcode`,
   ];
 
   for (const path of paths) {
     try {
-      const data = await evoFetch(path, "GET");
+      const data = path === "/instance/qr"
+        ? await evoFetch(path, "GET")
+        : await evoFetch(path, "GET");
       const artifacts = parseConnectionArtifacts(data);
       if (artifacts.qrCode || artifacts.pairingCode) {
         return artifacts;

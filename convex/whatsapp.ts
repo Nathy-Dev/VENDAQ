@@ -1815,14 +1815,43 @@ export const provisionEvolutionGoInstance = action({
     const exists = await evoClient.instanceExists(instanceName);
     let initialQr: string | null = null;
     let pairingCode: string | null = null;
+    let currentState = "close";
+
+    console.log(`[provisionEvolutionGoInstance] starting for ${instanceName}`);
+
+    try {
+      currentState = await evoClient.getConnectionState(instanceName);
+    } catch (e: any) {
+      console.warn("[provisionEvolutionGoInstance] getConnectionState error:", e?.message);
+    }
+    console.log(`[provisionEvolutionGoInstance] ${instanceName} exists=${exists} state=${currentState}`);
+
+    if (exists && currentState === "open") {
+      console.warn(`[provisionEvolutionGoInstance] Instance ${instanceName} is already connected; skipping QR provisioning.`);
+      await ctx.runMutation(api.businesses.setEvolutionInstance, {
+        businessId: args.businessId,
+        instanceName,
+      });
+      await ctx.runMutation(api.whatsapp.updateConnectionStatus, {
+        businessId: args.businessId,
+        status: "connected",
+      });
+      return { instanceName };
+    }
 
     if (exists) {
-      console.warn(`[provisionEvolutionGoInstance] Instance ${instanceName} already exists; reusing it instead of deleting.`);
-    } else {
+      console.warn(`[provisionEvolutionGoInstance] Instance ${instanceName} exists with state ${currentState}; reusing it and asking Evolution Go to connect.`);
+    }
+
+    if (!exists) {
       try {
         const created = await evoClient.createInstance(instanceName);
         initialQr = created.qrCode;
         pairingCode = created.pairingCode;
+        console.log(`[provisionEvolutionGoInstance] createInstance result for ${instanceName}`, {
+          hasQr: !!initialQr,
+          hasPairingCode: !!pairingCode,
+        });
       } catch (e: any) {
         const message = e?.message || "";
         if (!message.toLowerCase().includes("already exists")) {
@@ -1833,10 +1862,20 @@ export const provisionEvolutionGoInstance = action({
       }
     }
 
-    // Evolution Go exposes QR generation through /instance/{name}/qrcode.
+    try {
+      const connectResult = await evoClient.connectInstance(instanceName);
+      console.log(`[provisionEvolutionGoInstance] connectInstance result for ${instanceName}`, connectResult);
+    } catch (e: any) {
+      console.warn("[provisionEvolutionGoInstance] connectInstance error:", e?.message);
+    }
+
     // Poll for a short window so we capture the QR once the instance finishes booting.
     try {
       const connection = await evoClient.waitForConnectionArtifacts(instanceName);
+      console.log(`[provisionEvolutionGoInstance] waitForConnectionArtifacts result for ${instanceName}`, {
+        hasQr: !!connection.qrCode,
+        hasPairingCode: !!connection.pairingCode,
+      });
       if (connection.qrCode) {
         initialQr = connection.qrCode;
       }
@@ -1870,6 +1909,11 @@ export const provisionEvolutionGoInstance = action({
         status: "pending",
       });
     }
+
+    console.log(`[provisionEvolutionGoInstance] finished for ${instanceName}`, {
+      hasQr: !!initialQr,
+      hasPairingCode: !!pairingCode,
+    });
 
     return { instanceName };
   },
