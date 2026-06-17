@@ -69,35 +69,55 @@ function logEvolutionGoDebug(message: string, data?: unknown): void {
 }
 
 function parseConnectionArtifacts(rawData: unknown): ConnectionArtifacts {
-  const data = rawData as Record<string, any> | null | undefined;
-  const qr = data?.qrcode;
-  const instance = data?.instance;
+  const candidates = [
+    rawData,
+    (rawData as any)?.data,
+    (rawData as any)?.result,
+    (rawData as any)?.response,
+    (rawData as any)?.instance,
+    (rawData as any)?.data?.data,
+    (rawData as any)?.data?.result,
+    (rawData as any)?.data?.response,
+    (rawData as any)?.data?.instance,
+  ];
 
-  const qrCode =
-    qr?.base64 ||
-    qr?.code ||
-    data?.base64 ||
-    data?.code ||
-    instance?.qrcode?.base64 ||
-    instance?.qrcode?.code ||
-    instance?.qrcode ||
-    null;
+  for (const candidate of candidates) {
+    const data = candidate as Record<string, any> | null | undefined;
+    if (!data || typeof data !== "object") continue;
 
-  const pairingCode =
-    data?.pairingCode ||
-    data?.pairing_code ||
-    data?.pairCode ||
-    qr?.pairingCode ||
-    qr?.pairing_code ||
-    instance?.pairingCode ||
-    instance?.pairing_code ||
-    instance?.pairCode ||
-    null;
+    const qr = data.qrcode;
+    const instance = data.instance;
 
-  return {
-    qrCode: typeof qrCode === "string" ? qrCode : null,
-    pairingCode: typeof pairingCode === "string" ? pairingCode : null,
-  };
+    const qrCode =
+      qr?.base64 ||
+      qr?.code ||
+      data.base64 ||
+      data.code ||
+      instance?.qrcode?.base64 ||
+      instance?.qrcode?.code ||
+      instance?.qrcode ||
+      null;
+
+    const pairingCode =
+      data.pairingCode ||
+      data.pairing_code ||
+      data.pairCode ||
+      qr?.pairingCode ||
+      qr?.pairing_code ||
+      instance?.pairingCode ||
+      instance?.pairing_code ||
+      instance?.pairCode ||
+      null;
+
+    if (typeof qrCode === "string" || typeof pairingCode === "string") {
+      return {
+        qrCode: typeof qrCode === "string" ? qrCode : null,
+        pairingCode: typeof pairingCode === "string" ? pairingCode : null,
+      };
+    }
+  }
+
+  return { qrCode: null, pairingCode: null };
 }
 
 function extractMatchingInstance(rawData: unknown, instanceName: string): Record<string, any> | null {
