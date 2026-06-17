@@ -43,7 +43,7 @@ type CreateInstanceOptions = {
 
 type ConnectInstanceOptions = {
   immediate?: boolean;
-  instanceId: string;
+  instanceId?: string;
   natsEnable?: boolean;
   phone?: string;
   rabbitmqEnable?: boolean;
