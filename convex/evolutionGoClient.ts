@@ -157,13 +157,14 @@ function getDefaultAdvancedSettings(): AdvancedSettings {
   };
 }
 
-function getDefaultProxySettings(): ProxySettings {
-  return {
-    host: "",
-    password: "",
-    port: "",
-    username: "",
-  };
+function normalizeProxySettings(proxy?: Partial<ProxySettings>): Partial<ProxySettings> | undefined {
+  if (!proxy) return undefined;
+
+  const normalized = Object.fromEntries(
+    Object.entries(proxy).filter(([, value]) => typeof value === "string" && value.trim() !== "")
+  ) as Partial<ProxySettings>;
+
+  return Object.keys(normalized).length > 0 ? normalized : undefined;
 }
 
 function resolveInstanceToken(explicitToken?: string): string {
@@ -172,6 +173,8 @@ function resolveInstanceToken(explicitToken?: string): string {
 }
 
 function buildCreateInstancePayload(instanceName: string, options?: CreateInstanceOptions): Record<string, unknown> {
+  const proxy = normalizeProxySettings(options?.proxy);
+
   return {
     instanceId: instanceName,
     instanceName,
@@ -180,12 +183,9 @@ function buildCreateInstancePayload(instanceName: string, options?: CreateInstan
       ...getDefaultAdvancedSettings(),
       ...(options?.advancedSettings || {}),
     },
-    proxy: {
-      ...getDefaultProxySettings(),
-      ...(options?.proxy || {}),
-    },
     qrcode: options?.qrcode ?? true,
     token: resolveInstanceToken(options?.token),
+    ...(proxy ? { proxy } : {}),
   };
 }
 
