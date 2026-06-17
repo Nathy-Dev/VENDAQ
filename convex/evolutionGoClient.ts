@@ -323,7 +323,7 @@ export async function getInstanceRecord(instanceName: string): Promise<Record<st
 /** Deletes an instance, ignoring errors (e.g. if it doesn't exist). */
 export async function deleteInstanceSilently(instanceName: string): Promise<void> {
   try {
-    await evoFetch(`/instance/delete/${instanceName}`, "DELETE");
+    await evoFetch(`/instance/delete/${instanceName}`, "DELETE", undefined, instanceName);
   } catch {
     // ignore
   }
@@ -337,7 +337,7 @@ export async function createInstance(instanceName: string, options?: CreateInsta
 
 /** Starts the connection flow for an instance. */
 export async function connectInstance(instanceName: string, options?: ConnectInstanceOptions): Promise<unknown> {
-  return await evoFetch("/instance/connect", "POST", buildConnectPayload(instanceName, options));
+  return await evoFetch("/instance/connect", "POST", buildConnectPayload(instanceName, options), options?.token || instanceName);
 }
 
 /** Requests a phone-based pairing code for an instance. */
@@ -346,7 +346,7 @@ export async function pairInstance(
   phone: string,
   options?: { instanceId: string; subscribe?: string[]; token?: string }
 ): Promise<ConnectionArtifacts> {
-  const res = await evoFetch("/instance/pair", "POST", buildPairPayload(instanceName, phone, options)) as any;
+  const res = await evoFetch("/instance/pair", "POST", buildPairPayload(instanceName, phone, options), options?.token || instanceName) as any;
   return parseConnectionArtifacts(res);
 }
 
@@ -447,10 +447,10 @@ export async function sendText(instanceName: string, to: string, text: string): 
   await evoFetch(`/message/sendText/${instanceName}`, "POST", {
     number: to,
     text,
-  });
+  }, instanceName);
 }
 
 /** Deletes an instance from Evolution Go. */
 export async function deleteInstance(instanceName: string): Promise<void> {
-  await evoFetch(`/instance/${instanceName}`, "DELETE");
+  await evoFetch(`/instance/${instanceName}`, "DELETE", undefined, instanceName);
 }
