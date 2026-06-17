@@ -1826,7 +1826,7 @@ export const provisionEvolutionGoInstance = action({
       businessId: args.businessId,
     });
     const instanceName = business?.evolutionInstanceName || getEvolutionInstanceName(business?.name || "pipelixr", args.businessId);
-    const instanceId = business?.evolutionInstanceId || evoClient.generateEvolutionInstanceId();
+    let instanceId = business?.evolutionInstanceId || evoClient.generateEvolutionInstanceId();
     const preferredNumber = business?.assistantAdminPhones?.[0];
     const webhookUrl = evoClient.getEvolutionWebhookUrl();
     const subscribedEvents = ["QRCODE_UPDATED", "CONNECTION_UPDATE", "MESSAGES_UPSERT"];
@@ -1837,7 +1837,30 @@ export const provisionEvolutionGoInstance = action({
       instanceId,
     });
 
-    const exists = await evoClient.instanceExists(instanceName);
+    let existingRecord = await evoClient.getInstanceRecord(instanceId);
+    if (!existingRecord) {
+      existingRecord = await evoClient.getInstanceRecord(instanceName);
+    }
+    const disconnectReason = String(
+      (existingRecord as Record<string, any> | null)?.disconnect_reason ||
+      (existingRecord as Record<string, any> | null)?.disconnectReason ||
+      ""
+    );
+    const needsFreshInstance = /qr code limit reached/i.test(disconnectReason);
+
+    if (needsFreshInstance) {
+      console.warn(`[provisionEvolutionGoInstance] ${instanceName} is stale (${disconnectReason}); recreating it.`);
+      await evoClient.deleteInstanceSilently(instanceName);
+      await evoClient.deleteInstanceSilently(instanceId);
+      instanceId = evoClient.generateEvolutionInstanceId();
+      await ctx.runMutation(api.businesses.setEvolutionInstance, {
+        businessId: args.businessId,
+        instanceName,
+        instanceId,
+      });
+    }
+
+    const exists = await evoClient.instanceExists(instanceId);
     let initialQr: string | null = null;
     let pairingCode: string | null = null;
     let currentState = "close";
@@ -1845,9 +1868,13 @@ export const provisionEvolutionGoInstance = action({
     console.log(`[provisionEvolutionGoInstance] starting for ${instanceName}`);
 
     try {
-      currentState = await evoClient.getConnectionState(instanceName);
+      currentState = await evoClient.getConnectionState(instanceId);
     } catch (e: any) {
-      console.warn("[provisionEvolutionGoInstance] getConnectionState error:", e?.message);
+      try {
+        currentState = await evoClient.getConnectionState(instanceName);
+      } catch (fallbackError: any) {
+        console.warn("[provisionEvolutionGoInstance] getConnectionState error:", fallbackError?.message || e?.message);
+      }
     }
     console.log(`[provisionEvolutionGoInstance] ${instanceName} exists=${exists} state=${currentState}`);
 
@@ -1918,7 +1945,7 @@ export const provisionEvolutionGoInstance = action({
 
     // Poll for a short window so we capture the QR once the instance finishes booting.
     try {
-      const connection = await evoClient.waitForConnectionArtifacts(instanceName);
+      const connection = await evoClient.waitForConnectionArtifacts(instanceId);
       console.log(`[provisionEvolutionGoInstance] waitForConnectionArtifacts result for ${instanceName}`, {
         hasQr: !!connection.qrCode,
         hasPairingCode: !!connection.pairingCode,

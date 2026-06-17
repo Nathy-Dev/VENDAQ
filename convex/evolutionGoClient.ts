@@ -138,9 +138,11 @@ function extractMatchingInstance(rawData: unknown, instanceName: string): Record
 
   return candidates.find((candidate) => {
     if (!candidate || typeof candidate !== "object") return false;
-    const flatName = candidate.instanceName || candidate.name;
-    const nestedName = candidate.instance?.instanceName || candidate.instance?.name;
-    return flatName === instanceName || nestedName === instanceName;
+    const flatId = candidate.id || candidate.instanceId || candidate.instance_id;
+    const flatName = candidate.instanceName || candidate.instance_name || candidate.name;
+    const nestedId = candidate.instance?.id || candidate.instance?.instanceId || candidate.instance?.instance_id;
+    const nestedName = candidate.instance?.instanceName || candidate.instance?.instance_name || candidate.instance?.name;
+    return flatId === instanceName || flatName === instanceName || nestedId === instanceName || nestedName === instanceName;
   }) || null;
 }
 
