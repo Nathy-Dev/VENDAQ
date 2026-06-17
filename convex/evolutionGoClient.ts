@@ -85,7 +85,7 @@ function parseConnectionArtifacts(rawData: unknown): ConnectionArtifacts {
     const data = candidate as Record<string, any> | null | undefined;
     if (!data || typeof data !== "object") continue;
 
-    const qr = data.qrcode;
+    const qr = data.qrcode || data.qr || data.qrCode;
     const instance = data.instance;
 
     const qrCode =
@@ -347,8 +347,8 @@ export async function getConnectionArtifacts(instanceName: string): Promise<Conn
     if (artifacts.qrCode || artifacts.pairingCode) {
       return artifacts;
     }
-  } catch {
-    // QR not available yet
+  } catch (e) {
+    console.warn(`[getConnectionArtifacts] error: ${e instanceof Error ? e.message : String(e)}`);
   }
 
   return { qrCode: null, pairingCode: null };
