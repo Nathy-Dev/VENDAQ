@@ -321,14 +321,11 @@ export async function connectInstance(instanceName: string, options?: ConnectIns
 }
 
 /** Requests a phone-based pairing code for an instance. */
-export async function pairInstance(
-  instanceName: string,
-  phone: string,
-  options?: { instanceId?: string; subscribe?: string[]; token?: string }
-): Promise<ConnectionArtifacts> {
+export async function pairInstance(instanceName: string, phone: string, options?: { instanceId?: string; subscribe?: string[]; token?: string }): Promise<ConnectionArtifacts> {
   const token = options?.token || instanceName;
-  const res = await evoFetch("/instance/pair", "POST", buildPairPayload(instanceName, phone, options), token) as any;
-  return parseConnectionArtifacts(res);
+  const data = await evoFetch("/instance/pair", "POST", buildPairPayload(instanceName, phone, options), token);
+  console.log(`[pairInstance raw data]`, JSON.stringify(data));
+  return parseConnectionArtifacts(data);
 }
 
 /**
@@ -343,6 +340,7 @@ export async function setWebhook(instanceName: string, webhookUrl: string, insta
 export async function getConnectionArtifacts(instanceName: string): Promise<ConnectionArtifacts> {
   try {
     const data = await evoFetch("/instance/qr", "GET", undefined, instanceName);
+    console.log(`[getConnectionArtifacts raw data]`, JSON.stringify(data));
     const artifacts = parseConnectionArtifacts(data);
     if (artifacts.qrCode || artifacts.pairingCode) {
       return artifacts;
