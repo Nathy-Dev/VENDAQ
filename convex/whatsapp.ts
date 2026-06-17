@@ -68,8 +68,20 @@ function normalizePhoneForWhatsApp(phone: string): string {
   return normalizePhoneDigits(phone);
 }
 
-function getEvolutionInstanceName(businessId: string): string {
-  return `pipelixr_${businessId}`;
+function slugifyInstanceName(value: string): string {
+  const slug = value
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+  return slug || "pipelixr";
+}
+
+function getEvolutionInstanceName(label: string, stableId: string): string {
+  const suffix = stableId.replace(/[^a-z0-9]/gi, "").slice(0, 8).toLowerCase();
+  const base = slugifyInstanceName(label).slice(0, Math.max(12, 24 - suffix.length));
+  return `${base}-${suffix || "instance"}`;
 }
 
 // Called by the external Node.js Worker to emit the generated QR code
@@ -1254,7 +1266,7 @@ export const sendRetargetMessage = action({
     if (!customer) return { sent: false, reason: "customer_not_found" };
 
     const biz = await ctx.runQuery(api.whatsapp.getBusinessForAssistantAuth, { businessId: args.businessId });
-    const instanceName = biz?.evolutionInstanceName || getEvolutionInstanceName(args.businessId);
+    const instanceName = biz?.evolutionInstanceName || getEvolutionInstanceName(biz?.name || "pipelixr", args.businessId);
 
     try {
       await evoClient.sendText(instanceName, customer.phone, args.content);
@@ -1810,10 +1822,10 @@ export const getMvpRevenueMetrics = query({
 export const provisionEvolutionGoInstance = action({
   args: { businessId: v.id("businesses") },
   handler: async (ctx, args): Promise<{ instanceName: string }> => {
-    const instanceName = getEvolutionInstanceName(args.businessId);
     const business = await ctx.runQuery(api.whatsapp.getBusinessForAssistantAuth, {
       businessId: args.businessId,
     });
+    const instanceName = business?.evolutionInstanceName || getEvolutionInstanceName(business?.name || "pipelixr", args.businessId);
     const preferredNumber = business?.assistantAdminPhones?.[0];
     const webhookUrl = evoClient.getEvolutionWebhookUrl();
     const subscribedEvents = ["QRCODE_UPDATED", "CONNECTION_UPDATE", "MESSAGES_UPSERT"];
@@ -1949,7 +1961,7 @@ export const deleteEvolutionGoInstance = action({
   args: { businessId: v.id("businesses") },
   handler: async (ctx, args): Promise<void> => {
     const biz = await ctx.runQuery(api.whatsapp.getBusinessForAssistantAuth, { businessId: args.businessId });
-    const instanceName = biz?.evolutionInstanceName || getEvolutionInstanceName(args.businessId);
+    const instanceName = biz?.evolutionInstanceName || getEvolutionInstanceName(biz?.name || "pipelixr", args.businessId);
     try {
       await evoClient.deleteInstance(instanceName);
     } catch (e) {

@@ -11,7 +11,7 @@ const http = httpRouter();
  *
  * Payload shape:
  *   { event: "MESSAGES_UPSERT" | "CONNECTION_UPDATE" | "QRCODE_UPDATED" | ...,
- *     instance: "pipelixr_<businessId>",
+ *     instance: "<human-readable-instance-name>",
  *     data: { ... } }
  */
 http.route({
@@ -26,10 +26,19 @@ http.route({
         data: Record<string, unknown>;
       };
 
-      // Instance name is "pipelixr_<businessId>"
-      const businessId = instance?.replace(/^pipelixr_/, "");
-      if (!businessId) {
-        return new Response(JSON.stringify({ error: "Cannot parse businessId from instance name" }), { status: 400 });
+      let business = await ctx.runQuery(api.businesses.getBusinessByEvolutionInstanceName, {
+        instanceName: instance,
+      });
+
+      if (!business && instance?.startsWith("pipelixr_")) {
+        const legacyBusinessId = instance.replace(/^pipelixr_/, "");
+        business = await ctx.runQuery(api.businesses.getBusinessById, {
+          businessId: legacyBusinessId as Id<"businesses">,
+        });
+      }
+
+      if (!business) {
+        return new Response(JSON.stringify({ error: "Cannot resolve business from instance name" }), { status: 400 });
       }
 
       const eventUpper = (event || "").toUpperCase();
@@ -41,7 +50,7 @@ http.route({
         const qrString = qr?.base64 || qr?.code || (data as { base64?: string })?.base64 || (data as { code?: string })?.code || "";
         if (qrString) {
           await ctx.runMutation(api.whatsapp.updateQRCode, {
-            businessId: businessId as Id<"businesses">,
+            businessId: business._id,
             qrCodeString: qrString,
           });
         }
@@ -52,7 +61,7 @@ http.route({
           state === "connecting" ? "pending" :
           "disconnected";
         await ctx.runMutation(api.whatsapp.updateConnectionStatus, {
-          businessId: businessId as Id<"businesses">,
+          businessId: business._id,
           status,
         });
       } else if (eventUpper === "MESSAGES_UPSERT" || eventUpper === "MESSAGE") {
@@ -79,7 +88,7 @@ http.route({
           if (!remoteJid) continue;
 
           await ctx.runMutation(api.whatsapp.receiveMessage, {
-            businessId: businessId as Id<"businesses">,
+            businessId: business._id,
             sender: remoteJid,
             content,
             timestamp,

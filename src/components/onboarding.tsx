@@ -98,9 +98,13 @@ export default function Onboarding({ initialStep = 0 }: OnboardingProps) {
     if (!selectedMode) return;
     
     const ownerId = session?.user?.id || "anonymous";
+    const humanReadableName =
+      session?.user?.name?.trim() ||
+      session?.user?.email?.split("@")[0]?.trim() ||
+      "My Business";
     
     const newBusinessId = await createOrUpdateBusiness({
-      name: "My Business",
+      name: humanReadableName,
       ownerId,
       onboardingStep: 4,
       whatsappMode: selectedMode,

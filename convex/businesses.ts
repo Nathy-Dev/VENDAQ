@@ -16,6 +16,14 @@ export const getBusinessById = query({
   handler: async (ctx, args) => ctx.db.get(args.businessId),
 });
 
+export const getBusinessByEvolutionInstanceName = query({
+  args: { instanceName: v.string() },
+  handler: async (ctx, args) => {
+    const businesses = await ctx.db.query("businesses").collect();
+    return businesses.find((business) => business.evolutionInstanceName === args.instanceName) || null;
+  },
+});
+
 export const createOrUpdateBusiness = mutation({
   args: {
     name: v.string(),
@@ -30,9 +38,11 @@ export const createOrUpdateBusiness = mutation({
       .first();
 
     if (existing) {
+      const shouldAdoptName = !existing.name || existing.name === "My Business";
       await ctx.db.patch(existing._id, {
         onboardingStep: args.onboardingStep,
         whatsappMode: args.whatsappMode ?? existing.whatsappMode,
+        ...(shouldAdoptName ? { name: args.name } : {}),
       });
       return existing._id;
     } else {
