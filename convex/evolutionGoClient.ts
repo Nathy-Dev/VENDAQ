@@ -34,6 +34,7 @@ type AdvancedSettings = {
 
 type CreateInstanceOptions = {
   displayName?: string;
+  instanceId: string;
   token?: string;
   advancedSettings?: Partial<AdvancedSettings>;
   proxy?: Partial<ProxySettings>;
@@ -42,6 +43,7 @@ type CreateInstanceOptions = {
 
 type ConnectInstanceOptions = {
   immediate?: boolean;
+  instanceId: string;
   natsEnable?: boolean;
   phone?: string;
   rabbitmqEnable?: boolean;
@@ -167,6 +169,20 @@ function normalizeProxySettings(proxy?: Partial<ProxySettings>): Partial<ProxySe
   return Object.keys(normalized).length > 0 ? normalized : undefined;
 }
 
+export function generateEvolutionInstanceId(): string {
+  const globalCrypto = globalThis.crypto as Crypto | undefined;
+  if (globalCrypto?.randomUUID) {
+    return globalCrypto.randomUUID();
+  }
+
+  const bytes = Array.from({ length: 16 }, () => Math.floor(Math.random() * 256));
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+
+  const hex = bytes.map((byte) => byte.toString(16).padStart(2, "0"));
+  return `${hex.slice(0, 4).join("")}-${hex.slice(4, 6).join("")}-${hex.slice(6, 8).join("")}-${hex.slice(8, 10).join("")}-${hex.slice(10, 16).join("")}`;
+}
+
 function resolveInstanceToken(explicitToken?: string): string {
   const { apiKey } = getEvolutionConfig();
   return explicitToken || process.env.EVOLUTION_GO_INSTANCE_TOKEN || apiKey;
@@ -174,9 +190,10 @@ function resolveInstanceToken(explicitToken?: string): string {
 
 function buildCreateInstancePayload(instanceName: string, options?: CreateInstanceOptions): Record<string, unknown> {
   const proxy = normalizeProxySettings(options?.proxy);
+  const instanceId = options?.instanceId || generateEvolutionInstanceId();
 
   return {
-    instanceId: instanceName,
+    instanceId,
     instanceName,
     name: options?.displayName || instanceName,
     advancedSettings: {
@@ -190,8 +207,9 @@ function buildCreateInstancePayload(instanceName: string, options?: CreateInstan
 }
 
 function buildConnectPayload(instanceName: string, options?: ConnectInstanceOptions): Record<string, unknown> {
+  const instanceId = options?.instanceId || generateEvolutionInstanceId();
   return {
-    instanceId: instanceName,
+    instanceId,
     instanceName,
     immediate: options?.immediate ?? false,
     natsEnable: options?.natsEnable ?? false,
@@ -204,9 +222,10 @@ function buildConnectPayload(instanceName: string, options?: ConnectInstanceOpti
   };
 }
 
-function buildPairPayload(instanceName: string, phone: string, options?: { subscribe?: string[]; token?: string }): Record<string, unknown> {
+function buildPairPayload(instanceName: string, phone: string, options?: { instanceId: string; subscribe?: string[]; token?: string }): Record<string, unknown> {
+  const instanceId = options?.instanceId || generateEvolutionInstanceId();
   return {
-    instanceId: instanceName,
+    instanceId,
     instanceName,
     phone,
     subscribe: options?.subscribe || DEFAULT_SUBSCRIBED_EVENTS,
@@ -288,7 +307,7 @@ export async function connectInstance(instanceName: string, options?: ConnectIns
 export async function pairInstance(
   instanceName: string,
   phone: string,
-  options?: { subscribe?: string[]; token?: string }
+  options?: { instanceId: string; subscribe?: string[]; token?: string }
 ): Promise<ConnectionArtifacts> {
   const res = await evoFetch("/instance/pair", "POST", buildPairPayload(instanceName, phone, options)) as any;
   return parseConnectionArtifacts(res);
@@ -298,8 +317,8 @@ export async function pairInstance(
  * Configures webhook delivery for the instance by calling the connect endpoint
  * with the supplied webhook URL.
  */
-export async function setWebhook(instanceName: string, webhookUrl: string): Promise<void> {
-  await connectInstance(instanceName, { webhookUrl });
+export async function setWebhook(instanceName: string, webhookUrl: string, instanceId: string): Promise<void> {
+  await connectInstance(instanceName, { instanceId, webhookUrl });
 }
 
 /** Returns the current connection artifacts for an instance. */

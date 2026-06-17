@@ -1826,9 +1826,16 @@ export const provisionEvolutionGoInstance = action({
       businessId: args.businessId,
     });
     const instanceName = business?.evolutionInstanceName || getEvolutionInstanceName(business?.name || "pipelixr", args.businessId);
+    const instanceId = business?.evolutionInstanceId || evoClient.generateEvolutionInstanceId();
     const preferredNumber = business?.assistantAdminPhones?.[0];
     const webhookUrl = evoClient.getEvolutionWebhookUrl();
     const subscribedEvents = ["QRCODE_UPDATED", "CONNECTION_UPDATE", "MESSAGES_UPSERT"];
+
+    await ctx.runMutation(api.businesses.setEvolutionInstance, {
+      businessId: args.businessId,
+      instanceName,
+      instanceId,
+    });
 
     const exists = await evoClient.instanceExists(instanceName);
     let initialQr: string | null = null;
@@ -1865,6 +1872,7 @@ export const provisionEvolutionGoInstance = action({
       try {
         const created = await evoClient.createInstance(instanceName, {
           displayName: business?.name || instanceName,
+          instanceId,
         });
         initialQr = created.qrCode;
         pairingCode = created.pairingCode;
@@ -1884,6 +1892,7 @@ export const provisionEvolutionGoInstance = action({
 
     try {
       const connectResult = await evoClient.connectInstance(instanceName, {
+        instanceId,
         webhookUrl: webhookUrl || undefined,
         subscribe: subscribedEvents,
       });
@@ -1895,6 +1904,7 @@ export const provisionEvolutionGoInstance = action({
     if (preferredNumber) {
       try {
         const pairResult = await evoClient.pairInstance(instanceName, preferredNumber, {
+          instanceId,
           subscribe: subscribedEvents,
         });
         console.log(`[provisionEvolutionGoInstance] pairInstance result for ${instanceName}`, pairResult);

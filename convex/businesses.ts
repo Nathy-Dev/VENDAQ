@@ -93,8 +93,12 @@ export const setEvolutionInstance = mutation({
   args: {
     businessId: v.id("businesses"),
     instanceName: v.string(),
+    instanceId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await ctx.db.patch(args.businessId, { evolutionInstanceName: args.instanceName });
+    await ctx.db.patch(args.businessId, {
+      evolutionInstanceName: args.instanceName,
+      ...(args.instanceId ? { evolutionInstanceId: args.instanceId } : {}),
+    });
   },
 });

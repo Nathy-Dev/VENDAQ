@@ -19,6 +19,7 @@ export default defineSchema({
     onboardingStep: v.number(),
     // Evolution Go integration
     evolutionInstanceName: v.optional(v.string()),
+    evolutionInstanceId: v.optional(v.string()),
     // Automation configuration
     averageOrderValue: v.optional(v.number()),
     responseWindowMinutes: v.optional(v.number()),
