@@ -1868,13 +1868,9 @@ export const provisionEvolutionGoInstance = action({
     console.log(`[provisionEvolutionGoInstance] starting for ${instanceName}`);
 
     try {
-      currentState = await evoClient.getConnectionState(instanceId);
+      currentState = await evoClient.getConnectionState(instanceName);
     } catch (e: any) {
-      try {
-        currentState = await evoClient.getConnectionState(instanceName);
-      } catch (fallbackError: any) {
-        console.warn("[provisionEvolutionGoInstance] getConnectionState error:", fallbackError?.message || e?.message);
-      }
+      console.warn("[provisionEvolutionGoInstance] getConnectionState error:", e?.message);
     }
     console.log(`[provisionEvolutionGoInstance] ${instanceName} exists=${exists} state=${currentState}`);
 
@@ -1919,7 +1915,6 @@ export const provisionEvolutionGoInstance = action({
 
     try {
       const connectResult = await evoClient.connectInstance(instanceName, {
-        instanceId,
         webhookUrl: webhookUrl || undefined,
         subscribe: subscribedEvents,
       });
@@ -1931,7 +1926,6 @@ export const provisionEvolutionGoInstance = action({
     if (preferredNumber) {
       try {
         const pairResult = await evoClient.pairInstance(instanceName, preferredNumber, {
-          instanceId,
           subscribe: subscribedEvents,
         });
         console.log(`[provisionEvolutionGoInstance] pairInstance result for ${instanceName}`, pairResult);
@@ -1945,7 +1939,7 @@ export const provisionEvolutionGoInstance = action({
 
     // Poll for a short window so we capture the QR once the instance finishes booting.
     try {
-      const connection = await evoClient.waitForConnectionArtifacts(instanceId);
+      const connection = await evoClient.waitForConnectionArtifacts(instanceName);
       console.log(`[provisionEvolutionGoInstance] waitForConnectionArtifacts result for ${instanceName}`, {
         hasQr: !!connection.qrCode,
         hasPairingCode: !!connection.pairingCode,

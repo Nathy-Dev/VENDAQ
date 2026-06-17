@@ -220,43 +220,32 @@ function buildCreateInstancePayload(instanceName: string, options?: CreateInstan
 
   return {
     instanceId,
-    instanceName,
     name: options?.displayName || instanceName,
     advancedSettings: {
       ...getDefaultAdvancedSettings(),
       ...(options?.advancedSettings || {}),
     },
-    qrcode: options?.qrcode ?? true,
     token: options?.token || instanceName,
     ...(proxy ? { proxy } : {}),
   };
 }
 
-function buildConnectPayload(instanceName: string, options?: ConnectInstanceOptions): Record<string, unknown> {
-  const instanceId = options?.instanceId || generateEvolutionInstanceId();
+function buildConnectPayload(_instanceName: string, options?: ConnectInstanceOptions): Record<string, unknown> {
   return {
-    instanceId,
-    instanceName,
     immediate: options?.immediate ?? false,
-    // Evolution Go's connect endpoint expects these toggles as strings, not booleans.
     natsEnable: serializeConnectFlag(options?.natsEnable),
     phone: options?.phone || "",
     rabbitmqEnable: serializeConnectFlag(options?.rabbitmqEnable),
     subscribe: options?.subscribe || DEFAULT_SUBSCRIBED_EVENTS,
-    token: options?.token || instanceName,
     webhookUrl: options?.webhookUrl || getEvolutionWebhookUrl() || "",
     websocketEnable: serializeConnectFlag(options?.websocketEnable),
   };
 }
 
-function buildPairPayload(instanceName: string, phone: string, options?: { instanceId: string; subscribe?: string[]; token?: string }): Record<string, unknown> {
-  const instanceId = options?.instanceId || generateEvolutionInstanceId();
+function buildPairPayload(_instanceName: string, phone: string, options?: { instanceId?: string; subscribe?: string[]; token?: string }): Record<string, unknown> {
   return {
-    instanceId,
-    instanceName,
     phone,
     subscribe: options?.subscribe || DEFAULT_SUBSCRIBED_EVENTS,
-    token: options?.token || instanceName,
   };
 }
 
@@ -286,12 +275,7 @@ export async function evoFetch(path: string, method: string, body?: unknown, cus
  */
 export async function instanceExists(instanceName: string): Promise<boolean> {
   try {
-    let rawData: any;
-    try {
-      rawData = await evoFetch("/instance/fetchInstances", "GET");
-    } catch {
-      rawData = await evoFetch("/instance/all", "GET");
-    }
+    const rawData: any = await evoFetch("/instance/all", "GET");
     const exists = !!extractMatchingInstance(rawData, instanceName);
 
     if (!exists) {
@@ -307,12 +291,7 @@ export async function instanceExists(instanceName: string): Promise<boolean> {
 /** Fetches the matching instance record from /instance/all if present. */
 export async function getInstanceRecord(instanceName: string): Promise<Record<string, any> | null> {
   try {
-    let rawData: any;
-    try {
-      rawData = await evoFetch("/instance/fetchInstances", "GET");
-    } catch {
-      rawData = await evoFetch("/instance/all", "GET");
-    }
+    const rawData: any = await evoFetch("/instance/all", "GET");
     return extractMatchingInstance(rawData, instanceName);
   } catch (error) {
     console.error("[getInstanceRecord] Error:", error);
@@ -321,9 +300,9 @@ export async function getInstanceRecord(instanceName: string): Promise<Record<st
 }
 
 /** Deletes an instance, ignoring errors (e.g. if it doesn't exist). */
-export async function deleteInstanceSilently(instanceName: string): Promise<void> {
+export async function deleteInstanceSilently(instanceId: string): Promise<void> {
   try {
-    await evoFetch(`/instance/delete/${instanceName}`, "DELETE", undefined, instanceName);
+    await evoFetch(`/instance/delete/${encodeURIComponent(instanceId)}`, "DELETE");
   } catch {
     // ignore
   }
@@ -337,16 +316,18 @@ export async function createInstance(instanceName: string, options?: CreateInsta
 
 /** Starts the connection flow for an instance. */
 export async function connectInstance(instanceName: string, options?: ConnectInstanceOptions): Promise<unknown> {
-  return await evoFetch("/instance/connect", "POST", buildConnectPayload(instanceName, options), options?.token || instanceName);
+  const token = options?.token || instanceName;
+  return await evoFetch("/instance/connect", "POST", buildConnectPayload(instanceName, options), token);
 }
 
 /** Requests a phone-based pairing code for an instance. */
 export async function pairInstance(
   instanceName: string,
   phone: string,
-  options?: { instanceId: string; subscribe?: string[]; token?: string }
+  options?: { instanceId?: string; subscribe?: string[]; token?: string }
 ): Promise<ConnectionArtifacts> {
-  const res = await evoFetch("/instance/pair", "POST", buildPairPayload(instanceName, phone, options), options?.token || instanceName) as any;
+  const token = options?.token || instanceName;
+  const res = await evoFetch("/instance/pair", "POST", buildPairPayload(instanceName, phone, options), token) as any;
   return parseConnectionArtifacts(res);
 }
 
@@ -361,35 +342,13 @@ export async function setWebhook(instanceName: string, webhookUrl: string, insta
 /** Returns the current connection artifacts for an instance. */
 export async function getConnectionArtifacts(instanceName: string): Promise<ConnectionArtifacts> {
   try {
-    const record = await getInstanceRecord(instanceName);
-    if (record) {
-      const artifacts = parseConnectionArtifacts(record);
-      if (artifacts.qrCode || artifacts.pairingCode) {
-        return artifacts;
-      }
+    const data = await evoFetch("/instance/qr", "GET", undefined, instanceName);
+    const artifacts = parseConnectionArtifacts(data);
+    if (artifacts.qrCode || artifacts.pairingCode) {
+      return artifacts;
     }
   } catch {
-    // fall through to endpoint-specific probes
-  }
-
-  const paths = [
-    `/instance/qr`,
-    `/instance/${encodeURIComponent(instanceName)}/qrcode`,
-    `/instance/connect/${encodeURIComponent(instanceName)}`,
-    `/instance/qr?instanceName=${encodeURIComponent(instanceName)}`,
-    `/instance/qr/${encodeURIComponent(instanceName)}`,
-  ];
-
-  for (const path of paths) {
-    try {
-      const data = await evoFetch(path, "GET", undefined, instanceName);
-      const artifacts = parseConnectionArtifacts(data);
-      if (artifacts.qrCode || artifacts.pairingCode) {
-        return artifacts;
-      }
-    } catch {
-      // Try the next compatible endpoint shape.
-    }
+    // QR not available yet
   }
 
   return { qrCode: null, pairingCode: null };
@@ -424,16 +383,7 @@ export async function getQR(instanceName: string): Promise<string | null> {
 
 /** Returns the connection state: "open" | "close" | "connecting" */
 export async function getConnectionState(instanceName: string): Promise<string> {
-  let data: any;
-  try {
-    data = await evoFetch(`/instance/status`, "GET", undefined, instanceName);
-  } catch (e: any) {
-    try {
-      data = await evoFetch(`/instance/connectionState/${instanceName}`, "GET");
-    } catch (fallback) {
-      data = await evoFetch(`/instance/${instanceName}/status`, "GET");
-    }
-  }
+  const data: any = await evoFetch("/instance/status", "GET", undefined, instanceName);
   return data?.instance?.state || data?.state || data?.status || "close";
 }
 
@@ -444,13 +394,13 @@ export async function getConnectionState(instanceName: string): Promise<string> 
 export async function sendText(instanceName: string, to: string, text: string): Promise<void> {
   const delayMs = 3000 + Math.random() * 9000;
   await new Promise((r) => setTimeout(r, delayMs));
-  await evoFetch(`/message/sendText/${instanceName}`, "POST", {
+  await evoFetch("/send/text", "POST", {
     number: to,
     text,
   }, instanceName);
 }
 
 /** Deletes an instance from Evolution Go. */
-export async function deleteInstance(instanceName: string): Promise<void> {
-  await evoFetch(`/instance/${instanceName}`, "DELETE", undefined, instanceName);
+export async function deleteInstance(instanceId: string, instanceToken?: string): Promise<void> {
+  await evoFetch(`/instance/delete/${encodeURIComponent(instanceId)}`, "DELETE", undefined, instanceToken);
 }
