@@ -227,7 +227,7 @@ function buildCreateInstancePayload(instanceName: string, options?: CreateInstan
       ...(options?.advancedSettings || {}),
     },
     qrcode: options?.qrcode ?? true,
-    token: resolveInstanceToken(options?.token),
+    token: options?.token || instanceName,
     ...(proxy ? { proxy } : {}),
   };
 }
@@ -243,7 +243,7 @@ function buildConnectPayload(instanceName: string, options?: ConnectInstanceOpti
     phone: options?.phone || "",
     rabbitmqEnable: serializeConnectFlag(options?.rabbitmqEnable),
     subscribe: options?.subscribe || DEFAULT_SUBSCRIBED_EVENTS,
-    token: resolveInstanceToken(options?.token),
+    token: options?.token || instanceName,
     webhookUrl: options?.webhookUrl || getEvolutionWebhookUrl() || "",
     websocketEnable: serializeConnectFlag(options?.websocketEnable),
   };
@@ -256,18 +256,18 @@ function buildPairPayload(instanceName: string, phone: string, options?: { insta
     instanceName,
     phone,
     subscribe: options?.subscribe || DEFAULT_SUBSCRIBED_EVENTS,
-    token: resolveInstanceToken(options?.token),
+    token: options?.token || instanceName,
   };
 }
 
-export async function evoFetch(path: string, method: string, body?: unknown): Promise<unknown> {
+export async function evoFetch(path: string, method: string, body?: unknown, customToken?: string): Promise<unknown> {
   const { url, apiKey } = getEvolutionConfig();
   logEvolutionGoDebug(`request ${method} ${path}`, body);
   const res = await fetch(`${url}${path}`, {
     method,
     headers: {
       "Content-Type": "application/json",
-      apikey: apiKey,
+      apikey: customToken || apiKey,
     },
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   });
@@ -373,6 +373,7 @@ export async function getConnectionArtifacts(instanceName: string): Promise<Conn
   }
 
   const paths = [
+    `/instance/qr`,
     `/instance/${encodeURIComponent(instanceName)}/qrcode`,
     `/instance/connect/${encodeURIComponent(instanceName)}`,
     `/instance/qr?instanceName=${encodeURIComponent(instanceName)}`,
@@ -381,7 +382,7 @@ export async function getConnectionArtifacts(instanceName: string): Promise<Conn
 
   for (const path of paths) {
     try {
-      const data = await evoFetch(path, "GET");
+      const data = await evoFetch(path, "GET", undefined, instanceName);
       const artifacts = parseConnectionArtifacts(data);
       if (artifacts.qrCode || artifacts.pairingCode) {
         return artifacts;
@@ -425,9 +426,13 @@ export async function getQR(instanceName: string): Promise<string | null> {
 export async function getConnectionState(instanceName: string): Promise<string> {
   let data: any;
   try {
-    data = await evoFetch(`/instance/connectionState/${instanceName}`, "GET");
+    data = await evoFetch(`/instance/status`, "GET", undefined, instanceName);
   } catch (e: any) {
-    data = await evoFetch(`/instance/${instanceName}/status`, "GET");
+    try {
+      data = await evoFetch(`/instance/connectionState/${instanceName}`, "GET");
+    } catch (fallback) {
+      data = await evoFetch(`/instance/${instanceName}/status`, "GET");
+    }
   }
   return data?.instance?.state || data?.state || data?.status || "close";
 }
