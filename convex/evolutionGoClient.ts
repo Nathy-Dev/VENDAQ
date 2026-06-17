@@ -169,6 +169,10 @@ function normalizeProxySettings(proxy?: Partial<ProxySettings>): Partial<ProxySe
   return Object.keys(normalized).length > 0 ? normalized : undefined;
 }
 
+function serializeConnectFlag(value?: boolean): string {
+  return value ? "true" : "false";
+}
+
 export function generateEvolutionInstanceId(): string {
   const globalCrypto = globalThis.crypto as Crypto | undefined;
   if (globalCrypto?.randomUUID) {
@@ -212,13 +216,14 @@ function buildConnectPayload(instanceName: string, options?: ConnectInstanceOpti
     instanceId,
     instanceName,
     immediate: options?.immediate ?? false,
-    natsEnable: options?.natsEnable ?? false,
+    // Evolution Go's connect endpoint expects these toggles as strings, not booleans.
+    natsEnable: serializeConnectFlag(options?.natsEnable),
     phone: options?.phone || "",
-    rabbitmqEnable: options?.rabbitmqEnable ?? false,
+    rabbitmqEnable: serializeConnectFlag(options?.rabbitmqEnable),
     subscribe: options?.subscribe || DEFAULT_SUBSCRIBED_EVENTS,
     token: resolveInstanceToken(options?.token),
     webhookUrl: options?.webhookUrl || getEvolutionWebhookUrl() || "",
-    websocketEnable: options?.websocketEnable ?? false,
+    websocketEnable: serializeConnectFlag(options?.websocketEnable),
   };
 }
 
