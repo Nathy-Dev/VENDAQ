@@ -4,9 +4,10 @@
  * the PRD-required 3-12 second randomized delay before every send.
  *
  * Required Convex environment variables:
- *   EVOLUTION_GO_URL     - e.g. https://your-vps.hostinger.com:8080
- *   EVOLUTION_GO_API_KEY - global API key from Evolution Go config
- *   CONVEX_SITE_URL      - public Convex site URL (preferred)
+ *   EVOLUTION_GO_URL          - e.g. https://your-vps.hostinger.com:8080
+ *   EVOLUTION_GO_API_KEY      - global API key from Evolution Go config
+ *   EVOLUTION_GO_INSTANCE_TOKEN - optional per-instance token override
+ *   CONVEX_SITE_URL           - public Convex site URL (preferred)
  *   NEXT_PUBLIC_CONVEX_SITE_URL - fallback for local/dev setups
  */
 
@@ -14,6 +15,43 @@ type ConnectionArtifacts = {
   qrCode: string | null;
   pairingCode: string | null;
 };
+
+type ProxySettings = {
+  host: string;
+  password: string;
+  port: string;
+  username: string;
+};
+
+type AdvancedSettings = {
+  alwaysOnline: boolean;
+  ignoreGroups: boolean;
+  ignoreStatus: boolean;
+  msgRejectCall: string;
+  readMessages: boolean;
+  rejectCall: boolean;
+};
+
+type CreateInstanceOptions = {
+  displayName?: string;
+  token?: string;
+  advancedSettings?: Partial<AdvancedSettings>;
+  proxy?: Partial<ProxySettings>;
+  qrcode?: boolean;
+};
+
+type ConnectInstanceOptions = {
+  immediate?: boolean;
+  natsEnable?: boolean;
+  phone?: string;
+  rabbitmqEnable?: boolean;
+  subscribe?: string[];
+  token?: string;
+  webhookUrl?: string;
+  websocketEnable?: boolean;
+};
+
+const DEFAULT_SUBSCRIBED_EVENTS = ["QRCODE_UPDATED", "CONNECTION_UPDATE", "MESSAGES_UPSERT"];
 
 function isEvolutionGoDebugEnabled(): boolean {
   return ["1", "true", "yes", "on"].includes((process.env.EVOLUTION_GO_DEBUG || "").toLowerCase());
@@ -46,10 +84,12 @@ function parseConnectionArtifacts(rawData: unknown): ConnectionArtifacts {
   const pairingCode =
     data?.pairingCode ||
     data?.pairing_code ||
+    data?.pairCode ||
     qr?.pairingCode ||
     qr?.pairing_code ||
     instance?.pairingCode ||
     instance?.pairing_code ||
+    instance?.pairCode ||
     null;
 
   return {
@@ -93,6 +133,87 @@ export function getEvolutionConfig(): { url: string; apiKey: string } {
   return { url: url.replace(/\/$/, ""), apiKey };
 }
 
+export function getEvolutionWebhookUrl(): string | null {
+  const siteUrl =
+    process.env.CONVEX_SITE_URL ||
+    process.env.NEXT_PUBLIC_CONVEX_SITE_URL ||
+    "";
+
+  if (!siteUrl) {
+    return null;
+  }
+
+  return `${siteUrl.replace(/\/$/, "")}/api/webhook/evolution`;
+}
+
+function getDefaultAdvancedSettings(): AdvancedSettings {
+  return {
+    alwaysOnline: false,
+    ignoreGroups: false,
+    ignoreStatus: false,
+    msgRejectCall: "",
+    readMessages: false,
+    rejectCall: false,
+  };
+}
+
+function getDefaultProxySettings(): ProxySettings {
+  return {
+    host: "",
+    password: "",
+    port: "",
+    username: "",
+  };
+}
+
+function resolveInstanceToken(explicitToken?: string): string {
+  const { apiKey } = getEvolutionConfig();
+  return explicitToken || process.env.EVOLUTION_GO_INSTANCE_TOKEN || apiKey;
+}
+
+function buildCreateInstancePayload(instanceName: string, options?: CreateInstanceOptions): Record<string, unknown> {
+  return {
+    instanceId: instanceName,
+    instanceName,
+    name: options?.displayName || instanceName,
+    advancedSettings: {
+      ...getDefaultAdvancedSettings(),
+      ...(options?.advancedSettings || {}),
+    },
+    proxy: {
+      ...getDefaultProxySettings(),
+      ...(options?.proxy || {}),
+    },
+    qrcode: options?.qrcode ?? true,
+    token: resolveInstanceToken(options?.token),
+  };
+}
+
+function buildConnectPayload(instanceName: string, options?: ConnectInstanceOptions): Record<string, unknown> {
+  return {
+    instanceId: instanceName,
+    instanceName,
+    immediate: options?.immediate ?? false,
+    natsEnable: options?.natsEnable ?? false,
+    phone: options?.phone || "",
+    rabbitmqEnable: options?.rabbitmqEnable ?? false,
+    subscribe: options?.subscribe || DEFAULT_SUBSCRIBED_EVENTS,
+    token: resolveInstanceToken(options?.token),
+    webhookUrl: options?.webhookUrl || getEvolutionWebhookUrl() || "",
+    websocketEnable: options?.websocketEnable ?? false,
+  };
+}
+
+function buildPairPayload(instanceName: string, phone: string, options?: { subscribe?: string[]; token?: string }): Record<string, unknown> {
+  return {
+    instanceId: instanceName,
+    instanceName,
+    phone,
+    subscribe: options?.subscribe || DEFAULT_SUBSCRIBED_EVENTS,
+    token: resolveInstanceToken(options?.token),
+  };
+}
+
 export async function evoFetch(path: string, method: string, body?: unknown): Promise<unknown> {
   const { url, apiKey } = getEvolutionConfig();
   logEvolutionGoDebug(`request ${method} ${path}`, body);
@@ -107,7 +228,7 @@ export async function evoFetch(path: string, method: string, body?: unknown): Pr
   if (!res.ok) {
     const text = await res.text();
     logEvolutionGoDebug(`response ${method} ${path} -> ${res.status}`, text);
-    throw new Error(`Evolution Go ${method} ${path} → ${res.status}: ${text}`);
+    throw new Error(`Evolution Go ${method} ${path} -> ${res.status}: ${text}`);
   }
   const data = await res.json();
   logEvolutionGoDebug(`response ${method} ${path} -> ${res.status}`, data);
@@ -153,34 +274,32 @@ export async function deleteInstanceSilently(instanceName: string): Promise<void
 }
 
 /** Creates a new WhatsApp instance on Evolution Go and returns any immediate connection artifacts. */
-export async function createInstance(instanceName: string): Promise<ConnectionArtifacts> {
-  const { apiKey } = getEvolutionConfig();
-  const res = await evoFetch("/instance/create", "POST", {
-    name: instanceName,
-    instanceName,
-    token: apiKey,
-    qrcode: true,
-  }) as any;
-
+export async function createInstance(instanceName: string, options?: CreateInstanceOptions): Promise<ConnectionArtifacts> {
+  const res = await evoFetch("/instance/create", "POST", buildCreateInstancePayload(instanceName, options)) as any;
   return parseConnectionArtifacts(res);
 }
 
 /** Starts the connection flow for an instance. */
-export async function connectInstance(instanceName: string, number?: string): Promise<unknown> {
-  const { apiKey } = getEvolutionConfig();
-  return await evoFetch("/instance/connect", "POST", {
-    instanceName,
-    token: apiKey,
-    ...(number ? { number } : {}),
-  });
+export async function connectInstance(instanceName: string, options?: ConnectInstanceOptions): Promise<unknown> {
+  return await evoFetch("/instance/connect", "POST", buildConnectPayload(instanceName, options));
+}
+
+/** Requests a phone-based pairing code for an instance. */
+export async function pairInstance(
+  instanceName: string,
+  phone: string,
+  options?: { subscribe?: string[]; token?: string }
+): Promise<ConnectionArtifacts> {
+  const res = await evoFetch("/instance/pair", "POST", buildPairPayload(instanceName, phone, options)) as any;
+  return parseConnectionArtifacts(res);
 }
 
 /**
- * Evolution Go uses a global WEBHOOK_URL configuration on the server.
- * There is no per-instance webhook setup in the documented API, so this is a no-op.
+ * Configures webhook delivery for the instance by calling the connect endpoint
+ * with the supplied webhook URL.
  */
-export async function setWebhook(_instanceName: string, _webhookUrl: string): Promise<void> {
-  return;
+export async function setWebhook(instanceName: string, webhookUrl: string): Promise<void> {
+  await connectInstance(instanceName, { webhookUrl });
 }
 
 /** Returns the current connection artifacts for an instance. */
@@ -199,6 +318,7 @@ export async function getConnectionArtifacts(instanceName: string): Promise<Conn
 
   const paths = [
     `/instance/qr?instanceName=${encodeURIComponent(instanceName)}`,
+    `/instance/qr/${encodeURIComponent(instanceName)}`,
   ];
 
   for (const path of paths) {

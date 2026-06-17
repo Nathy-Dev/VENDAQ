@@ -1,39 +1,36 @@
 import { action } from "./_generated/server";
-import { evoFetch } from "./evolutionGoClient";
+import { createInstance, connectInstance, pairInstance, getEvolutionWebhookUrl } from "./evolutionGoClient";
 
 export const testEvolution = action({
   args: {},
   handler: async (ctx) => {
     try {
         const instanceName = "test_" + Date.now();
-        const createRes = await evoFetch("/instance/create", "POST", {
-            name: instanceName,
-            instanceName: instanceName,
+        const createRes = await createInstance(instanceName, {
+            displayName: "Pipelixr Test",
             token: "test_token_123",
-            qrcode: true,
-            integration: "WHATSAPP-BAILEYS"
         });
-
-        let webhookRes, webhookErr;
-        try {
-             webhookRes = await evoFetch(`/webhook/instance/${instanceName}`, "POST", {
-                url: "https://example.com/webhook",
-                webhook_by_events: false,
-                webhook_base64: false,
-                events: ["QRCODE", "MESSAGE"]
-             });
-        } catch(e: any) {
-            webhookErr = e.message;
-        }
 
         let connectRes, connectErr;
         try {
-            connectRes = await evoFetch(`/instance/connect/${instanceName}`, "GET");
+            connectRes = await connectInstance(instanceName, {
+                webhookUrl: getEvolutionWebhookUrl() || "https://example.com/webhook",
+                subscribe: ["QRCODE_UPDATED", "CONNECTION_UPDATE", "MESSAGES_UPSERT"],
+            });
         } catch(e: any) {
             connectErr = e.message;
         }
 
-        return { createRes, webhookRes, webhookErr, connectRes, connectErr };
+        let pairRes, pairErr;
+        try {
+            pairRes = await pairInstance(instanceName, "5511999999999", {
+                subscribe: ["QRCODE_UPDATED", "CONNECTION_UPDATE", "MESSAGES_UPSERT"],
+            });
+        } catch(e: any) {
+            pairErr = e.message;
+        }
+
+        return { createRes, connectRes, connectErr, pairRes, pairErr };
     } catch(e: any) {
         return { error: e.message };
     }

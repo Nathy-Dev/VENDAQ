@@ -18,7 +18,7 @@ import { useRouter } from "next/navigation";
 import Link from 'next/link';
 import { usePipelixrActions } from "@/hooks/usePipelixr";
 import { useSession } from "next-auth/react";
-import { useQuery, useAction } from "convex/react";
+import { useQuery, useAction, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import QRCode from "react-qr-code";
 
@@ -52,10 +52,12 @@ export default function Onboarding({ initialStep = 0 }: OnboardingProps) {
   const [featureIndex, setFeatureIndex] = useState(0);
   const [selectedMode, setSelectedMode] = useState<'official' | 'unofficial' | null>(null);
   const [tosAccepted, setTosAccepted] = useState(false);
+  const [assistantPhone, setAssistantPhone] = useState("");
   
   const router = useRouter();
   const { createOrUpdateBusiness } = usePipelixrActions();
   const provisionInstance = useAction(api.whatsapp.provisionEvolutionGoInstance);
+  const setAssistantAdminPhone = useMutation(api.whatsapp.setAssistantAdminPhone);
   const { data: session } = useSession();
 
   // Query Convex for QR code and status
@@ -103,6 +105,13 @@ export default function Onboarding({ initialStep = 0 }: OnboardingProps) {
       onboardingStep: 4,
       whatsappMode: selectedMode,
     });
+
+    if (selectedMode === "unofficial" && assistantPhone.trim()) {
+      await setAssistantAdminPhone({
+        businessId: newBusinessId,
+        phone: assistantPhone.trim(),
+      });
+    }
     
     setStep(4);
 
@@ -251,6 +260,22 @@ export default function Onboarding({ initialStep = 0 }: OnboardingProps) {
                         />
                         I understand the risks and acknowledge that PIPELIXR enforces behavioral guards (rate limits, delays, no bulk cold messaging) which I cannot disable.
                       </label>
+                      <div className={styles.phoneInputContainer}>
+                        <label style={{ fontSize: '0.8rem', color: '#cbd5e1', fontWeight: 600 }}>
+                          WhatsApp number for pairing code
+                        </label>
+                        <input
+                          className={styles.phoneInput}
+                          type="tel"
+                          inputMode="tel"
+                          placeholder="e.g. 2348012345678"
+                          value={assistantPhone}
+                          onChange={(e) => setAssistantPhone(e.target.value)}
+                        />
+                        <p className={styles.helpText}>
+                          Optional. If you provide a number here, PIPELIXR will request a phone-based pairing code instead of only the QR flow.
+                        </p>
+                      </div>
                     </div>
                   </div>
                 )}

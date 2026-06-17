@@ -1815,6 +1815,8 @@ export const provisionEvolutionGoInstance = action({
       businessId: args.businessId,
     });
     const preferredNumber = business?.assistantAdminPhones?.[0];
+    const webhookUrl = evoClient.getEvolutionWebhookUrl();
+    const subscribedEvents = ["QRCODE_UPDATED", "CONNECTION_UPDATE", "MESSAGES_UPSERT"];
 
     const exists = await evoClient.instanceExists(instanceName);
     let initialQr: string | null = null;
@@ -1849,7 +1851,9 @@ export const provisionEvolutionGoInstance = action({
 
     if (!exists) {
       try {
-        const created = await evoClient.createInstance(instanceName);
+        const created = await evoClient.createInstance(instanceName, {
+          displayName: business?.name || instanceName,
+        });
         initialQr = created.qrCode;
         pairingCode = created.pairingCode;
         console.log(`[provisionEvolutionGoInstance] createInstance result for ${instanceName}`, {
@@ -1867,10 +1871,27 @@ export const provisionEvolutionGoInstance = action({
     }
 
     try {
-      const connectResult = await evoClient.connectInstance(instanceName, preferredNumber);
+      const connectResult = await evoClient.connectInstance(instanceName, {
+        webhookUrl: webhookUrl || undefined,
+        subscribe: subscribedEvents,
+      });
       console.log(`[provisionEvolutionGoInstance] connectInstance result for ${instanceName}`, connectResult);
     } catch (e: any) {
       console.warn("[provisionEvolutionGoInstance] connectInstance error:", e?.message);
+    }
+
+    if (preferredNumber) {
+      try {
+        const pairResult = await evoClient.pairInstance(instanceName, preferredNumber, {
+          subscribe: subscribedEvents,
+        });
+        console.log(`[provisionEvolutionGoInstance] pairInstance result for ${instanceName}`, pairResult);
+        if (pairResult.pairingCode) {
+          pairingCode = pairResult.pairingCode;
+        }
+      } catch (e: any) {
+        console.warn("[provisionEvolutionGoInstance] pairInstance error:", e?.message);
+      }
     }
 
     // Poll for a short window so we capture the QR once the instance finishes booting.
