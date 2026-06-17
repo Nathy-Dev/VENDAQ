@@ -286,7 +286,12 @@ export async function evoFetch(path: string, method: string, body?: unknown): Pr
  */
 export async function instanceExists(instanceName: string): Promise<boolean> {
   try {
-    const rawData = await evoFetch("/instance/all", "GET") as any;
+    let rawData: any;
+    try {
+      rawData = await evoFetch("/instance/fetchInstances", "GET");
+    } catch {
+      rawData = await evoFetch("/instance/all", "GET");
+    }
     const exists = !!extractMatchingInstance(rawData, instanceName);
 
     if (!exists) {
@@ -302,7 +307,12 @@ export async function instanceExists(instanceName: string): Promise<boolean> {
 /** Fetches the matching instance record from /instance/all if present. */
 export async function getInstanceRecord(instanceName: string): Promise<Record<string, any> | null> {
   try {
-    const rawData = await evoFetch("/instance/all", "GET");
+    let rawData: any;
+    try {
+      rawData = await evoFetch("/instance/fetchInstances", "GET");
+    } catch {
+      rawData = await evoFetch("/instance/all", "GET");
+    }
     return extractMatchingInstance(rawData, instanceName);
   } catch (error) {
     console.error("[getInstanceRecord] Error:", error);
@@ -363,6 +373,8 @@ export async function getConnectionArtifacts(instanceName: string): Promise<Conn
   }
 
   const paths = [
+    `/instance/${encodeURIComponent(instanceName)}/qrcode`,
+    `/instance/connect/${encodeURIComponent(instanceName)}`,
     `/instance/qr?instanceName=${encodeURIComponent(instanceName)}`,
     `/instance/qr/${encodeURIComponent(instanceName)}`,
   ];
@@ -411,11 +423,12 @@ export async function getQR(instanceName: string): Promise<string | null> {
 
 /** Returns the connection state: "open" | "close" | "connecting" */
 export async function getConnectionState(instanceName: string): Promise<string> {
-  const data = await evoFetch(`/instance/${instanceName}/status`, "GET") as {
-    instance?: { state?: string };
-    state?: string;
-    status?: string;
-  };
+  let data: any;
+  try {
+    data = await evoFetch(`/instance/connectionState/${instanceName}`, "GET");
+  } catch (e: any) {
+    data = await evoFetch(`/instance/${instanceName}/status`, "GET");
+  }
   return data?.instance?.state || data?.state || data?.status || "close";
 }
 
