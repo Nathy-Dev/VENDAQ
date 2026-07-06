@@ -2316,10 +2316,14 @@ export const pollConnectionStatus = action({
 });
 
 /**
- * Lightweight health check called by the dashboard to detect disconnections.
- * Unlike pollConnectionStatus which is for onboarding, this is optimized for
- * the dashboard: it only updates the DB when there's a state CHANGE to avoid
- * unnecessary writes, and it handles instance-not-found gracefully.
+ * Lightweight health check called by the dashboard to detect disconnections
+ * AND reconnections. Unlike pollConnectionStatus (for onboarding), this is
+ * optimized for the dashboard: it only writes to the DB on state CHANGES to
+ * avoid unnecessary writes, and handles instance-not-found gracefully.
+ *
+ * IMPORTANT: We go straight to getInstanceStatus() which authenticates via
+ * the instance token. This avoids the old bug where instanceExists() failed
+ * to find the instance because the display name didn't match the token.
  */
 export const checkConnectionHealth = action({
   args: { businessId: v.id("businesses") },
@@ -2334,23 +2338,12 @@ export const checkConnectionHealth = action({
     }
 
     const currentDbStatus = business.whatsappStatus;
+    const instanceName = business.evolutionInstanceName;
 
     try {
-      // First check if instance still exists on Evolution Go
-      const exists = await evoClient.instanceExists(business.evolutionInstanceName);
-      if (!exists) {
-        // Instance was deleted from Evolution Go but DB still thinks it's connected
-        if (currentDbStatus === "connected" || currentDbStatus === "pending") {
-          await ctx.runMutation(api.whatsapp.updateConnectionStatus, {
-            businessId: args.businessId,
-            status: "disconnected",
-          });
-          return { status: "disconnected", changed: true };
-        }
-        return { status: "disconnected", changed: false };
-      }
-
-      const status = await evoClient.getInstanceStatus(business.evolutionInstanceName);
+      // Hit the status endpoint directly — it authenticates via the instance
+      // token and is the single source of truth for connection state.
+      const status = await evoClient.getInstanceStatus(instanceName);
       const isFullyAuthenticated = status.connected && status.loggedIn;
 
       let newStatus: "connected" | "disconnected" | "pending";
@@ -2364,6 +2357,7 @@ export const checkConnectionHealth = action({
 
       // Only write to DB if the status actually changed
       if (newStatus !== currentDbStatus) {
+        console.log(`[checkConnectionHealth] ${instanceName}: ${currentDbStatus} → ${newStatus} (wsOpen=${status.connected}, loggedIn=${status.loggedIn}, state=${status.state})`);
         await ctx.runMutation(api.whatsapp.updateConnectionStatus, {
           businessId: args.businessId,
           status: newStatus,
@@ -2373,8 +2367,22 @@ export const checkConnectionHealth = action({
 
       return { status: newStatus, changed: false };
     } catch (e: any) {
-      console.warn("[checkConnectionHealth] error:", e?.message);
-      // On network errors, don't change DB state — could be a transient issue
+      // If the status endpoint fails, the instance may have been deleted
+      // from Evolution Go. Only mark disconnected if we're sure (i.e. the
+      // error is a 4xx, not a transient network blip).
+      const msg = e?.message || "";
+      const is4xx = /-> 4\d{2}:/.test(msg);
+
+      if (is4xx && (currentDbStatus === "connected" || currentDbStatus === "pending")) {
+        console.warn(`[checkConnectionHealth] Instance ${instanceName} appears deleted (${msg}); marking disconnected.`);
+        await ctx.runMutation(api.whatsapp.updateConnectionStatus, {
+          businessId: args.businessId,
+          status: "disconnected",
+        });
+        return { status: "disconnected", changed: true };
+      }
+
+      console.warn("[checkConnectionHealth] error (keeping current status):", msg);
       return { status: currentDbStatus as any || "disconnected", changed: false };
     }
   },

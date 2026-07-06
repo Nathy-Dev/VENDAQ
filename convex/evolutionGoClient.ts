@@ -263,16 +263,36 @@ export async function evoFetch(path: string, method: string, body?: unknown, cus
   return data;
 }
 
-/** Returns true if the named instance already exists on Evolution Go.
- * Handles both flat ({ instanceName }) and nested ({ instance: { instanceName } }) response shapes.
+/**
+ * Returns true if the named instance already exists on Evolution Go.
+ *
+ * Primary check: hit the token-authenticated /instance/status endpoint.
+ * This is more reliable than listing all instances because the instance's
+ * *display name* (set during createInstance) may differ from the token we
+ * store as `evolutionInstanceName`.  For example, the display name might
+ * be "My Business" while the token is "mybiz-abc12345" — the list-based
+ * lookup would fail to match, but the status endpoint authenticates by
+ * token and works regardless of display name.
+ *
+ * Fallback: if the status endpoint throws (e.g. the instance is in a
+ * transitional state), we try the list-based lookup as a last resort.
  */
 export async function instanceExists(instanceName: string): Promise<boolean> {
+  // 1. Token-authenticated status check (most reliable)
+  try {
+    await evoFetch("/instance/status", "GET", undefined, instanceName);
+    return true;
+  } catch (_statusErr) {
+    // Status endpoint failed — could mean the instance doesn't exist,
+    // OR it could be in a transitional state. Try list as fallback.
+  }
+
+  // 2. Fallback: list all instances and match by name/id
   try {
     const rawData: any = await evoFetch("/instance/all", "GET");
     const exists = !!extractMatchingInstance(rawData, instanceName);
-
     if (!exists) {
-      console.warn(`[instanceExists] Instance ${instanceName} not found. Raw payload sample:`, rawData);
+      console.warn(`[instanceExists] Instance ${instanceName} not found via status or list.`);
     }
     return exists;
   } catch (error) {
