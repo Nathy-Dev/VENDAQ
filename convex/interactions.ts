@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { query, mutation } from "./_generated/server";
+import { Doc } from "./_generated/dataModel";
 
 export const getChatMessages = query({
   args: { 
@@ -31,7 +32,13 @@ export const getRecentChats = query({
         .order("desc")
         .take(100);
 
-      const results = [];
+      const results: (Doc<"customers"> & {
+        lastMessage: string;
+        lastMessageTimestamp: number;
+        lastMessageType?: "text" | "image" | "video" | "audio" | "document" | "location";
+        lastMediaId?: string;
+        lastIntent?: string;
+      })[] = [];
       for (const customer of customers) {
         // 2. Fetch only the ONE most recent message for this specific customer
         const lastInteraction = await ctx.db
