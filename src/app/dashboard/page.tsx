@@ -4,6 +4,7 @@ import { useSession } from "next-auth/react";
 import { useQuery, useAction } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { AlertTriangle, Banknote, MessageSquare, Reply, Send, Wifi, WifiOff, Loader2, RefreshCcw, type LucideIcon } from "lucide-react";
@@ -283,10 +284,12 @@ export default function DashboardPage() {
                       <p style={{ fontSize: '0.8rem', color: '#94a3b8', margin: 0 }}>Scan this QR with WhatsApp:</p>
                       <div style={{ background: 'white', padding: '0.5rem', borderRadius: '0.5rem', display: 'inline-block' }}>
                         {(qrData.qrCode.startsWith('data:image') || qrData.qrCode.length > 500) ? (
-                          <img
+                          <Image
                             src={qrData.qrCode.startsWith('data:image') ? qrData.qrCode : `data:image/png;base64,${qrData.qrCode}`}
                             alt="WhatsApp QR Code"
-                            style={{ width: 160, height: 160 }}
+                            width={160}
+                            height={160}
+                            unoptimized
                           />
                         ) : (
                           <div style={{ width: 160, height: 160, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem', color: '#64748b' }}>QR Code Ready</div>
