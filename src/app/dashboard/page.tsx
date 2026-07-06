@@ -51,10 +51,12 @@ export default function DashboardPage() {
   const healthIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const reconnectPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Health check: runs every 30s when connected to detect disconnections
+  // Health check: runs every 30s whenever an instance exists.
+  // Detects BOTH disconnections (connected → disconnected) AND
+  // reconnections (disconnected → connected, e.g. via Evolution Go dashboard).
   useEffect(() => {
-    if (!business || business.whatsappStatus !== "connected") {
-      // Stop health checking if not connected
+    // Only poll if the business has an Evolution Go instance configured
+    if (!business || !business.evolutionInstanceName) {
       if (healthIntervalRef.current) {
         clearInterval(healthIntervalRef.current);
         healthIntervalRef.current = null;
@@ -62,7 +64,12 @@ export default function DashboardPage() {
       return;
     }
 
-    // Start health checking
+    // Don't run health checks while actively reconnecting via our UI
+    // (the reconnect poll effect handles that case at a faster interval)
+    if (isReconnecting && business.whatsappStatus === "pending") {
+      return;
+    }
+
     const doCheck = async () => {
       try {
         await checkHealth({ businessId: business._id });
@@ -81,7 +88,7 @@ export default function DashboardPage() {
         healthIntervalRef.current = null;
       }
     };
-  }, [business, checkHealth]);
+  }, [business?._id, business?.evolutionInstanceName, business?.whatsappStatus, isReconnecting, checkHealth]);
 
   // Reconnect polling: runs every 8s while pending (waiting for QR scan)
   useEffect(() => {
