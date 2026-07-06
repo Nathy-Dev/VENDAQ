@@ -2351,16 +2351,19 @@ export const checkConnectionHealth = action({
         newStatus = "connected";
       } else if (status.state === "connecting" && currentDbStatus === "pending") {
         // Only keep "pending" if we were already pending (i.e. user clicked
-        // Reconnect). If the DB says "disconnected" and Evolution Go is
-        // "connecting" (auto-reconnect attempt), we leave it as disconnected
-        // so the dashboard shows the Reconnect button, not "Reconnecting…".
+        // Reconnect) AND Evolution Go is still actively connecting.
         newStatus = "pending";
+      } else if (currentDbStatus === "pending" && status.state === "close") {
+        // Was pending (reconnect flow) but Evolution Go reports fully closed
+        // (QR expired, instance stopped, etc.) → revert to disconnected so
+        // the user sees the Reconnect button again.
+        newStatus = "disconnected";
       } else if (currentDbStatus === "connected") {
         // Was connected, now not authenticated → mark disconnected
         newStatus = "disconnected";
       } else {
-        // Keep whatever the current status is (e.g. "disconnected")
-        // unless Evolution Go confirms full auth above.
+        // Keep whatever the current status is (e.g. "disconnected").
+        // Don't upgrade to "pending" from auto-reconnect noise.
         newStatus = currentDbStatus as "connected" | "disconnected" | "pending";
       }
 

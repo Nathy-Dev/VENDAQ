@@ -1,7 +1,7 @@
 "use client";
 
 import { useSession } from "next-auth/react";
-import { useQuery, useAction } from "convex/react";
+import { useQuery, useAction, useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 
 import Image from "next/image";
@@ -46,6 +46,7 @@ export default function DashboardPage() {
   const checkHealth = useAction(api.whatsapp.checkConnectionHealth);
   const reconnectInstance = useAction(api.whatsapp.reconnectInstance);
   const pollStatus = useAction(api.whatsapp.pollConnectionStatus);
+  const updateStatus = useMutation(api.whatsapp.updateConnectionStatus);
 
   // ---- Connection health polling ----
   const healthIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -329,7 +330,16 @@ export default function DashboardPage() {
               )}
               {isReconnecting && (
                 <button
-                  onClick={() => { setIsReconnecting(false); }}
+                  onClick={async () => {
+                    setIsReconnecting(false);
+                    setReconnectError(null);
+                    // Also reset DB status so the banner shows "Reconnect" button
+                    if (business) {
+                      try {
+                        await updateStatus({ businessId: business._id, status: "disconnected" });
+                      } catch (_e) { /* ignore */ }
+                    }
+                  }}
                   className={styles.connectButton}
                   style={{ background: 'rgba(255,255,255,0.05)', color: '#94a3b8', fontSize: '0.8rem' }}
                 >
