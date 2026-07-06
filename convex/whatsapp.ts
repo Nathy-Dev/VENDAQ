@@ -2271,6 +2271,11 @@ export const refreshQRCode = action({
 /**
  * Called by the onboarding UI to poll the actual connection status from
  * Evolution Go (not just the DB cache). Updates the DB accordingly.
+ *
+ * CRITICAL: We only mark a business as "connected" when both the WS is open
+ * AND the session is authenticated (`loggedIn === true`). Without this,
+ * the WS opening (before QR scan) would falsely trigger a redirect to
+ * the dashboard.
  */
 export const pollConnectionStatus = action({
   args: { businessId: v.id("businesses") },
@@ -2285,20 +2290,24 @@ export const pollConnectionStatus = action({
     try {
       const status = await evoClient.getInstanceStatus(business.evolutionInstanceName);
 
-      // Update DB if the status has changed
-      if (status.connected && business.whatsappStatus !== "connected") {
+      // Only mark "connected" when BOTH connected AND loggedIn are true.
+      // `connected` already requires both in getInstanceStatus, but we
+      // double-check `loggedIn` here as a production safeguard.
+      const isFullyAuthenticated = status.connected && status.loggedIn;
+
+      if (isFullyAuthenticated && business.whatsappStatus !== "connected") {
         await ctx.runMutation(api.whatsapp.updateConnectionStatus, {
           businessId: args.businessId,
           status: "connected",
         });
-      } else if (!status.connected && business.whatsappStatus === "connected") {
+      } else if (!isFullyAuthenticated && business.whatsappStatus === "connected") {
         await ctx.runMutation(api.whatsapp.updateConnectionStatus, {
           businessId: args.businessId,
           status: "disconnected",
         });
       }
 
-      return { state: status.state, connected: status.connected };
+      return { state: status.state, connected: isFullyAuthenticated };
     } catch (e: any) {
       console.warn("[pollConnectionStatus] error:", e?.message);
       return { state: "close", connected: false };

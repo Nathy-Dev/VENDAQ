@@ -2,6 +2,7 @@ import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
 import { api } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
+import * as evoClient from "./evolutionGoClient";
 
 const http = httpRouter();
 
@@ -55,15 +56,55 @@ http.route({
           });
         }
       } else if (eventUpper === "CONNECTION_UPDATE" || eventUpper === "CONNECTION") {
-        const state = (data as { state?: string; status?: string })?.state || (data as { status?: string })?.status || "close";
-        const status =
-          state === "open" ? "connected" :
-          state === "connecting" ? "pending" :
-          "disconnected";
-        await ctx.runMutation(api.whatsapp.updateConnectionStatus, {
-          businessId: business._id,
-          status,
-        });
+        const rawState = (data as { state?: string; status?: string })?.state || (data as { status?: string })?.status || "close";
+
+        // CRITICAL: `state === "open"` in the webhook can mean the WebSocket
+        // to WhatsApp servers is open, but NOT that the user has scanned the
+        // QR code. We must verify with the full status endpoint (which checks
+        // `LoggedIn`) before marking the business as "connected".
+        if (rawState === "open") {
+          // Check if the webhook data itself carries auth confirmation
+          const webhookLoggedIn =
+            (data as any)?.loggedIn === true ||
+            (data as any)?.LoggedIn === true ||
+            (data as any)?.logged_in === true ||
+            (data as any)?.isNewLogin === true;
+
+          if (webhookLoggedIn) {
+            // Webhook explicitly confirms authentication — trust it
+            await ctx.runMutation(api.whatsapp.updateConnectionStatus, {
+              businessId: business._id,
+              status: "connected",
+            });
+          } else {
+            // Webhook says "open" but no auth proof — verify via status endpoint
+            try {
+              const fullStatus = await evoClient.getInstanceStatus(instance);
+              if (fullStatus.connected && fullStatus.loggedIn) {
+                await ctx.runMutation(api.whatsapp.updateConnectionStatus, {
+                  businessId: business._id,
+                  status: "connected",
+                });
+              }
+              // If not authenticated, don't change status — the poller will
+              // confirm once the QR is actually scanned.
+            } catch (verifyError) {
+              console.warn("[Webhook Evolution] Could not verify connection status:", verifyError);
+              // Don't update — the poller will handle it
+            }
+          }
+        } else if (rawState === "connecting") {
+          await ctx.runMutation(api.whatsapp.updateConnectionStatus, {
+            businessId: business._id,
+            status: "pending",
+          });
+        } else {
+          // "close" or any other state
+          await ctx.runMutation(api.whatsapp.updateConnectionStatus, {
+            businessId: business._id,
+            status: "disconnected",
+          });
+        }
       } else if (eventUpper === "MESSAGES_UPSERT" || eventUpper === "MESSAGE") {
         // Evolution Go sends individual message objects; Node.js wraps in { messages: [] }
         const messages = (data as { messages?: unknown[] })?.messages || [data];

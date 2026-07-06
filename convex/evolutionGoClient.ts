@@ -394,28 +394,45 @@ export async function getQR(instanceName: string): Promise<string | null> {
  *
  * GET /instance/status response:
  * { "data": { "Connected": true, "LoggedIn": false, "Name": "" }, "message": "success" }
+ *
+ * IMPORTANT: `Connected: true` only means the WebSocket to WhatsApp servers is
+ * open. It does NOT mean the user has scanned the QR code. `LoggedIn: true` is
+ * the signal that the WhatsApp session is actually authenticated. We must
+ * require BOTH for the `connected` flag to be true; otherwise the onboarding
+ * UI will redirect to the dashboard before the QR code is scanned.
  */
 export async function getInstanceStatus(instanceName: string): Promise<InstanceStatus> {
   const raw: any = await evoFetch("/instance/status", "GET", undefined, instanceName);
 
   // Try documented shape first: { data: { Connected, LoggedIn, Name } }
   const d = raw?.data ?? raw;
-  const connected =
+
+  // Whether the WebSocket to WhatsApp servers is open (does NOT imply auth)
+  const wsOpen =
     d?.Connected === true ||
     d?.connected === true ||
     d?.state === "open" ||
     false;
+
+  // Whether the WhatsApp session is authenticated (QR scanned / pairing accepted)
   const loggedIn =
     d?.LoggedIn === true ||
     d?.loggedIn === true ||
     d?.logged_in === true ||
     false;
+
+  // Truly "connected" requires BOTH an open WS AND an authenticated session.
+  // Without this, the WS opening (before QR scan) would be reported as
+  // connected, causing a premature redirect in the onboarding UI.
+  const connected = wsOpen && loggedIn;
+
   const name = d?.Name || d?.name || "";
 
   let state: string;
   if (connected) {
     state = "open";
-  } else if (d?.state === "connecting" || d?.status === "connecting") {
+  } else if (wsOpen || d?.state === "connecting" || d?.status === "connecting") {
+    // WS is open but not authenticated, or actively connecting
     state = "connecting";
   } else {
     state = "close";
