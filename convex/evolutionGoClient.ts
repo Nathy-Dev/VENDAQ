@@ -16,41 +16,34 @@ type ConnectionArtifacts = {
   pairingCode: string | null;
 };
 
+type InstanceStatus = {
+  connected: boolean;
+  loggedIn: boolean;
+  name: string;
+  /** Normalized state string: "open" | "close" | "connecting" */
+  state: string;
+};
+
 type ProxySettings = {
-  host: string;
+  address: string;
   password: string;
   port: string;
   username: string;
 };
 
-type AdvancedSettings = {
-  alwaysOnline: boolean;
-  ignoreGroups: boolean;
-  ignoreStatus: boolean;
-  msgRejectCall: string;
-  readMessages: boolean;
-  rejectCall: boolean;
-};
-
 type CreateInstanceOptions = {
   displayName?: string;
-  instanceId: string;
+  instanceId?: string;
   token?: string;
-  advancedSettings?: Partial<AdvancedSettings>;
   proxy?: Partial<ProxySettings>;
-  qrcode?: boolean;
 };
 
 type ConnectInstanceOptions = {
   immediate?: boolean;
-  instanceId?: string;
-  natsEnable?: boolean;
   phone?: string;
-  rabbitmqEnable?: boolean;
   subscribe?: string[];
   token?: string;
   webhookUrl?: string;
-  websocketEnable?: boolean;
 };
 
 const DEFAULT_SUBSCRIBED_EVENTS = ["QRCODE_UPDATED", "CONNECTION_UPDATE", "MESSAGES_UPSERT"];
@@ -68,6 +61,11 @@ function logEvolutionGoDebug(message: string, data?: unknown): void {
   console.log(`[EvolutionGo debug] ${message}`, data);
 }
 
+/**
+ * Parses connection artifacts (QR code + pairing code) from any of the
+ * response shapes Evolution Go may return. Now handles the documented
+ * Pascal-cased fields: `Qrcode`, `Code`.
+ */
 function parseConnectionArtifacts(rawData: unknown): ConnectionArtifacts {
   const candidates = [
     rawData,
@@ -85,23 +83,34 @@ function parseConnectionArtifacts(rawData: unknown): ConnectionArtifacts {
     const data = candidate as Record<string, any> | null | undefined;
     if (!data || typeof data !== "object") continue;
 
-    const qr = data.qrcode || data.qr || data.qrCode;
+    // --- QR Code ---
+    // Evolution Go documented shape:  { Qrcode: "data:image/png;base64,...", Code: "2@..." }
+    // Also handle lowercase / nested variants for backwards compat.
+    const qr = data.qrcode || data.qr || data.qrCode || data.Qrcode;
     const instance = data.instance;
 
     const qrCode =
+      // Pascal-cased documented fields first
+      data.Qrcode ||
+      // Nested object variants
       qr?.base64 ||
       qr?.code ||
+      qr?.Qrcode ||
+      // Flat field variants
       data.base64 ||
       data.code ||
+      // Nested instance variants
       instance?.qrcode?.base64 ||
       instance?.qrcode?.code ||
       instance?.qrcode ||
+      instance?.Qrcode ||
       null;
 
     const pairingCode =
       data.pairingCode ||
       data.pairing_code ||
       data.pairCode ||
+      data.PairingCode ||
       qr?.pairingCode ||
       qr?.pairing_code ||
       instance?.pairingCode ||
@@ -170,17 +179,6 @@ export function getEvolutionWebhookUrl(): string | null {
   return `${siteUrl.replace(/\/$/, "")}/api/webhook/evolution`;
 }
 
-function getDefaultAdvancedSettings(): AdvancedSettings {
-  return {
-    alwaysOnline: false,
-    ignoreGroups: false,
-    ignoreStatus: false,
-    msgRejectCall: "",
-    readMessages: false,
-    rejectCall: false,
-  };
-}
-
 function normalizeProxySettings(proxy?: Partial<ProxySettings>): Partial<ProxySettings> | undefined {
   if (!proxy) return undefined;
 
@@ -189,10 +187,6 @@ function normalizeProxySettings(proxy?: Partial<ProxySettings>): Partial<ProxySe
   ) as Partial<ProxySettings>;
 
   return Object.keys(normalized).length > 0 ? normalized : undefined;
-}
-
-function serializeConnectFlag(value?: boolean): string {
-  return value ? "true" : "false";
 }
 
 export function generateEvolutionInstanceId(): string {
@@ -209,40 +203,39 @@ export function generateEvolutionInstanceId(): string {
   return `${hex.slice(0, 4).join("")}-${hex.slice(4, 6).join("")}-${hex.slice(6, 8).join("")}-${hex.slice(8, 10).join("")}-${hex.slice(10, 16).join("")}`;
 }
 
-function resolveInstanceToken(explicitToken?: string): string {
-  const { apiKey } = getEvolutionConfig();
-  return explicitToken || process.env.EVOLUTION_GO_INSTANCE_TOKEN || apiKey;
-}
 
+/**
+ * Builds the payload for POST /instance/create.
+ * Documented body: { name, token, proxy? }
+ */
 function buildCreateInstancePayload(instanceName: string, options?: CreateInstanceOptions): Record<string, unknown> {
   const proxy = normalizeProxySettings(options?.proxy);
-  const instanceId = options?.instanceId || generateEvolutionInstanceId();
 
   return {
-    instanceId,
     name: options?.displayName || instanceName,
-    advancedSettings: {
-      ...getDefaultAdvancedSettings(),
-      ...(options?.advancedSettings || {}),
-    },
     token: options?.token || instanceName,
     ...(proxy ? { proxy } : {}),
   };
 }
 
+/**
+ * Builds the payload for POST /instance/connect.
+ * Documented body: { immediate, phone, subscribe, webhookUrl }
+ */
 function buildConnectPayload(_instanceName: string, options?: ConnectInstanceOptions): Record<string, unknown> {
   return {
-    immediate: options?.immediate ?? false,
-    natsEnable: serializeConnectFlag(options?.natsEnable),
+    immediate: options?.immediate ?? true,
     phone: options?.phone || "",
-    rabbitmqEnable: serializeConnectFlag(options?.rabbitmqEnable),
     subscribe: options?.subscribe || DEFAULT_SUBSCRIBED_EVENTS,
     webhookUrl: options?.webhookUrl || getEvolutionWebhookUrl() || "",
-    websocketEnable: serializeConnectFlag(options?.websocketEnable),
   };
 }
 
-function buildPairPayload(_instanceName: string, phone: string, options?: { instanceId?: string; subscribe?: string[]; token?: string }): Record<string, unknown> {
+/**
+ * Builds the payload for POST /instance/pair.
+ * Documented body: { phone, subscribe }
+ */
+function buildPairPayload(_instanceName: string, phone: string, options?: { subscribe?: string[] }): Record<string, unknown> {
   return {
     phone,
     subscribe: options?.subscribe || DEFAULT_SUBSCRIBED_EVENTS,
@@ -314,29 +307,46 @@ export async function createInstance(instanceName: string, options?: CreateInsta
   return parseConnectionArtifacts(res);
 }
 
-/** Starts the connection flow for an instance. */
+/** Starts the connection flow for an instance. Returns the raw response for inspection. */
 export async function connectInstance(instanceName: string, options?: ConnectInstanceOptions): Promise<unknown> {
   const token = options?.token || instanceName;
   return await evoFetch("/instance/connect", "POST", buildConnectPayload(instanceName, options), token);
 }
 
 /** Requests a phone-based pairing code for an instance. */
-export async function pairInstance(instanceName: string, phone: string, options?: { instanceId?: string; subscribe?: string[]; token?: string }): Promise<ConnectionArtifacts> {
+export async function pairInstance(instanceName: string, phone: string, options?: { subscribe?: string[]; token?: string }): Promise<ConnectionArtifacts> {
   const token = options?.token || instanceName;
   const data = await evoFetch("/instance/pair", "POST", buildPairPayload(instanceName, phone, options), token);
   console.log(`[pairInstance raw data]`, JSON.stringify(data));
   return parseConnectionArtifacts(data);
 }
 
+/** Disconnects from an instance (keeps the instance, just drops the WS connection). */
+export async function disconnectInstance(instanceName: string, instanceToken?: string): Promise<void> {
+  const token = instanceToken || instanceName;
+  await evoFetch("/instance/disconnect", "POST", undefined, token);
+}
+
+/** Logs out from an instance (clears session/auth, next connect will need new QR). */
+export async function logoutInstance(instanceName: string, instanceToken?: string): Promise<void> {
+  const token = instanceToken || instanceName;
+  await evoFetch("/instance/logout", "DELETE", undefined, token);
+}
+
 /**
  * Configures webhook delivery for the instance by calling the connect endpoint
  * with the supplied webhook URL.
  */
-export async function setWebhook(instanceName: string, webhookUrl: string, instanceId: string): Promise<void> {
-  await connectInstance(instanceName, { instanceId, webhookUrl });
+export async function setWebhook(instanceName: string, webhookUrl: string): Promise<void> {
+  await connectInstance(instanceName, { webhookUrl });
 }
 
-/** Returns the current connection artifacts for an instance. */
+/**
+ * Returns the current connection artifacts (QR image + raw code) for an instance.
+ *
+ * Evolution Go GET /instance/qr response:
+ * { "data": { "Qrcode": "data:image/png;base64,...", "Code": "2@..." }, "message": "success" }
+ */
 export async function getConnectionArtifacts(instanceName: string): Promise<ConnectionArtifacts> {
   try {
     const data = await evoFetch("/instance/qr", "GET", undefined, instanceName);
@@ -379,10 +389,50 @@ export async function getQR(instanceName: string): Promise<string | null> {
   return qrCode;
 }
 
+/**
+ * Returns the full instance status from Evolution Go.
+ *
+ * GET /instance/status response:
+ * { "data": { "Connected": true, "LoggedIn": false, "Name": "" }, "message": "success" }
+ */
+export async function getInstanceStatus(instanceName: string): Promise<InstanceStatus> {
+  const raw: any = await evoFetch("/instance/status", "GET", undefined, instanceName);
+
+  // Try documented shape first: { data: { Connected, LoggedIn, Name } }
+  const d = raw?.data ?? raw;
+  const connected =
+    d?.Connected === true ||
+    d?.connected === true ||
+    d?.state === "open" ||
+    false;
+  const loggedIn =
+    d?.LoggedIn === true ||
+    d?.loggedIn === true ||
+    d?.logged_in === true ||
+    false;
+  const name = d?.Name || d?.name || "";
+
+  let state: string;
+  if (connected) {
+    state = "open";
+  } else if (d?.state === "connecting" || d?.status === "connecting") {
+    state = "connecting";
+  } else {
+    state = "close";
+  }
+
+  return { connected, loggedIn, name, state };
+}
+
 /** Returns the connection state: "open" | "close" | "connecting" */
 export async function getConnectionState(instanceName: string): Promise<string> {
-  const data: any = await evoFetch("/instance/status", "GET", undefined, instanceName);
-  return data?.instance?.state || data?.state || data?.status || "close";
+  try {
+    const status = await getInstanceStatus(instanceName);
+    return status.state;
+  } catch (e) {
+    console.warn(`[getConnectionState] error for ${instanceName}:`, e instanceof Error ? e.message : String(e));
+    return "close";
+  }
 }
 
 /**

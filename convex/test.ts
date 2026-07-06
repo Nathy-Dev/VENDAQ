@@ -16,7 +16,6 @@ export const testEvolution = action({
         let connectRes, connectErr;
         try {
             connectRes = await connectInstance(instanceName, {
-                instanceId,
                 webhookUrl: getEvolutionWebhookUrl() || "https://example.com/webhook",
                 subscribe: ["QRCODE_UPDATED", "CONNECTION_UPDATE", "MESSAGES_UPSERT"],
             });
@@ -27,7 +26,6 @@ export const testEvolution = action({
         let pairRes, pairErr;
         try {
             pairRes = await pairInstance(instanceName, "5511999999999", {
-                instanceId,
                 subscribe: ["QRCODE_UPDATED", "CONNECTION_UPDATE", "MESSAGES_UPSERT"],
             });
         } catch(e: any) {

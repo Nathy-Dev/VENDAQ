@@ -1821,7 +1821,7 @@ export const getMvpRevenueMetrics = query({
 /** Provisions a new Evolution Go instance for a business and sets the webhook. */
 export const provisionEvolutionGoInstance = action({
   args: { businessId: v.id("businesses") },
-  handler: async (ctx, args): Promise<{ instanceName: string }> => {
+  handler: async (ctx, args): Promise<{ instanceName: string; error?: string }> => {
     const business = await ctx.runQuery(api.whatsapp.getBusinessForAssistantAuth, {
       businessId: args.businessId,
     });
@@ -1830,6 +1830,12 @@ export const provisionEvolutionGoInstance = action({
     const preferredNumber = business?.assistantAdminPhones?.[0];
     const webhookUrl = evoClient.getEvolutionWebhookUrl();
     const subscribedEvents = ["QRCODE_UPDATED", "CONNECTION_UPDATE", "MESSAGES_UPSERT"];
+
+    // Mark business as pending right away so UI shows loading state
+    await ctx.runMutation(api.whatsapp.updateConnectionStatus, {
+      businessId: args.businessId,
+      status: "pending",
+    });
 
     await ctx.runMutation(api.businesses.setEvolutionInstance, {
       businessId: args.businessId,
@@ -1895,7 +1901,6 @@ export const provisionEvolutionGoInstance = action({
       try {
         const created = await evoClient.createInstance(instanceName, {
           displayName: business?.name || instanceName,
-          instanceId,
         });
         initialQr = created.qrCode;
         pairingCode = created.pairingCode;
@@ -1906,7 +1911,8 @@ export const provisionEvolutionGoInstance = action({
       } catch (e: any) {
         const message = e?.message || "";
         if (!message.toLowerCase().includes("already exists")) {
-          console.warn("[provisionEvolutionGoInstance] createInstance error:", message);
+          console.error("[provisionEvolutionGoInstance] createInstance error:", message);
+          return { instanceName, error: `Failed to create instance: ${message}` };
         } else {
           console.warn(`[provisionEvolutionGoInstance] Instance ${instanceName} already exists during create; continuing.`);
         }
@@ -1915,6 +1921,7 @@ export const provisionEvolutionGoInstance = action({
 
     try {
       const connectResult = await evoClient.connectInstance(instanceName, {
+        immediate: true,
         webhookUrl: webhookUrl || undefined,
         subscribe: subscribedEvents,
       });
@@ -1939,7 +1946,10 @@ export const provisionEvolutionGoInstance = action({
 
     // Poll for a short window so we capture the QR once the instance finishes booting.
     try {
-      const connection = await evoClient.waitForConnectionArtifacts(instanceName);
+      const connection = await evoClient.waitForConnectionArtifacts(instanceName, {
+        attempts: 8,
+        delayMs: 2000,
+      });
       console.log(`[provisionEvolutionGoInstance] waitForConnectionArtifacts result for ${instanceName}`, {
         hasQr: !!connection.qrCode,
         hasPairingCode: !!connection.pairingCode,
@@ -1969,12 +1979,6 @@ export const provisionEvolutionGoInstance = action({
       await ctx.runMutation(api.whatsapp.updatePairingCode, {
         businessId: args.businessId,
         pairingCode,
-      });
-    }
-    if (!initialQr && !pairingCode) {
-      await ctx.runMutation(api.whatsapp.updateConnectionStatus, {
-        businessId: args.businessId,
-        status: "pending",
       });
     }
 
@@ -2178,5 +2182,126 @@ export const getBusinessForAssistantAuth = query({
   args: { businessId: v.id("businesses") },
   handler: async (ctx, args) => {
     return await ctx.db.get(args.businessId);
+  },
+});
+
+/**
+ * Called by the onboarding UI to refresh the QR code when it expires.
+ * Re-triggers the connect flow on Evolution Go and fetches a fresh QR.
+ */
+export const refreshQRCode = action({
+  args: { businessId: v.id("businesses") },
+  handler: async (ctx, args): Promise<{ success: boolean; error?: string }> => {
+    const business = await ctx.runQuery(api.whatsapp.getBusinessForAssistantAuth, {
+      businessId: args.businessId,
+    });
+    if (!business) return { success: false, error: "Business not found" };
+
+    const instanceName = business.evolutionInstanceName;
+    if (!instanceName) {
+      return { success: false, error: "No Evolution Go instance configured. Please restart onboarding." };
+    }
+
+    // Mark as pending so UI shows the loading spinner
+    await ctx.runMutation(api.whatsapp.updateConnectionStatus, {
+      businessId: args.businessId,
+      status: "pending",
+    });
+
+    const webhookUrl = evoClient.getEvolutionWebhookUrl();
+    const subscribedEvents = ["QRCODE_UPDATED", "CONNECTION_UPDATE", "MESSAGES_UPSERT"];
+
+    // Re-trigger connect to get a fresh QR
+    try {
+      await evoClient.connectInstance(instanceName, {
+        immediate: true,
+        webhookUrl: webhookUrl || undefined,
+        subscribe: subscribedEvents,
+      });
+    } catch (e: any) {
+      console.warn("[refreshQRCode] connectInstance error:", e?.message);
+    }
+
+    // Optionally request a pairing code if the user provided a phone
+    const preferredNumber = business.assistantAdminPhones?.[0];
+    let pairingCode: string | null = null;
+    if (preferredNumber) {
+      try {
+        const pairResult = await evoClient.pairInstance(instanceName, preferredNumber, {
+          subscribe: subscribedEvents,
+        });
+        if (pairResult.pairingCode) {
+          pairingCode = pairResult.pairingCode;
+        }
+      } catch (e: any) {
+        console.warn("[refreshQRCode] pairInstance error:", e?.message);
+      }
+    }
+
+    // Poll for fresh QR
+    try {
+      const connection = await evoClient.waitForConnectionArtifacts(instanceName, {
+        attempts: 6,
+        delayMs: 2000,
+      });
+      if (connection.qrCode) {
+        await ctx.runMutation(api.whatsapp.updateQRCode, {
+          businessId: args.businessId,
+          qrCodeString: connection.qrCode,
+        });
+      }
+      if (connection.pairingCode) {
+        pairingCode = connection.pairingCode;
+      }
+    } catch (e: any) {
+      console.warn("[refreshQRCode] waitForConnectionArtifacts error:", e?.message);
+    }
+
+    if (pairingCode) {
+      await ctx.runMutation(api.whatsapp.updatePairingCode, {
+        businessId: args.businessId,
+        pairingCode,
+      });
+    }
+
+    return { success: true };
+  },
+});
+
+/**
+ * Called by the onboarding UI to poll the actual connection status from
+ * Evolution Go (not just the DB cache). Updates the DB accordingly.
+ */
+export const pollConnectionStatus = action({
+  args: { businessId: v.id("businesses") },
+  handler: async (ctx, args): Promise<{ state: string; connected: boolean }> => {
+    const business = await ctx.runQuery(api.whatsapp.getBusinessForAssistantAuth, {
+      businessId: args.businessId,
+    });
+    if (!business || !business.evolutionInstanceName) {
+      return { state: "close", connected: false };
+    }
+
+    try {
+      const status = await evoClient.getInstanceStatus(business.evolutionInstanceName);
+
+      // Update DB if the status has changed
+      if (status.connected && business.whatsappStatus !== "connected") {
+        await ctx.runMutation(api.whatsapp.updateConnectionStatus, {
+          businessId: args.businessId,
+          status: "connected",
+        });
+      } else if (!status.connected && business.whatsappStatus === "connected") {
+        await ctx.runMutation(api.whatsapp.updateConnectionStatus, {
+          businessId: args.businessId,
+          status: "disconnected",
+        });
+      }
+
+      return { state: status.state, connected: status.connected };
+    } catch (e: any) {
+      console.warn("[pollConnectionStatus] error:", e?.message);
+      return { state: "close", connected: false };
+    }
   },
 });

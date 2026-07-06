@@ -188,6 +188,7 @@
   display: flex;
   gap: 0.75rem;
   margin-top: 1.5rem;
+  overflow: hidden;
 }
 
 .warningIcon {
@@ -203,7 +204,7 @@
 
 .qrContainer {
   aspect-ratio: 1 / 1;
-  width: 12rem;
+  width: 14rem;
   background: rgba(255, 255, 255, 0.05);
   border: 2px dashed rgba(255, 255, 255, 0.1);
   border-radius: 1.5rem;
@@ -211,6 +212,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  transition: all 0.3s ease;
 }
 
 .backButton {
@@ -219,7 +221,7 @@
   color: #64748b;
   font-size: 0.875rem;
   font-weight: 500;
-  margin-top: 1.5rem;
+  margin-top: 0.5rem;
   cursor: pointer;
   transition: color 0.2s;
 }
@@ -326,6 +328,7 @@
   opacity: 0.1;
   border-radius: 9999px;
 }
+
 .modeButtonDisabled {
   opacity: 0.5 !important;
   cursor: not-allowed !important;
@@ -336,4 +339,206 @@
 .modeButtonDisabled:hover {
   transform: none !important;
   border-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+/* ============================================================
+   NEW: Spinner animation
+   ============================================================ */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.spinner {
+  animation: spin 1s linear infinite;
+}
+
+/* ============================================================
+   NEW: Connected success overlay
+   ============================================================ */
+.connectedOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(2, 6, 23, 0.92);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.connectedCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  text-align: center;
+  padding: 3rem;
+}
+
+.connectedTitle {
+  font-size: 1.75rem;
+  font-weight: 800;
+  color: white;
+  margin: 0;
+}
+
+.connectedSubtitle {
+  font-size: 0.95rem;
+  color: #94a3b8;
+  margin: 0;
+}
+
+.connectedProgressBar {
+  height: 4px;
+  background: linear-gradient(90deg, #10b981, #06b6d4);
+  border-radius: 9999px;
+  margin-top: 1rem;
+  box-shadow: 0 0 12px rgba(16, 185, 129, 0.5);
+}
+
+/* ============================================================
+   NEW: Error banner
+   ============================================================ */
+.errorBanner {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  border-radius: 0.75rem;
+  font-size: 0.8rem;
+  color: #f87171;
+  line-height: 1.4;
+}
+
+.errorBanner span {
+  flex: 1;
+}
+
+.retryLink {
+  background: none;
+  border: none;
+  color: #f87171;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+  font-size: 0.8rem;
+  white-space: nowrap;
+  padding: 0;
+}
+
+.retryLink:hover {
+  color: #fca5a5;
+}
+
+.retryLink:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ============================================================
+   NEW: Connection step layout
+   ============================================================ */
+.connectionHeader {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+/* ============================================================
+   NEW: Loading state inside QR container
+   ============================================================ */
+.loadingState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 1rem;
+}
+
+/* ============================================================
+   NEW: Status + refresh row
+   ============================================================ */
+.statusRow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.statusIndicator {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.refreshButton {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.625rem;
+  padding: 0.4rem 0.75rem;
+  color: #94a3b8;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.refreshButton:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #e2e8f0;
+}
+
+.refreshButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ============================================================
+   NEW: Instruction steps
+   ============================================================ */
+.instructionsList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  text-align: left;
+  padding: 0.75rem 1rem;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.instructionStep {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  font-size: 0.8rem;
+  color: #94a3b8;
+  line-height: 1.4;
+  margin: 0;
+}
+
+.instructionStep strong {
+  color: #e2e8f0;
+}
+
+.stepNumber {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 50%;
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+  font-size: 0.7rem;
+  font-weight: 700;
 }
