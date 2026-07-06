@@ -243,19 +243,19 @@ export default function DashboardPage() {
         {/* Reconnect Banner — for users who have an instance but are disconnected */}
         {showReconnectBanner && (
           <div className={styles.connectBanner} style={{
-            borderColor: isPending ? '#f59e0b' : business.whatsappStatus === "error" ? '#ef4444' : '#ef4444',
+            borderColor: (isReconnecting || isPending) ? '#f59e0b' : business.whatsappStatus === "error" ? '#ef4444' : '#ef4444',
             borderWidth: '1px',
             borderStyle: 'solid',
           }}>
             <div className={styles.connectInfo}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
-                <WifiOff size={18} style={{ color: isPending ? '#f59e0b' : '#ef4444' }} />
+                <WifiOff size={18} style={{ color: (isReconnecting || isPending) ? '#f59e0b' : '#ef4444' }} />
                 <h3 className={styles.connectTitle} style={{ margin: 0 }}>
-                  {isPending ? "Reconnecting..." : business.whatsappStatus === "error" ? "Connection Error" : "WhatsApp Disconnected"}
+                  {(isReconnecting || isPending) ? "Reconnecting..." : business.whatsappStatus === "error" ? "Connection Error" : "WhatsApp Disconnected"}
                 </h3>
               </div>
               <p className={styles.connectDesc}>
-                {isPending
+                {(isReconnecting || isPending)
                   ? "Waiting for you to scan the QR code. Open WhatsApp → Linked Devices → Link a Device."
                   : "Your WhatsApp session was disconnected. Tap Reconnect to link again — no need to start over."}
               </p>
@@ -264,7 +264,7 @@ export default function DashboardPage() {
               )}
 
               {/* Inline QR display during reconnect */}
-              {isReconnecting && isPending && (qrData?.qrCode || qrData?.pairingCode) && (
+              {isReconnecting && (qrData?.qrCode || qrData?.pairingCode) && (
                 <div style={{
                   marginTop: '0.75rem',
                   padding: '0.75rem',
@@ -308,9 +308,9 @@ export default function DashboardPage() {
               )}
 
               {/* Loading spinner during reconnect before QR arrives */}
-              {isReconnecting && isPending && !qrData?.qrCode && !qrData?.pairingCode && (
+              {isReconnecting && !qrData?.qrCode && !qrData?.pairingCode && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.5rem' }}>
-                  <Loader2 size={16} style={{ color: '#f59e0b', animation: 'spin 1s linear infinite' }} />
+                  <Loader2 size={16} className="animate-spin" style={{ color: '#f59e0b' }} />
                   <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Generating QR code...</span>
                 </div>
               )}
@@ -327,7 +327,7 @@ export default function DashboardPage() {
                   Reconnect
                 </button>
               )}
-              {isReconnecting && isPending && (
+              {isReconnecting && (
                 <button
                   onClick={() => { setIsReconnecting(false); }}
                   className={styles.connectButton}
