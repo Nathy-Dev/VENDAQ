@@ -1729,7 +1729,7 @@ export const getRecentActionOutcomes = query({
       .order("desc")
       .take(limit);
 
-    const result = [];
+    const result: (typeof outcomes[number] & { customerName: string })[] = [];
     for (const outcome of outcomes) {
       const customer = await ctx.db.get(outcome.customerId);
       result.push({
