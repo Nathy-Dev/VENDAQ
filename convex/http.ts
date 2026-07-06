@@ -123,10 +123,20 @@ http.route({
             }
           }
         } else if (rawState === "connecting") {
-          await ctx.runMutation(api.whatsapp.updateConnectionStatus, {
-            businessId: business._id,
-            status: "pending",
-          });
+          // Only set "pending" if the DB status is already "pending" (user-initiated
+          // reconnect flow). If DB says "disconnected", this is just Evolution Go
+          // trying to auto-reconnect after a disconnect — leave it as disconnected
+          // so the dashboard shows the Reconnect button instead of "Reconnecting…".
+          if (business.whatsappStatus === "pending") {
+            // Already pending — no need to write again
+          } else if (business.whatsappStatus === "connected") {
+            // Transitioning from connected → connecting means something went wrong
+            await ctx.runMutation(api.whatsapp.updateConnectionStatus, {
+              businessId: business._id,
+              status: "pending",
+            });
+          }
+          // If disconnected/error → ignore "connecting" (auto-reconnect noise)
         } else if (rawState === "close" || rawState === "closed") {
           // Explicit close state — mark as disconnected
           await ctx.runMutation(api.whatsapp.updateConnectionStatus, {
