@@ -56,14 +56,43 @@ http.route({
           });
         }
       } else if (eventUpper === "CONNECTION_UPDATE" || eventUpper === "CONNECTION") {
-        const rawState = (data as { state?: string; status?: string })?.state || (data as { status?: string })?.status || "close";
+        const rawState = (data as { state?: string; status?: string })?.state || (data as { status?: string })?.status || "";
+        const statusCode = (data as any)?.statusCode || (data as any)?.StatusCode || 0;
 
-        // CRITICAL: `state === "open"` in the webhook can mean the WebSocket
-        // to WhatsApp servers is open, but NOT that the user has scanned the
-        // QR code. We must verify with the full status endpoint (which checks
-        // `LoggedIn`) before marking the business as "connected".
-        if (rawState === "open") {
-          // Check if the webhook data itself carries auth confirmation
+        // Detect explicit logout/disconnect signals from Evolution Go
+        const isLogout =
+          (data as any)?.isLogout === true ||
+          (data as any)?.IsLogout === true ||
+          (data as any)?.is_logout === true;
+        const isDisconnect =
+          (data as any)?.isDisconnect === true ||
+          (data as any)?.IsDisconnect === true;
+
+        // statusCode 428 = "logged out from phone" (WhatsApp multi-device unlink)
+        // statusCode 401 = "unauthorized" (session revoked)
+        // statusCode 515 = "stream error" (persistent connection failure)
+        const isForceDisconnect =
+          isLogout ||
+          isDisconnect ||
+          statusCode === 428 ||
+          statusCode === 401 ||
+          statusCode === 515;
+
+        console.log(`[Webhook Evolution] CONNECTION_UPDATE for ${instance}: state=${rawState}, statusCode=${statusCode}, isLogout=${isLogout}, isDisconnect=${isDisconnect}`);
+
+        if (isForceDisconnect) {
+          // User explicitly logged out from phone or session was revoked.
+          // Immediately mark as disconnected — no need to verify.
+          console.log(`[Webhook Evolution] Force disconnect detected for ${instance} (statusCode=${statusCode}, isLogout=${isLogout})`);
+          await ctx.runMutation(api.whatsapp.updateConnectionStatus, {
+            businessId: business._id,
+            status: "disconnected",
+          });
+        } else if (rawState === "open") {
+          // CRITICAL: `state === "open"` in the webhook can mean the WebSocket
+          // to WhatsApp servers is open, but NOT that the user has scanned the
+          // QR code. We must verify with the full status endpoint (which checks
+          // `LoggedIn`) before marking the business as "connected".
           const webhookLoggedIn =
             (data as any)?.loggedIn === true ||
             (data as any)?.LoggedIn === true ||
@@ -98,13 +127,27 @@ http.route({
             businessId: business._id,
             status: "pending",
           });
-        } else {
-          // "close" or any other state
+        } else if (rawState === "close" || rawState === "closed") {
+          // Explicit close state — mark as disconnected
           await ctx.runMutation(api.whatsapp.updateConnectionStatus, {
             businessId: business._id,
             status: "disconnected",
           });
+        } else if (rawState) {
+          // Unknown state — log it and verify with Evolution Go
+          console.warn(`[Webhook Evolution] Unknown connection state "${rawState}" for ${instance}, verifying...`);
+          try {
+            const fullStatus = await evoClient.getInstanceStatus(instance);
+            const isFullyAuthenticated = fullStatus.connected && fullStatus.loggedIn;
+            await ctx.runMutation(api.whatsapp.updateConnectionStatus, {
+              businessId: business._id,
+              status: isFullyAuthenticated ? "connected" : "disconnected",
+            });
+          } catch (verifyError) {
+            console.warn("[Webhook Evolution] Could not verify unknown state:", verifyError);
+          }
         }
+        // If rawState is empty and not a force disconnect, ignore — likely a partial/noise event
       } else if (eventUpper === "MESSAGES_UPSERT" || eventUpper === "MESSAGE") {
         // Evolution Go sends individual message objects; Node.js wraps in { messages: [] }
         const messages = (data as { messages?: unknown[] })?.messages || [data];

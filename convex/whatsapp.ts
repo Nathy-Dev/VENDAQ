@@ -2314,3 +2314,208 @@ export const pollConnectionStatus = action({
     }
   },
 });
+
+/**
+ * Lightweight health check called by the dashboard to detect disconnections.
+ * Unlike pollConnectionStatus which is for onboarding, this is optimized for
+ * the dashboard: it only updates the DB when there's a state CHANGE to avoid
+ * unnecessary writes, and it handles instance-not-found gracefully.
+ */
+export const checkConnectionHealth = action({
+  args: { businessId: v.id("businesses") },
+  handler: async (ctx, args): Promise<{ status: "connected" | "disconnected" | "error" | "pending"; changed: boolean }> => {
+    const business = await ctx.runQuery(api.whatsapp.getBusinessForAssistantAuth, {
+      businessId: args.businessId,
+    });
+
+    // No business or no instance configured — nothing to check
+    if (!business || !business.evolutionInstanceName) {
+      return { status: business?.whatsappStatus as any || "disconnected", changed: false };
+    }
+
+    const currentDbStatus = business.whatsappStatus;
+
+    try {
+      // First check if instance still exists on Evolution Go
+      const exists = await evoClient.instanceExists(business.evolutionInstanceName);
+      if (!exists) {
+        // Instance was deleted from Evolution Go but DB still thinks it's connected
+        if (currentDbStatus === "connected" || currentDbStatus === "pending") {
+          await ctx.runMutation(api.whatsapp.updateConnectionStatus, {
+            businessId: args.businessId,
+            status: "disconnected",
+          });
+          return { status: "disconnected", changed: true };
+        }
+        return { status: "disconnected", changed: false };
+      }
+
+      const status = await evoClient.getInstanceStatus(business.evolutionInstanceName);
+      const isFullyAuthenticated = status.connected && status.loggedIn;
+
+      let newStatus: "connected" | "disconnected" | "pending";
+      if (isFullyAuthenticated) {
+        newStatus = "connected";
+      } else if (status.state === "connecting") {
+        newStatus = "pending";
+      } else {
+        newStatus = "disconnected";
+      }
+
+      // Only write to DB if the status actually changed
+      if (newStatus !== currentDbStatus) {
+        await ctx.runMutation(api.whatsapp.updateConnectionStatus, {
+          businessId: args.businessId,
+          status: newStatus,
+        });
+        return { status: newStatus, changed: true };
+      }
+
+      return { status: newStatus, changed: false };
+    } catch (e: any) {
+      console.warn("[checkConnectionHealth] error:", e?.message);
+      // On network errors, don't change DB state — could be a transient issue
+      return { status: currentDbStatus as any || "disconnected", changed: false };
+    }
+  },
+});
+
+/**
+ * Reconnects an existing Evolution Go instance that was disconnected.
+ * Unlike provisionEvolutionGoInstance, this does NOT create a new instance —
+ * it reuses the existing one, which means the user doesn't need to go through
+ * full onboarding again. It just triggers a new connect/QR flow.
+ *
+ * Returns:
+ * - { success: true, needsQR: true } if a QR code is needed (user must scan)
+ * - { success: true, needsQR: false } if already connected (e.g., session persisted)
+ * - { success: false, error: "..." } on failure
+ */
+export const reconnectInstance = action({
+  args: { businessId: v.id("businesses") },
+  handler: async (ctx, args): Promise<{ success: boolean; needsQR: boolean; error?: string }> => {
+    const business = await ctx.runQuery(api.whatsapp.getBusinessForAssistantAuth, {
+      businessId: args.businessId,
+    });
+
+    if (!business) {
+      return { success: false, needsQR: false, error: "Business not found" };
+    }
+
+    const instanceName = business.evolutionInstanceName;
+    if (!instanceName) {
+      return { success: false, needsQR: false, error: "No Evolution Go instance configured. Please complete onboarding first." };
+    }
+
+    // Mark as pending immediately so dashboard UI updates
+    await ctx.runMutation(api.whatsapp.updateConnectionStatus, {
+      businessId: args.businessId,
+      status: "pending",
+    });
+
+    const webhookUrl = evoClient.getEvolutionWebhookUrl();
+    const subscribedEvents = ["QRCODE_UPDATED", "CONNECTION_UPDATE", "MESSAGES_UPSERT"];
+
+    try {
+      // Check if instance still exists on Evolution Go
+      const exists = await evoClient.instanceExists(instanceName);
+
+      if (!exists) {
+        // Instance was removed from Evolution Go — need to recreate it
+        console.log(`[reconnectInstance] Instance ${instanceName} not found on Evolution Go, recreating...`);
+        try {
+          await evoClient.createInstance(instanceName, {
+            displayName: business.name || instanceName,
+          });
+        } catch (createErr: any) {
+          const msg = createErr?.message || "";
+          if (!msg.toLowerCase().includes("already exists")) {
+            console.error("[reconnectInstance] createInstance error:", msg);
+            await ctx.runMutation(api.whatsapp.updateConnectionStatus, {
+              businessId: args.businessId,
+              status: "disconnected",
+            });
+            return { success: false, needsQR: false, error: `Failed to recreate instance: ${msg}` };
+          }
+        }
+      } else {
+        // Check if it's already connected (e.g., the session persisted)
+        try {
+          const status = await evoClient.getInstanceStatus(instanceName);
+          if (status.connected && status.loggedIn) {
+            console.log(`[reconnectInstance] Instance ${instanceName} is already connected!`);
+            await ctx.runMutation(api.whatsapp.updateConnectionStatus, {
+              businessId: args.businessId,
+              status: "connected",
+            });
+            return { success: true, needsQR: false };
+          }
+        } catch (statusErr: any) {
+          console.warn("[reconnectInstance] getInstanceStatus error:", statusErr?.message);
+        }
+      }
+
+      // Trigger connect to get a fresh QR
+      try {
+        await evoClient.connectInstance(instanceName, {
+          immediate: true,
+          webhookUrl: webhookUrl || undefined,
+          subscribe: subscribedEvents,
+        });
+      } catch (connectErr: any) {
+        console.warn("[reconnectInstance] connectInstance error:", connectErr?.message);
+      }
+
+      // If user provided a phone number, also request a pairing code
+      const preferredNumber = business.assistantAdminPhones?.[0];
+      let pairingCode: string | null = null;
+      if (preferredNumber) {
+        try {
+          const pairResult = await evoClient.pairInstance(instanceName, preferredNumber, {
+            subscribe: subscribedEvents,
+          });
+          if (pairResult.pairingCode) {
+            pairingCode = pairResult.pairingCode;
+          }
+        } catch (pairErr: any) {
+          console.warn("[reconnectInstance] pairInstance error:", pairErr?.message);
+        }
+      }
+
+      // Poll for QR code
+      try {
+        const connection = await evoClient.waitForConnectionArtifacts(instanceName, {
+          attempts: 6,
+          delayMs: 2000,
+        });
+        if (connection.qrCode) {
+          await ctx.runMutation(api.whatsapp.updateQRCode, {
+            businessId: args.businessId,
+            qrCodeString: connection.qrCode,
+          });
+        }
+        if (connection.pairingCode) {
+          pairingCode = connection.pairingCode;
+        }
+      } catch (qrErr: any) {
+        console.warn("[reconnectInstance] waitForConnectionArtifacts error:", qrErr?.message);
+      }
+
+      if (pairingCode) {
+        await ctx.runMutation(api.whatsapp.updatePairingCode, {
+          businessId: args.businessId,
+          pairingCode,
+        });
+      }
+
+      return { success: true, needsQR: true };
+    } catch (e: any) {
+      console.error("[reconnectInstance] Unexpected error:", e?.message);
+      await ctx.runMutation(api.whatsapp.updateConnectionStatus, {
+        businessId: args.businessId,
+        status: "disconnected",
+      });
+      return { success: false, needsQR: false, error: e?.message || "Reconnection failed" };
+    }
+  },
+});

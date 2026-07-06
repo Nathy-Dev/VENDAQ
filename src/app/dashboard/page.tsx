@@ -1,22 +1,29 @@
 "use client";
 
 import { useSession } from "next-auth/react";
-import { useQuery } from "convex/react";
+import { useQuery, useAction } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 
 import { useRouter } from "next/navigation";
-import { useState, useEffect } from "react";
-import { AlertTriangle, Banknote, MessageSquare, Reply, Send, type LucideIcon } from "lucide-react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { AlertTriangle, Banknote, MessageSquare, Reply, Send, Wifi, WifiOff, Loader2, RefreshCcw, type LucideIcon } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import styles from "./dashboard.module.css";
 import Loader from "@/components/Loader";
 import LeadPipeline from "@/components/LeadPipeline";
 import { PooledOrders } from "@/types";
 
+/** How often (ms) the dashboard checks connection health against Evolution Go. */
+const HEALTH_CHECK_INTERVAL_MS = 30_000; // 30 seconds
+/** How often (ms) to poll while reconnecting (waiting for QR scan). */
+const RECONNECT_POLL_INTERVAL_MS = 8_000;
+
 export default function DashboardPage() {
   const { data: session, status: sessionStatus } = useSession();
   const router = useRouter();
   const [period, setPeriod] = useState<"today" | "week" | "month">("today");
+  const [isReconnecting, setIsReconnecting] = useState(false);
+  const [reconnectError, setReconnectError] = useState<string | null>(null);
 
   const business = useQuery(api.businesses.getBusiness,
     session?.user?.id ? { ownerId: session.user.id } : "skip"
@@ -30,12 +37,123 @@ export default function DashboardPage() {
     business ? { businessId: business._id, period } : "skip"
   );
 
+  // Reactive QR data — used during reconnect flow
+  const qrData = useQuery(api.whatsapp.getBusinessQR,
+    business && business.whatsappStatus !== "connected" ? { businessId: business._id } : "skip"
+  );
+
+  const checkHealth = useAction(api.whatsapp.checkConnectionHealth);
+  const reconnectInstance = useAction(api.whatsapp.reconnectInstance);
+  const pollStatus = useAction(api.whatsapp.pollConnectionStatus);
+
+  // ---- Connection health polling ----
+  const healthIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const reconnectPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Health check: runs every 30s when connected to detect disconnections
+  useEffect(() => {
+    if (!business || business.whatsappStatus !== "connected") {
+      // Stop health checking if not connected
+      if (healthIntervalRef.current) {
+        clearInterval(healthIntervalRef.current);
+        healthIntervalRef.current = null;
+      }
+      return;
+    }
+
+    // Start health checking
+    const doCheck = async () => {
+      try {
+        await checkHealth({ businessId: business._id });
+      } catch (_e) {
+        // Silently ignore — transient errors shouldn't panic the UI
+      }
+    };
+
+    // Run one check immediately, then set interval
+    doCheck();
+    healthIntervalRef.current = setInterval(doCheck, HEALTH_CHECK_INTERVAL_MS);
+
+    return () => {
+      if (healthIntervalRef.current) {
+        clearInterval(healthIntervalRef.current);
+        healthIntervalRef.current = null;
+      }
+    };
+  }, [business, checkHealth]);
+
+  // Reconnect polling: runs every 8s while pending (waiting for QR scan)
+  useEffect(() => {
+    if (!business || business.whatsappStatus !== "pending" || !isReconnecting) {
+      if (reconnectPollRef.current) {
+        clearInterval(reconnectPollRef.current);
+        reconnectPollRef.current = null;
+      }
+      return;
+    }
+
+    reconnectPollRef.current = setInterval(async () => {
+      try {
+        const result = await pollStatus({ businessId: business._id });
+        if (result.connected) {
+          setIsReconnecting(false);
+        }
+      } catch (_e) {
+        // Silently ignore
+      }
+    }, RECONNECT_POLL_INTERVAL_MS);
+
+    return () => {
+      if (reconnectPollRef.current) {
+        clearInterval(reconnectPollRef.current);
+        reconnectPollRef.current = null;
+      }
+    };
+  }, [business?._id, business?.whatsappStatus, isReconnecting, pollStatus]);
+
+  // Reset reconnecting state when status changes to connected.
+  // We check the previous status to avoid calling setState on every render.
+  const prevWhatsappStatus = useRef(business?.whatsappStatus);
+  useEffect(() => {
+    const currentStatus = business?.whatsappStatus;
+    if (prevWhatsappStatus.current !== currentStatus) {
+      prevWhatsappStatus.current = currentStatus;
+      if (currentStatus === "connected" && isReconnecting) {
+        // Schedule state update for next tick to avoid cascading render
+        queueMicrotask(() => {
+          setIsReconnecting(false);
+          setReconnectError(null);
+        });
+      }
+    }
+  }, [business?.whatsappStatus, isReconnecting]);
+
   useEffect(() => {
     if (sessionStatus === "unauthenticated") {
       router.push("/login");
     }
   }, [sessionStatus, router]);
 
+  const handleReconnect = useCallback(async () => {
+    if (!business || isReconnecting) return;
+    setIsReconnecting(true);
+    setReconnectError(null);
+
+    try {
+      const result = await reconnectInstance({ businessId: business._id });
+      if (!result.success) {
+        setReconnectError(result.error || "Reconnection failed. Please try again.");
+        setIsReconnecting(false);
+      } else if (!result.needsQR) {
+        // Already connected — the reactive query will update the UI
+        setIsReconnecting(false);
+      }
+      // If needsQR is true, we stay in reconnecting state and show QR
+    } catch (e) {
+      setReconnectError(e instanceof Error ? e.message : "Reconnection failed. Please try again.");
+      setIsReconnecting(false);
+    }
+  }, [business, isReconnecting, reconnectInstance]);
 
   const isBusinessLoading = sessionStatus === "authenticated" && session?.user?.id && business === undefined;
 
@@ -46,6 +164,13 @@ export default function DashboardPage() {
   if (sessionStatus === "unauthenticated") {
     return null;
   }
+
+  // Determine if this is a reconnect scenario vs first-time setup
+  const hasExistingInstance = !!business?.evolutionInstanceName;
+  const isDisconnected = business && business.whatsappStatus !== "connected";
+  const isPending = business?.whatsappStatus === "pending";
+  const showReconnectBanner = isDisconnected && hasExistingInstance;
+  const showOnboardingBanner = !business || (isDisconnected && !hasExistingInstance);
 
   return (
     <div className={styles.container}>
@@ -107,16 +232,115 @@ export default function DashboardPage() {
           />
         </div>
 
-        {(!business || business.whatsappStatus !== "connected") && (
+        {/* Reconnect Banner — for users who have an instance but are disconnected */}
+        {showReconnectBanner && (
+          <div className={styles.connectBanner} style={{
+            borderColor: isPending ? '#f59e0b' : business.whatsappStatus === "error" ? '#ef4444' : '#ef4444',
+            borderWidth: '1px',
+            borderStyle: 'solid',
+          }}>
+            <div className={styles.connectInfo}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
+                <WifiOff size={18} style={{ color: isPending ? '#f59e0b' : '#ef4444' }} />
+                <h3 className={styles.connectTitle} style={{ margin: 0 }}>
+                  {isPending ? "Reconnecting..." : business.whatsappStatus === "error" ? "Connection Error" : "WhatsApp Disconnected"}
+                </h3>
+              </div>
+              <p className={styles.connectDesc}>
+                {isPending
+                  ? "Waiting for you to scan the QR code. Open WhatsApp → Linked Devices → Link a Device."
+                  : "Your WhatsApp session was disconnected. Tap Reconnect to link again — no need to start over."}
+              </p>
+              {reconnectError && (
+                <p style={{ color: '#ef4444', fontSize: '0.8rem', marginTop: '0.25rem' }}>{reconnectError}</p>
+              )}
+
+              {/* Inline QR display during reconnect */}
+              {isReconnecting && isPending && (qrData?.qrCode || qrData?.pairingCode) && (
+                <div style={{
+                  marginTop: '0.75rem',
+                  padding: '0.75rem',
+                  background: 'rgba(255,255,255,0.03)',
+                  borderRadius: '0.75rem',
+                  border: '1px solid rgba(255,255,255,0.06)',
+                }}>
+                  {qrData.pairingCode ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                      <p style={{ fontSize: '0.8rem', color: '#94a3b8', margin: 0 }}>Enter this pairing code on WhatsApp:</p>
+                      <div style={{ display: 'flex', gap: '0.35rem', justifyContent: 'center' }}>
+                        {qrData.pairingCode.split("").map((char, i) => (
+                          <span key={i} style={{
+                            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                            width: '2rem', height: '2.5rem', background: 'rgba(16,185,129,0.1)',
+                            border: '1px solid rgba(16,185,129,0.3)', borderRadius: '0.375rem',
+                            color: '#10b981', fontWeight: 700, fontSize: '1.1rem', fontFamily: 'monospace',
+                          }}>{char}</span>
+                        ))}
+                      </div>
+                    </div>
+                  ) : qrData.qrCode ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
+                      <p style={{ fontSize: '0.8rem', color: '#94a3b8', margin: 0 }}>Scan this QR with WhatsApp:</p>
+                      <div style={{ background: 'white', padding: '0.5rem', borderRadius: '0.5rem', display: 'inline-block' }}>
+                        {(qrData.qrCode.startsWith('data:image') || qrData.qrCode.length > 500) ? (
+                          <img
+                            src={qrData.qrCode.startsWith('data:image') ? qrData.qrCode : `data:image/png;base64,${qrData.qrCode}`}
+                            alt="WhatsApp QR Code"
+                            style={{ width: 160, height: 160 }}
+                          />
+                        ) : (
+                          <div style={{ width: 160, height: 160, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem', color: '#64748b' }}>QR Code Ready</div>
+                        )}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              )}
+
+              {/* Loading spinner during reconnect before QR arrives */}
+              {isReconnecting && isPending && !qrData?.qrCode && !qrData?.pairingCode && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.5rem' }}>
+                  <Loader2 size={16} style={{ color: '#f59e0b', animation: 'spin 1s linear infinite' }} />
+                  <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Generating QR code...</span>
+                </div>
+              )}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', flexShrink: 0 }}>
+              {!isReconnecting && !isPending && (
+                <button
+                  onClick={handleReconnect}
+                  className={styles.connectButton}
+                  disabled={isReconnecting}
+                  style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+                >
+                  <RefreshCcw size={16} />
+                  Reconnect
+                </button>
+              )}
+              {isReconnecting && isPending && (
+                <button
+                  onClick={() => { setIsReconnecting(false); }}
+                  className={styles.connectButton}
+                  style={{ background: 'rgba(255,255,255,0.05)', color: '#94a3b8', fontSize: '0.8rem' }}
+                >
+                  Cancel
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* First-time onboarding banner — no existing instance */}
+        {showOnboardingBanner && (
           <div className={styles.connectBanner}>
             <div className={styles.connectInfo}>
               <h3 className={styles.connectTitle}>
-                {!business ? "Welcome to PIPELIXR! Connect your WhatsApp" : business.whatsappStatus === "error" ? "Connection Error" : "WhatsApp Not Connected"}
+                {!business ? "Welcome to PIPELIXR! Connect your WhatsApp" : "Set Up WhatsApp Connection"}
               </h3>
               <p className={styles.connectDesc}>
                 {!business
                   ? "Finalize your setup to start capturing leads and managing your pipeline automatically."
-                  : "Reconnect your WhatsApp to continue syncing your messages and leads."}
+                  : "Complete the setup to connect your WhatsApp and start syncing messages."}
               </p>
             </div>
             <button
@@ -133,9 +357,19 @@ export default function DashboardPage() {
           <div className="flex flex-col gap-6">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-bold text-slate-500 uppercase tracking-widest px-1">Lead Pipeline</h3>
-              {business?.whatsappStatus === "connected" && (
-                <span className="text-[10px] bg-emerald-500/10 text-emerald-500 px-2 py-1 rounded-full font-bold">LIVE SYNC ACTIVE</span>
-              )}
+              {business?.whatsappStatus === "connected" ? (
+                <span className="text-[10px] bg-emerald-500/10 text-emerald-500 px-2 py-1 rounded-full font-bold flex items-center gap-1">
+                  <Wifi size={10} /> LIVE SYNC ACTIVE
+                </span>
+              ) : business?.whatsappStatus === "pending" ? (
+                <span className="text-[10px] bg-amber-500/10 text-amber-500 px-2 py-1 rounded-full font-bold flex items-center gap-1">
+                  <Loader2 size={10} style={{ animation: 'spin 1s linear infinite' }} /> CONNECTING...
+                </span>
+              ) : business?.evolutionInstanceName ? (
+                <span className="text-[10px] bg-red-500/10 text-red-500 px-2 py-1 rounded-full font-bold flex items-center gap-1">
+                  <WifiOff size={10} /> DISCONNECTED
+                </span>
+              ) : null}
             </div>
             <LeadPipeline orders={orders} isLoading={orders === undefined} />
           </div>

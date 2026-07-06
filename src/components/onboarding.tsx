@@ -129,8 +129,25 @@ export default function Onboarding({ initialStep = 0 }: OnboardingProps) {
   }, [qrData?.status, step, router, stopPolling]);
 
   // ---- Resume state from existing business ----
+  // If user already has an Evolution Go instance configured (i.e., they've been
+  // through onboarding before), skip feature slides and mode selection and go
+  // directly to the connection step. This avoids making users re-do the entire
+  // onboarding flow just to reconnect.
   React.useEffect(() => {
-    if (!existingBusiness || step < 3) return;
+    if (!existingBusiness) return;
+
+    // If they already have an instance, jump straight to QR step
+    if (existingBusiness.evolutionInstanceName) {
+      setSelectedMode(existingBusiness.whatsappMode === "unofficial" ? "unofficial" : "unofficial");
+      setTosAccepted(true); // They already accepted TOS during initial onboarding
+      if (step < 4) {
+        setStep(4);
+      }
+      return;
+    }
+
+    // Legacy behavior: resume from mode selection if they started but didn't finish
+    if (step < 3) return;
     if (existingBusiness.whatsappMode === "unofficial") {
       setSelectedMode("unofficial");
       if (initialStep >= 3) {
