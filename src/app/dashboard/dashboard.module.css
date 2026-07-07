@@ -70,7 +70,7 @@
 
 @media (min-width: 1280px) {
   .statsGrid {
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
 
@@ -179,5 +179,72 @@
   }
   .connectButton {
     width: 100%;
+  }
+}
+
+/* ── Lost Revenue Hero Card ── */
+.lostRevenueHero {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  padding: 1.5rem 2rem;
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.08) 0%, rgba(239, 68, 68, 0.02) 100%);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  border-radius: 1rem;
+  transition: border-color 0.2s;
+}
+
+.lostRevenueHero:hover {
+  border-color: rgba(239, 68, 68, 0.45);
+}
+
+.lostRevenueIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 0.875rem;
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+  flex-shrink: 0;
+}
+
+.lostRevenueContent {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.lostRevenueLabel {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #ef4444;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.lostRevenueValue {
+  font-size: 2.25rem;
+  font-weight: 800;
+  color: #fca5a5;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+
+.lostRevenueSub {
+  font-size: 0.8rem;
+  color: #94a3b8;
+  margin-top: 0.25rem;
+}
+
+@media (max-width: 768px) {
+  .lostRevenueHero {
+    flex-direction: column;
+    text-align: center;
+    padding: 1.25rem;
+  }
+  .lostRevenueValue {
+    font-size: 1.75rem;
   }
 }

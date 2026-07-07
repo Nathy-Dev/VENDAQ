@@ -81,6 +81,12 @@ export const updateBusinessDetails = mutation({
     followUpTemplate: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    // PRD: Response window must be between 30 minutes and 1440 minutes (24 hours)
+    if (args.responseWindowMinutes !== undefined) {
+      if (args.responseWindowMinutes < 30 || args.responseWindowMinutes > 1440) {
+        throw new Error("Response window must be between 30 minutes and 24 hours (1440 minutes).");
+      }
+    }
     const { businessId, ...updates } = args;
     const filtered = Object.fromEntries(
       Object.entries(updates).filter(([, v]) => v !== undefined)

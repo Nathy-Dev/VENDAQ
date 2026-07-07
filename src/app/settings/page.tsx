@@ -228,11 +228,16 @@ export default function SettingsPage() {
                       <input 
                         type="number" 
                         value={responseWindow}
-                        onChange={(e) => setResponseWindow(parseInt(e.target.value) || 0)}
+                        min={30}
+                        max={1440}
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value) || 0;
+                          setResponseWindow(Math.max(0, Math.min(1440, val)));
+                        }}
                         className={styles.fieldInput}
-                        min="1"
                         required
                       />
+                      <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Min: 30 min · Max: 1440 min (24 hours)</span>
                     </div>
 
                     <div className={styles.fieldGroup}>

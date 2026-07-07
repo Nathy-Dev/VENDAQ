@@ -271,7 +271,11 @@ export const receiveMessage = mutation({
       }
     }
 
-    // 2. Find or create the customer (or group)
+    // 2. Pre-classify message to decide whether to create a customer record.
+    // PRD: Only BUYING_SIGNAL and GENERAL_INQUIRY create lead records. NOISE is discarded.
+    const { classification, matchedKeywords } = classifyMessage(args.content, args.messageType || "text");
+
+    // 3. Find or create the customer (or group)
     let customer = await ctx.db
       .query("customers")
       .withIndex("by_business_phone", (q) => 
@@ -280,6 +284,11 @@ export const receiveMessage = mutation({
       .unique();
 
     if (!customer) {
+      // For NOISE from an unknown sender, don't create a lead record at all
+      if (!args.fromMe && classification === "NOISE") {
+        console.log(`[receiveMessage] NOISE message from unknown sender ${args.sender} — no lead record created.`);
+        return { success: true, discarded: true };
+      }
       const customerId = await ctx.db.insert("customers", {
         businessId: args.businessId,
         phone: args.sender,
@@ -321,7 +330,12 @@ export const receiveMessage = mutation({
 
     if (!customer) return;
 
-    const { classification } = classifyMessage(args.content, args.messageType || "text");
+    // For existing customers receiving NOISE, still skip interaction recording
+    if (!args.fromMe && classification === "NOISE") {
+      console.log(`[receiveMessage] NOISE message from existing sender ${args.sender} — skipping interaction.`);
+      return { success: true, discarded: true };
+    }
+
     const memoryPatch = inferMemoryPatch(args.content);
     if (!args.fromMe) {
       await ctx.db.patch(customer._id, {
@@ -343,6 +357,7 @@ export const receiveMessage = mutation({
       messageType: args.messageType || "text",
       mediaId: args.mediaId,
       fileName: args.fileName,
+      matchedKeywords: matchedKeywords.length > 0 ? matchedKeywords : undefined,
       whatsappMessageId: args.whatsappMessageId,
       intent: classification,
     });
@@ -2374,6 +2389,21 @@ export const checkConnectionHealth = action({
           businessId: args.businessId,
           status: newStatus,
         });
+
+        // PRD: Fire disconnection alert if session goes down
+        if (newStatus === "disconnected" && currentDbStatus === "connected") {
+          await ctx.runMutation(api.safeguards.createDisconnectionAlert, {
+            businessId: args.businessId,
+          });
+        }
+
+        // PRD: Resolve alerts when connection is restored
+        if (newStatus === "connected") {
+          await ctx.runMutation(api.safeguards.resolveDisconnectionAlerts, {
+            businessId: args.businessId,
+          });
+        }
+
         return { status: newStatus, changed: true };
       }
 

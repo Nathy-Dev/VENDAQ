@@ -1,3 +1,4 @@
+
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
@@ -108,6 +109,7 @@ export default defineSchema({
     mediaUrl: v.optional(v.string()),
     mediaId: v.optional(v.string()), // Convex storage ID
     fileName: v.optional(v.string()),
+    matchedKeywords: v.optional(v.array(v.string())), // Keywords that triggered the classification
     whatsappMessageId: v.optional(v.string()), // Unique ID from Baileys
     isEdited: v.optional(v.boolean()),
   }).index("by_business", ["businessId"])
@@ -216,6 +218,16 @@ export default defineSchema({
   }).index("by_business_sent", ["businessId", "sentAt"])
     .index("by_customer_status", ["customerId", "status"]),
 
+
+  disconnectionAlerts: defineTable({
+    businessId: v.id("businesses"),
+    detectedAt: v.number(),
+    resolvedAt: v.optional(v.number()),
+    status: v.union(v.literal("active"), v.literal("resolved"), v.literal("dismissed")),
+    notifiedAt: v.optional(v.number()), // When the in-app notification was shown
+    durationMinutes: v.optional(v.number()), // How long disconnected before detected
+  }).index("by_business_status", ["businessId", "status"])
+    .index("by_business_detected", ["businessId", "detectedAt"]),
 
   users: defineTable({
     name: v.optional(v.string()),

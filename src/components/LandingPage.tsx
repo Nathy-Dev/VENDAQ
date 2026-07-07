@@ -667,16 +667,17 @@ export default function LandingPage() {
             >
               <span className={styles.pricingTier}>Starter</span>
               <div className={styles.pricingPrice}>
-                Free <span className={styles.pricingPriceSuffix}>forever</span>
+                ₦15,000 <span className={styles.pricingPriceSuffix}>/ month</span>
               </div>
-              <p className={styles.pricingDesc}>Perfect to get started and experience the power of PIPELIXR.</p>
+              <p className={styles.pricingDesc}>Perfect for small businesses starting to organize their WhatsApp sales.</p>
               <ul className={styles.pricingFeatures}>
                 {[
-                  "50 customer profiles",
-                  "Basic sales pipeline",
-                  "Chat history & search",
-                  "Manual follow-up reminders",
-                  "WhatsApp connection",
+                  "Up to 100 leads/month",
+                  "WhatsApp connection (Evolution Go)",
+                  "Lead pipeline & funnel tracking",
+                  "Keyword-based message classification",
+                  "Buying signal detection",
+                  "Basic follow-up reminders",
                 ].map((f) => (
                   <li key={f} className={styles.pricingFeature}>
                     <Check size={16} style={{ color: "#10b981" }} /> {f}
@@ -687,7 +688,7 @@ export default function LandingPage() {
                 href="/signup"
                 className={`${styles.pricingCta} ${styles.pricingCtaSecondary}`}
               >
-                Get Started Free
+                Get Started
               </Link>
             </motion.div>
 
@@ -703,17 +704,17 @@ export default function LandingPage() {
               <span className={styles.pricingBadge}>Most Popular</span>
               <span className={styles.pricingTier}>Growth</span>
               <div className={styles.pricingPrice}>
-                ₦5,000 <span className={styles.pricingPriceSuffix}>/ month</span>
+                ₦35,000 <span className={styles.pricingPriceSuffix}>/ month</span>
               </div>
               <p className={styles.pricingDesc}>For serious sellers who want maximum automation and insight.</p>
               <ul className={styles.pricingFeatures}>
                 {[
-                  "Unlimited customers",
-                  "AI-powered follow-ups",
+                  "Up to 500 leads/month",
+                  "AI-powered auto follow-ups",
                   "Smart reply suggestions",
-                  "Advanced sales analytics",
-                  "Paystack payment integration",
-                  "Offline-resilient sync",
+                  "Revenue workspace & analytics",
+                  "Invisible CRM with priority scoring",
+                  "Status-to-Cash engine",
                   "Priority support",
                 ].map((f) => (
                   <li key={f} className={styles.pricingFeature}>
@@ -725,7 +726,44 @@ export default function LandingPage() {
                 href="/signup"
                 className={`${styles.pricingCta} ${styles.pricingCtaPrimary}`}
               >
-                Start 14-Day Free Trial
+                Start Free Trial
+              </Link>
+            </motion.div>
+
+            {/* Scale */}
+            <motion.div
+              className={styles.pricingCard}
+              initial="hidden"
+              whileInView="visible"
+              viewport={{ once: true, margin: "-60px" }}
+              variants={fadeUp}
+              custom={2}
+            >
+              <span className={styles.pricingTier}>Scale</span>
+              <div className={styles.pricingPrice}>
+                ₦75,000 <span className={styles.pricingPriceSuffix}>/ month</span>
+              </div>
+              <p className={styles.pricingDesc}>Unlimited power for high-volume sellers and growing teams.</p>
+              <ul className={styles.pricingFeatures}>
+                {[
+                  "Unlimited leads",
+                  "Everything in Growth",
+                  "Cloud API support (official WhatsApp)",
+                  "Bulk retargeting campaigns",
+                  "Advanced automation rules",
+                  "Order & payment tracking",
+                  "Dedicated onboarding support",
+                ].map((f) => (
+                  <li key={f} className={styles.pricingFeature}>
+                    <Check size={16} style={{ color: "#10b981" }} /> {f}
+                  </li>
+                ))}
+              </ul>
+              <Link
+                href="/signup"
+                className={`${styles.pricingCta} ${styles.pricingCtaSecondary}`}
+              >
+                Contact Sales
               </Link>
             </motion.div>
           </div>

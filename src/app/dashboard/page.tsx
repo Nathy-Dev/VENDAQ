@@ -7,7 +7,7 @@ import { api } from "../../../convex/_generated/api";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useState, useEffect, useRef, useCallback } from "react";
-import { AlertTriangle, Banknote, MessageSquare, Reply, Send, Wifi, WifiOff, Loader2, RefreshCcw, type LucideIcon } from "lucide-react";
+import { AlertTriangle, Banknote, MessageSquare, Reply, Send, Wifi, WifiOff, Loader2, RefreshCcw, X, type LucideIcon } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import styles from "./dashboard.module.css";
 import Loader from "@/components/Loader";
@@ -42,6 +42,12 @@ export default function DashboardPage() {
   const qrData = useQuery(api.whatsapp.getBusinessQR,
     business && business.whatsappStatus !== "connected" ? { businessId: business._id } : "skip"
   );
+
+  // PRD: Disconnection alerts — reactive query for in-app notifications
+  const disconnectionAlerts = useQuery(api.safeguards.getActiveDisconnectionAlerts,
+    business ? { businessId: business._id } : "skip"
+  );
+  const dismissAlert = useMutation(api.safeguards.dismissDisconnectionAlert);
 
   const checkHealth = useAction(api.whatsapp.checkConnectionHealth);
   const reconnectInstance = useAction(api.whatsapp.reconnectInstance);
@@ -232,13 +238,22 @@ export default function DashboardPage() {
             color="rgba(245, 158, 11, 0.1)"
             iconColor="#f59e0b"
           />
-          <StatCard
-            icon={Banknote}
-            label="Estimated Lost Revenue"
-            value={`NGN ${(mvpMetrics?.estimatedLostRevenue || 0).toLocaleString()}`}
-            color="rgba(239, 68, 68, 0.1)"
-            iconColor="#ef4444"
-          />
+        </div>
+
+        {/* Hero: Estimated Lost Revenue — PRD: this is the emotional anchor */}
+        <div className={styles.lostRevenueHero}>
+          <div className={styles.lostRevenueIcon}>
+            <Banknote size={28} />
+          </div>
+          <div className={styles.lostRevenueContent}>
+            <div className={styles.lostRevenueLabel}>Estimated Lost Revenue</div>
+            <div className={styles.lostRevenueValue}>
+              NGN {(mvpMetrics?.estimatedLostRevenue || 0).toLocaleString()}
+            </div>
+            <div className={styles.lostRevenueSub}>
+              {(mvpMetrics?.lost || 0)} buying signal{(mvpMetrics?.lost || 0) !== 1 ? 's' : ''} went unanswered · You could have closed {(mvpMetrics?.lost || 0) > 0 ? 'these' : 'more'} deals
+            </div>
+          </div>
         </div>
 
         {/* Reconnect Banner — for users who have an instance but are disconnected */}
