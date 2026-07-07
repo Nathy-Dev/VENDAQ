@@ -60,6 +60,11 @@ export default function DashboardPage() {
   // ---- Connection health polling ----
   const healthIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const reconnectPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Tracks whether the reconnectInstance action has finished. The poll must
+  // NOT call pollConnectionStatus until this is true, otherwise it sees
+  // Evolution Go in state "close" (instance still booting) and immediately
+  // reverts to "disconnected" with a false "QR expired" message.
+  const reconnectActionDoneRef = useRef(false);
 
   // Health check: runs every 30s whenever an instance exists.
   // Detects BOTH disconnections (connected → disconnected) AND
@@ -111,6 +116,10 @@ export default function DashboardPage() {
     }
 
     reconnectPollRef.current = setInterval(async () => {
+      // Don't poll until the reconnectInstance action has finished setting up
+      // the connection. Otherwise we see "close" state prematurely.
+      if (!reconnectActionDoneRef.current) return;
+
       try {
         const result = await pollStatus({ businessId: business._id });
         if (result.connected) {
@@ -196,11 +205,14 @@ export default function DashboardPage() {
 
   const handleReconnect = useCallback(async () => {
     if (!business || isReconnecting) return;
+    reconnectActionDoneRef.current = false; // Block polling until action finishes
     setIsReconnecting(true);
     setReconnectError(null);
 
     try {
       const result = await reconnectInstance({ businessId: business._id });
+      reconnectActionDoneRef.current = true; // Action done — allow polling now
+
       if (!result.success) {
         setReconnectError(result.error || "Reconnection failed. Please try again.");
         setIsReconnecting(false);
@@ -210,6 +222,7 @@ export default function DashboardPage() {
       }
       // If needsQR is true, we stay in reconnecting state and show QR
     } catch (e) {
+      reconnectActionDoneRef.current = true; // Unblock on error too
       setReconnectError(e instanceof Error ? e.message : "Reconnection failed. Please try again.");
       setIsReconnecting(false);
     }
