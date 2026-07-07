@@ -19,6 +19,8 @@ import { PooledOrders } from "@/types";
 const HEALTH_CHECK_INTERVAL_MS = 30_000; // 30 seconds
 /** How often (ms) to poll while reconnecting (waiting for QR scan). */
 const RECONNECT_POLL_INTERVAL_MS = 8_000;
+/** Max time (ms) to stay in "reconnecting" state before auto-cancelling. */
+const RECONNECT_TIMEOUT_MS = 120_000; // 2 minutes
 
 export default function DashboardPage() {
   const { data: session, status: sessionStatus } = useSession();
@@ -113,7 +115,11 @@ export default function DashboardPage() {
         const result = await pollStatus({ businessId: business._id });
         if (result.connected) {
           setIsReconnecting(false);
+          setReconnectError(null);
         }
+        // If Evolution Go reports "close" state, the QR expired or instance
+        // stopped — pollConnectionStatus will revert DB to "disconnected",
+        // which will cause this effect to clean up on next render cycle.
       } catch (_e) {
         // Silently ignore
       }
@@ -127,19 +133,57 @@ export default function DashboardPage() {
     };
   }, [business?._id, business?.whatsappStatus, isReconnecting, pollStatus]);
 
-  // Reset reconnecting state when status changes to connected.
-  // We check the previous status to avoid calling setState on every render.
+  // Reconnect timeout: auto-cancel after RECONNECT_TIMEOUT_MS to prevent
+  // the UI from being stuck at "Reconnecting..." forever if the QR is never
+  // scanned or something goes wrong on the backend.
+  const reconnectStartedAtRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (isReconnecting) {
+      if (!reconnectStartedAtRef.current) {
+        reconnectStartedAtRef.current = Date.now();
+      }
+
+      const elapsed = Date.now() - reconnectStartedAtRef.current;
+      const remaining = Math.max(0, RECONNECT_TIMEOUT_MS - elapsed);
+
+      const timeout = setTimeout(async () => {
+        setIsReconnecting(false);
+        setReconnectError("Reconnection timed out. Please try again.");
+        reconnectStartedAtRef.current = null;
+        // Revert DB status so the user sees the Reconnect button
+        if (business) {
+          try {
+            await updateStatus({ businessId: business._id, status: "disconnected" });
+          } catch (_e) { /* ignore */ }
+        }
+      }, remaining);
+
+      return () => clearTimeout(timeout);
+    } else {
+      reconnectStartedAtRef.current = null;
+    }
+  }, [isReconnecting, business, updateStatus]);
+
+  // Reset reconnecting state when status changes to connected OR
+  // reverts to disconnected (e.g. QR expired, backend detected it).
   const prevWhatsappStatus = useRef(business?.whatsappStatus);
   useEffect(() => {
     const currentStatus = business?.whatsappStatus;
     if (prevWhatsappStatus.current !== currentStatus) {
       prevWhatsappStatus.current = currentStatus;
-      if (currentStatus === "connected" && isReconnecting) {
-        // Schedule state update for next tick to avoid cascading render
-        queueMicrotask(() => {
-          setIsReconnecting(false);
-          setReconnectError(null);
-        });
+      if (isReconnecting) {
+        if (currentStatus === "connected") {
+          queueMicrotask(() => {
+            setIsReconnecting(false);
+            setReconnectError(null);
+          });
+        } else if (currentStatus === "disconnected") {
+          // Backend reverted status (QR expired, instance gone, etc.)
+          queueMicrotask(() => {
+            setIsReconnecting(false);
+            setReconnectError("QR code expired. Tap Reconnect to try again.");
+          });
+        }
       }
     }
   }, [business?.whatsappStatus, isReconnecting]);

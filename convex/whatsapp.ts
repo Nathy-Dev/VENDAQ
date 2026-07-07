@@ -2350,11 +2350,31 @@ export const pollConnectionStatus = action({
           businessId: args.businessId,
           status: "disconnected",
         });
+      } else if (!isFullyAuthenticated && business.whatsappStatus === "pending" && status.state === "close") {
+        // QR expired or instance stopped while waiting for scan → revert to
+        // disconnected so the user sees the Reconnect button again instead
+        // of being stuck at "Reconnecting..." forever.
+        console.log(`[pollConnectionStatus] Instance ${business.evolutionInstanceName}: pending → disconnected (state=${status.state}, QR likely expired)`);
+        await ctx.runMutation(api.whatsapp.updateConnectionStatus, {
+          businessId: args.businessId,
+          status: "disconnected",
+        });
       }
 
       return { state: status.state, connected: isFullyAuthenticated };
     } catch (e: any) {
       console.warn("[pollConnectionStatus] error:", e?.message);
+      // If the status endpoint fails with a 4xx while pending, the instance
+      // may have been deleted — revert to disconnected to unstick the UI.
+      const msg = e?.message || "";
+      const is4xx = /-> 4\d{2}:/.test(msg);
+      if (is4xx && business.whatsappStatus === "pending") {
+        console.warn(`[pollConnectionStatus] Instance appears gone (${msg}); reverting pending → disconnected`);
+        await ctx.runMutation(api.whatsapp.updateConnectionStatus, {
+          businessId: args.businessId,
+          status: "disconnected",
+        });
+      }
       return { state: "close", connected: false };
     }
   },
