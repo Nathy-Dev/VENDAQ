@@ -8,6 +8,10 @@
  * @module
  */
 
+import type * as adapters_evolutionGoAdapter from "../adapters/evolutionGoAdapter.js";
+import type * as adapters_index from "../adapters/index.js";
+import type * as adapters_types from "../adapters/types.js";
+import type * as adapters_whatsappAdapter from "../adapters/whatsappAdapter.js";
 import type * as auth from "../auth.js";
 import type * as businesses from "../businesses.js";
 import type * as evolutionGoClient from "../evolutionGoClient.js";
@@ -27,6 +31,10 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  "adapters/evolutionGoAdapter": typeof adapters_evolutionGoAdapter;
+  "adapters/index": typeof adapters_index;
+  "adapters/types": typeof adapters_types;
+  "adapters/whatsappAdapter": typeof adapters_whatsappAdapter;
   auth: typeof auth;
   businesses: typeof businesses;
   evolutionGoClient: typeof evolutionGoClient;
