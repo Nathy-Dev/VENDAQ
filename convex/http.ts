@@ -27,6 +27,15 @@ http.route({
         data: Record<string, unknown>;
       };
 
+      // Guard: Evolution may send events (e.g. server-level) without an instance name
+      if (!instance) {
+        console.warn("[Webhook Evolution] Received event without instance name, ignoring.", { event });
+        return new Response(JSON.stringify({ ok: true, skipped: "no instance name" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
       let business = await ctx.runQuery(api.businesses.getBusinessByEvolutionInstanceName, {
         instanceName: instance,
       });
