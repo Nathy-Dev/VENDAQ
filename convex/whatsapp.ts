@@ -1308,6 +1308,11 @@ export const sendRetargetMessage = action({
     const biz = await ctx.runQuery(api.whatsapp.getBusinessForAssistantAuth, { businessId: args.businessId });
     const instanceName = biz?.evolutionInstanceName || getEvolutionInstanceName(biz?.name || "pipelixr", args.businessId);
 
+    // Show "typing..." before sending — makes AI replies feel human-paced.
+    // The 3-12s delay inside sendText() means the customer sees "typing..."
+    // for a natural duration before the message appears.
+    await evoClient.setChatPresence(instanceName, customer.phone, "composing");
+
     try {
       await evoClient.sendText(instanceName, customer.phone, args.content);
     } catch (e) {
@@ -2592,5 +2597,106 @@ export const reconnectInstance = action({
       });
       return { success: false, needsQR: false, error: e?.message || "Reconnection failed" };
     }
+  },
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MEDIA & MESSAGING ACTIONS — markAsRead, sendMedia, presence
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Marks inbound messages as read (blue ticks).
+ * Scheduled from the webhook after processing text messages.
+ * Media messages are marked as read inside processMediaMessage.
+ */
+export const markInboundAsRead = action({
+  args: {
+    businessId: v.id("businesses"),
+    messages: v.array(
+      v.object({
+        remoteJid: v.string(),
+        fromMe: v.boolean(),
+        id: v.string(),
+      })
+    ),
+  },
+  handler: async (ctx, args): Promise<void> => {
+    const biz = await ctx.runQuery(api.whatsapp.getBusinessForAssistantAuth, {
+      businessId: args.businessId,
+    });
+    const instanceName = biz?.evolutionInstanceName;
+    if (!instanceName) return;
+
+    await evoClient.markAsRead(instanceName, args.messages);
+  },
+});
+
+/**
+ * Sends a media message (image, video, audio, document) to a customer.
+ * Shows "typing..." before sending for a natural feel.
+ * Logs the outbound interaction.
+ *
+ * @param mediaUrl  - Cloudinary URL (or any public URL) of the media file
+ * @param mediatype - "image" | "video" | "audio" | "document"
+ * @param mimetype  - MIME type (e.g. "image/jpeg", "application/pdf")
+ * @param caption   - Optional caption for images/videos
+ * @param fileName  - Optional filename for documents
+ */
+export const sendMediaMessage = action({
+  args: {
+    businessId: v.id("businesses"),
+    customerId: v.id("customers"),
+    mediaUrl: v.string(),
+    mediatype: v.union(
+      v.literal("image"),
+      v.literal("video"),
+      v.literal("audio"),
+      v.literal("document")
+    ),
+    mimetype: v.string(),
+    caption: v.optional(v.string()),
+    fileName: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<{ sent: boolean; reason?: string }> => {
+    const customer = await ctx.runQuery(api.whatsapp.getCustomerLiteById, {
+      customerId: args.customerId,
+    });
+    if (!customer) return { sent: false, reason: "customer_not_found" };
+
+    const biz = await ctx.runQuery(api.whatsapp.getBusinessForAssistantAuth, {
+      businessId: args.businessId,
+    });
+    const instanceName =
+      biz?.evolutionInstanceName ||
+      getEvolutionInstanceName(biz?.name || "pipelixr", args.businessId);
+
+    // Show "typing..." / "uploading..." before sending
+    await evoClient.setChatPresence(instanceName, customer.phone, "composing");
+
+    try {
+      await evoClient.sendMedia(instanceName, customer.phone, {
+        mediatype: args.mediatype,
+        media: args.mediaUrl,
+        mimetype: args.mimetype,
+        caption: args.caption,
+        fileName: args.fileName,
+      });
+    } catch (e) {
+      console.error("[sendMediaMessage] Evolution Go send failed:", e);
+      return { sent: false, reason: "evolution_send_failed" };
+    }
+
+    // Log the outbound interaction with media metadata
+    const captionText =
+      args.caption ||
+      `[${args.mediatype}${args.fileName ? `: ${args.fileName}` : ""}]`;
+
+    await ctx.runMutation(api.whatsapp.logOutboundMessage, {
+      businessId: args.businessId,
+      customerId: args.customerId,
+      content: captionText,
+    });
+
+    return { sent: true };
   },
 });

@@ -16,6 +16,8 @@
 import { v } from "convex/values";
 import { action, mutation, query } from "./_generated/server";
 import { api } from "./_generated/api";
+import * as evoClient from "./evolutionGoClient";
+import * as cloudinary from "./cloudinary";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -895,3 +897,307 @@ function buildFallbackReply(
   }
   return `Thanks ${customerName}. I can help you choose quickly and place your order in chat. What are you looking for?`;
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MEDIA PIPELINE — Download → Cloudinary → Vision → React
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/** Updates an interaction record with Cloudinary media URL + public ID. */
+export const updateInteractionMedia = mutation({
+  args: {
+    interactionId: v.id("interactions"),
+    mediaUrl: v.optional(v.string()),
+    mediaId: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const patch: Record<string, unknown> = {};
+    if (args.mediaUrl !== undefined) patch.mediaUrl = args.mediaUrl;
+    if (args.mediaId !== undefined) patch.mediaId = args.mediaId;
+    if (Object.keys(patch).length > 0) {
+      await ctx.db.patch(args.interactionId, patch);
+    }
+  },
+});
+
+/**
+ * Full media message processing pipeline.
+ *
+ * Orchestrates:
+ *   1. Download media from Evolution Go (decrypts WhatsApp encrypted media)
+ *   2. Upload to Cloudinary (persistent, cost-efficient storage)
+ *   3. Vision AI analysis for images/videos (OpenAI GPT-4o-mini)
+ *   4. React with ✅ if payment proof is detected
+ *   5. Mark inbound message as read (blue ticks)
+ *
+ * This action is scheduled from the webhook for ALL inbound media messages
+ * (images, videos, audio, documents). Only images/videos get Vision analysis;
+ * all types get downloaded and stored in Cloudinary.
+ *
+ * Fallback chain for media acquisition:
+ *   A. Download via Evolution Go /message/downloadimage → base64 → Cloudinary
+ *   B. If A fails, upload from URL via Cloudinary's remote fetch
+ *   C. If B fails, use the direct URL for Vision (no Cloudinary persistence)
+ */
+export const processMediaMessage = action({
+  args: {
+    businessId: v.id("businesses"),
+    sender: v.string(),
+    whatsappMessageId: v.string(),
+    messageKey: v.object({
+      remoteJid: v.string(),
+      fromMe: v.boolean(),
+      id: v.string(),
+    }),
+    /** JSON-stringified raw message object from webhook (for Evolution Go download) */
+    rawMessage: v.string(),
+    messageType: v.string(),
+    mimetype: v.string(),
+    caption: v.optional(v.string()),
+    fallbackMediaUrl: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<{
+    success: boolean;
+    cloudinaryUrl?: string;
+    visionAnalysis?: string;
+    isPaymentProof?: boolean;
+  }> => {
+    // ── Resolve business, customer, interaction ──
+    const business = await ctx.runQuery(api.whatsapp.getBusinessForAssistantAuth, {
+      businessId: args.businessId,
+    });
+    if (!business) {
+      console.error("[processMediaMessage] Business not found:", args.businessId);
+      return { success: false };
+    }
+
+    const instanceName = business.evolutionInstanceName;
+    if (!instanceName) {
+      console.error("[processMediaMessage] No Evolution Go instance for business:", args.businessId);
+      return { success: false };
+    }
+
+    // Look up interaction by WhatsApp message ID
+    const interaction = await ctx.runQuery(api.ai.getInteractionByWhatsappId, {
+      whatsappMessageId: args.whatsappMessageId,
+    });
+    if (!interaction) {
+      console.warn("[processMediaMessage] Interaction not found for message:", args.whatsappMessageId);
+      return { success: false };
+    }
+
+    const customer = await ctx.runQuery(api.whatsapp.getCustomerLiteById, {
+      customerId: interaction.customerId,
+    });
+    const customerName = customer?.name || args.sender.split("@")[0];
+
+    const aiConfig = await ctx.runQuery(api.ai.getBusinessAIConfig, {
+      businessId: args.businessId,
+    });
+    const visionModel = aiConfig?.aiVisionModel || DEFAULT_VISION_MODEL;
+
+    // ── Step 1: Download media from Evolution Go ──
+    let base64Data: string | null = null;
+    let resolvedMimetype = args.mimetype;
+
+    try {
+      const rawMsg = JSON.parse(args.rawMessage);
+      const downloaded = await evoClient.downloadMedia(instanceName, {
+        key: {
+          remoteJid: args.messageKey.remoteJid,
+          id: args.messageKey.id,
+          fromMe: args.messageKey.fromMe,
+        },
+        message: rawMsg,
+      });
+      base64Data = downloaded.base64;
+      resolvedMimetype = downloaded.mimetype || args.mimetype;
+      console.log(`[processMediaMessage] Downloaded media via Evolution Go (${resolvedMimetype}, ${base64Data.length} chars base64)`);
+    } catch (downloadErr) {
+      console.warn(
+        "[processMediaMessage] Evolution Go download failed, trying Cloudinary URL upload:",
+        downloadErr instanceof Error ? downloadErr.message : String(downloadErr)
+      );
+    }
+
+    // ── Step 2: Upload to Cloudinary ──
+    let cloudinaryUrl: string | null = null;
+    let cloudinaryPublicId: string | null = null;
+
+    const cloudinaryConfigured = cloudinary.isCloudinaryConfigured();
+
+    if (cloudinaryConfigured && base64Data) {
+      // Path A: Upload base64 to Cloudinary
+      try {
+        const uploaded = await cloudinary.uploadToCloudinary(base64Data, {
+          mimetype: resolvedMimetype,
+          folder: `pipelixr/${args.businessId}/${args.messageType}`,
+          publicId: args.whatsappMessageId,
+        });
+        cloudinaryUrl = uploaded.secureUrl;
+        cloudinaryPublicId = uploaded.publicId;
+        console.log(`[processMediaMessage] Uploaded to Cloudinary: ${cloudinaryUrl}`);
+      } catch (uploadErr) {
+        console.warn(
+          "[processMediaMessage] Cloudinary base64 upload failed:",
+          uploadErr instanceof Error ? uploadErr.message : String(uploadErr)
+        );
+      }
+    }
+
+    if (cloudinaryConfigured && !cloudinaryUrl && args.fallbackMediaUrl) {
+      // Path B: Let Cloudinary fetch from the direct URL
+      try {
+        const uploaded = await cloudinary.uploadToCloudinaryFromUrl(args.fallbackMediaUrl, {
+          mimetype: resolvedMimetype,
+          folder: `pipelixr/${args.businessId}/${args.messageType}`,
+          publicId: args.whatsappMessageId,
+        });
+        cloudinaryUrl = uploaded.secureUrl;
+        cloudinaryPublicId = uploaded.publicId;
+        console.log(`[processMediaMessage] Uploaded to Cloudinary via URL: ${cloudinaryUrl}`);
+      } catch (urlUploadErr) {
+        console.warn(
+          "[processMediaMessage] Cloudinary URL upload failed:",
+          urlUploadErr instanceof Error ? urlUploadErr.message : String(urlUploadErr)
+        );
+      }
+    }
+
+    // Update interaction with Cloudinary URL (or fallback URL)
+    const persistedUrl = cloudinaryUrl || args.fallbackMediaUrl;
+    if (persistedUrl) {
+      await ctx.runMutation(api.ai.updateInteractionMedia, {
+        interactionId: interaction._id,
+        mediaUrl: persistedUrl,
+        mediaId: cloudinaryPublicId || undefined,
+      });
+    }
+
+    // ── Step 3: Vision AI analysis (images & videos only) ──
+    let visionAnalysis: string | undefined;
+    let isPaymentProof = false;
+
+    const shouldAnalyze =
+      ["image", "video"].includes(args.messageType) &&
+      aiConfig?.aiEnabled !== false &&
+      !!process.env.OPENAI_API_KEY;
+
+    if (shouldAnalyze) {
+      // Determine the URL to send to OpenAI Vision
+      // Priority: Cloudinary URL > base64 data URI > fallback URL
+      let visionUrl: string | null = null;
+
+      if (cloudinaryUrl) {
+        visionUrl = cloudinaryUrl;
+      } else if (base64Data) {
+        // Send as data URI directly to OpenAI
+        visionUrl = `data:${resolvedMimetype};base64,${base64Data}`;
+      } else if (args.fallbackMediaUrl) {
+        visionUrl = args.fallbackMediaUrl;
+      }
+
+      if (visionUrl) {
+        try {
+          const prompt = args.caption
+            ? `${VISION_PROMPT}\n\nThe customer also sent this caption with the image: "${args.caption}"`
+            : VISION_PROMPT;
+
+          const raw = await callOpenAIVision(visionUrl, prompt, { model: visionModel });
+          const parsed = parseImageAnalysis(raw);
+
+          if (parsed) {
+            visionAnalysis = JSON.stringify(parsed);
+            isPaymentProof = parsed.isPaymentProof;
+
+            // Update interaction with AI analysis
+            await ctx.runMutation(api.ai.updateInteractionAI, {
+              interactionId: interaction._id,
+              imageAnalysis: visionAnalysis,
+              aiProcessedAt: Date.now(),
+              ...(parsed.isBuyingSignal
+                ? { aiClassification: "BUYING_SIGNAL", aiConfidence: 0.85, aiReasoning: parsed.summary }
+                : {}),
+            });
+
+            // Upgrade customer intent if buying signal detected
+            if (parsed.isBuyingSignal) {
+              await ctx.runMutation(api.ai.upgradeCustomerIntent, {
+                businessId: args.businessId,
+                customerId: interaction.customerId,
+                newIntent: "BUYING_SIGNAL",
+                interactionId: interaction._id,
+              });
+            }
+
+            // Log to AI activity feed
+            await ctx.runMutation(api.ai.logAIActivity, {
+              businessId: args.businessId,
+              type: "image_analysis",
+              interactionId: interaction._id,
+              customerId: interaction.customerId,
+              customerName,
+              summary: `Analyzed ${args.messageType} from ${customerName}: ${parsed.summary}`,
+              details: visionAnalysis,
+              model: visionModel,
+              confidence: parsed.isBuyingSignal ? 0.9 : 0.7,
+              timestamp: Date.now(),
+            });
+
+            // ── Step 4: React with ✅ if payment proof detected ──
+            if (parsed.isPaymentProof) {
+              console.log(`[processMediaMessage] Payment proof detected from ${customerName} — reacting ✅`);
+              await evoClient.reactToMessage(
+                instanceName,
+                {
+                  remoteJid: args.messageKey.remoteJid,
+                  fromMe: args.messageKey.fromMe,
+                  id: args.messageKey.id,
+                },
+                "✅"
+              );
+            }
+          }
+        } catch (visionErr) {
+          console.error("[processMediaMessage] Vision analysis error:", visionErr);
+          await ctx.runMutation(api.ai.logAIActivity, {
+            businessId: args.businessId,
+            type: "error",
+            interactionId: interaction._id,
+            customerId: interaction.customerId,
+            customerName,
+            summary: `${args.messageType} analysis failed: ${visionErr instanceof Error ? visionErr.message : "Unknown error"}`,
+            model: visionModel,
+            timestamp: Date.now(),
+          });
+        }
+      }
+    }
+
+    // ── Step 5: Mark inbound message as read ──
+    await evoClient.markAsRead(instanceName, [
+      {
+        remoteJid: args.messageKey.remoteJid,
+        fromMe: args.messageKey.fromMe,
+        id: args.messageKey.id,
+      },
+    ]);
+
+    return {
+      success: true,
+      cloudinaryUrl: cloudinaryUrl || undefined,
+      visionAnalysis,
+      isPaymentProof,
+    };
+  },
+});
+
+/** Looks up an interaction by its WhatsApp message ID. */
+export const getInteractionByWhatsappId = query({
+  args: { whatsappMessageId: v.string() },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("interactions")
+      .withIndex("by_whatsapp_id", (q) => q.eq("whatsappMessageId", args.whatsappMessageId))
+      .first();
+  },
+});

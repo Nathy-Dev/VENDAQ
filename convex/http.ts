@@ -167,10 +167,10 @@ http.route({
             message?: {
               conversation?: string;
               extendedTextMessage?: { text?: string };
-              imageMessage?: { url?: string; caption?: string; mimetype?: string };
-              videoMessage?: { url?: string; caption?: string; mimetype?: string };
-              audioMessage?: { url?: string; mimetype?: string };
-              documentMessage?: { url?: string; fileName?: string; mimetype?: string };
+              imageMessage?: Record<string, unknown>;
+              videoMessage?: Record<string, unknown>;
+              audioMessage?: Record<string, unknown>;
+              documentMessage?: Record<string, unknown>;
             };
             pushName?: string;
             messageType?: string;
@@ -186,10 +186,10 @@ http.route({
 
           // Extract content — text messages use conversation/extendedText,
           // media messages may have captions
-          const imageMsg = m.message?.imageMessage;
-          const videoMsg = m.message?.videoMessage;
-          const audioMsg = m.message?.audioMessage;
-          const docMsg = m.message?.documentMessage;
+          const imageMsg = m.message?.imageMessage as Record<string, any> | undefined;
+          const videoMsg = m.message?.videoMessage as Record<string, any> | undefined;
+          const audioMsg = m.message?.audioMessage as Record<string, any> | undefined;
+          const docMsg = m.message?.documentMessage as Record<string, any> | undefined;
 
           const content =
             m.message?.conversation ||
@@ -201,19 +201,24 @@ http.route({
           // Determine message type from actual message content
           let messageType: "text" | "image" | "video" | "audio" | "document" | "location" = "text";
           let mediaUrl: string | undefined;
+          let mediaMimetype: string | undefined;
 
           if (imageMsg) {
             messageType = "image";
             mediaUrl = imageMsg.url;
+            mediaMimetype = imageMsg.mimetype || "image/jpeg";
           } else if (videoMsg) {
             messageType = "video";
             mediaUrl = videoMsg.url;
+            mediaMimetype = videoMsg.mimetype || "video/mp4";
           } else if (audioMsg) {
             messageType = "audio";
             mediaUrl = audioMsg.url;
+            mediaMimetype = audioMsg.mimetype || "audio/ogg";
           } else if (docMsg) {
             messageType = "document";
             mediaUrl = docMsg.url;
+            mediaMimetype = docMsg.mimetype || "application/octet-stream";
           } else if (m.messageType) {
             messageType = m.messageType as typeof messageType;
           }
@@ -230,25 +235,67 @@ http.route({
             whatsappMessageId: m.key?.id,
           });
 
-          // If this is a media message with a URL and it's from a customer,
-          // trigger AI image analysis asynchronously
-          if (!fromMe && mediaUrl && (messageType === "image" || messageType === "video")) {
-            const resultObj = result as { success?: boolean; messageId?: string } | undefined;
-            // We need the interaction ID — it was just created in receiveMessage
-            // Schedule vision analysis if we have a URL
+          const resultObj = result as { success?: boolean; discarded?: boolean } | undefined;
+
+          // ── Media pipeline: download → Cloudinary → Vision AI → react ──
+          // Schedule for ALL media types from customers (images, videos, audio, docs).
+          // processMediaMessage handles: Cloudinary storage for all, Vision for images/videos.
+          if (
+            !fromMe &&
+            !resultObj?.discarded &&
+            messageType !== "text" &&
+            m.key?.id &&
+            m.key?.remoteJid
+          ) {
             try {
-              // Find the just-created interaction by whatsapp message ID
-              if (m.key?.id) {
-                await ctx.scheduler.runAfter(500, api.ai.analyzeImage, {
-                  businessId: business._id,
-                  interactionId: resultObj?.messageId as any, // Will be resolved by the action
-                  customerId: "" as any, // Will be looked up in the action
-                  imageUrl: mediaUrl,
-                  caption: content || undefined,
-                });
-              }
-            } catch (imgErr) {
-              console.warn("[Webhook Evolution] Could not schedule image analysis:", imgErr);
+              // Build the raw message object for Evolution Go download endpoint
+              const rawMessageObj: Record<string, unknown> = {};
+              if (imageMsg) rawMessageObj.imageMessage = imageMsg;
+              if (videoMsg) rawMessageObj.videoMessage = videoMsg;
+              if (audioMsg) rawMessageObj.audioMessage = audioMsg;
+              if (docMsg) rawMessageObj.documentMessage = docMsg;
+
+              await ctx.scheduler.runAfter(500, api.ai.processMediaMessage, {
+                businessId: business._id,
+                sender: remoteJid,
+                whatsappMessageId: m.key.id,
+                messageKey: {
+                  remoteJid: m.key.remoteJid,
+                  fromMe: false,
+                  id: m.key.id,
+                },
+                rawMessage: JSON.stringify(rawMessageObj),
+                messageType,
+                mimetype: mediaMimetype || "application/octet-stream",
+                caption: (content as string) || undefined,
+                fallbackMediaUrl: mediaUrl,
+              });
+            } catch (mediaErr) {
+              console.warn("[Webhook Evolution] Could not schedule media processing:", mediaErr);
+            }
+          }
+
+          // ── Mark text messages as read (media messages get marked in processMediaMessage) ──
+          if (
+            !fromMe &&
+            !resultObj?.discarded &&
+            messageType === "text" &&
+            m.key?.id &&
+            m.key?.remoteJid
+          ) {
+            try {
+              await ctx.scheduler.runAfter(1000, api.whatsapp.markInboundAsRead, {
+                businessId: business._id,
+                messages: [
+                  {
+                    remoteJid: m.key.remoteJid,
+                    fromMe: false,
+                    id: m.key.id,
+                  },
+                ],
+              });
+            } catch (readErr) {
+              console.warn("[Webhook Evolution] Could not schedule mark-as-read:", readErr);
             }
           }
         }

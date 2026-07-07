@@ -489,3 +489,197 @@ export async function sendText(instanceName: string, to: string, text: string): 
 export async function deleteInstance(instanceId: string, instanceToken?: string): Promise<void> {
   await evoFetch(`/instance/delete/${encodeURIComponent(instanceId)}`, "DELETE", undefined, instanceToken);
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MEDIA & MESSAGING FEATURES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Downloads media from a WhatsApp message via Evolution Go.
+ * POST /message/downloadimage
+ *
+ * When a customer sends an image, the webhook provides metadata
+ * (directPath, mediaKey, fileEncSHA256, etc.) but the actual media URL
+ * is encrypted/temporary. This endpoint decrypts and returns the media
+ * as base64.
+ *
+ * @returns Base64-encoded media data (without data URI prefix) and mimetype
+ */
+export async function downloadMedia(
+  instanceName: string,
+  messageData: {
+    key: { remoteJid: string; id: string; fromMe?: boolean };
+    message: Record<string, unknown>;
+  }
+): Promise<{ base64: string; mimetype: string }> {
+  const { url } = getEvolutionConfig();
+
+  logEvolutionGoDebug("downloadMedia request", messageData);
+
+  const res = await fetch(`${url}/message/downloadimage`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      apikey: instanceName,
+    },
+    body: JSON.stringify(messageData),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Evolution Go downloadMedia -> ${res.status}: ${text}`);
+  }
+
+  // Evolution Go may return JSON with base64, or raw binary
+  const contentType = res.headers.get("content-type") || "";
+
+  if (contentType.includes("application/json")) {
+    const data = (await res.json()) as any;
+    const result = data?.data || data;
+
+    let base64: string = result?.base64 || result?.media || result?.data || "";
+    const mimetype: string =
+      result?.mimetype || result?.mimeType || result?.mediatype || "application/octet-stream";
+
+    // Strip data URI prefix if present (e.g. "data:image/jpeg;base64,...")
+    if (base64.includes(",")) {
+      base64 = base64.split(",")[1];
+    }
+
+    if (!base64) {
+      throw new Error("No media data in Evolution Go download response (JSON)");
+    }
+
+    logEvolutionGoDebug("downloadMedia success", { mimetype, base64Length: base64.length });
+    return { base64, mimetype };
+  }
+
+  // Binary response — convert ArrayBuffer to base64
+  const buffer = await res.arrayBuffer();
+  const bytes = new Uint8Array(buffer);
+
+  if (bytes.length === 0) {
+    throw new Error("No media data in Evolution Go download response (binary)");
+  }
+
+  // Chunk-safe ArrayBuffer → base64
+  const CHUNK = 0x8000;
+  const parts: string[] = [];
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    const chunk = bytes.subarray(i, i + CHUNK);
+    parts.push(String.fromCharCode(...chunk));
+  }
+  const base64 = btoa(parts.join(""));
+  const mimetype = contentType.split(";")[0].trim() || "application/octet-stream";
+
+  logEvolutionGoDebug("downloadMedia success (binary)", { mimetype, bytes: bytes.length });
+  return { base64, mimetype };
+}
+
+/**
+ * Sends a media message (image, document, video, audio).
+ * POST /send/media
+ *
+ * Enforces the same 3-12 second randomized delay as sendText (PRD requirement).
+ */
+export async function sendMedia(
+  instanceName: string,
+  to: string,
+  options: {
+    mediatype: "image" | "video" | "audio" | "document";
+    media: string; // URL or base64 data URI
+    mimetype: string;
+    caption?: string;
+    fileName?: string;
+  }
+): Promise<void> {
+  const delayMs = 3000 + Math.random() * 9000;
+  await new Promise((r) => setTimeout(r, delayMs));
+
+  await evoFetch(
+    "/send/media",
+    "POST",
+    {
+      number: to,
+      mediatype: options.mediatype,
+      media: options.media,
+      mimetype: options.mimetype,
+      caption: options.caption || "",
+      fileName: options.fileName || "",
+    },
+    instanceName
+  );
+}
+
+/**
+ * Marks messages as read (shows blue ticks to the sender).
+ * POST /message/markread
+ *
+ * Non-critical — failures are logged but do not throw.
+ */
+export async function markAsRead(
+  instanceName: string,
+  messages: Array<{ remoteJid: string; fromMe: boolean; id: string }>
+): Promise<void> {
+  try {
+    await evoFetch(
+      "/message/markread",
+      "POST",
+      { readMessages: messages },
+      instanceName
+    );
+  } catch (e) {
+    console.warn("[markAsRead] Failed (non-critical):", e instanceof Error ? e.message : String(e));
+  }
+}
+
+/**
+ * Sets chat presence (typing / recording indicator).
+ * POST /message/presence
+ *
+ * Use "composing" before an AI reply, then let WhatsApp clear it
+ * automatically when the message is sent.
+ *
+ * Non-critical — failures are logged but do not throw.
+ */
+export async function setChatPresence(
+  instanceName: string,
+  to: string,
+  presence: "composing" | "paused" | "available" | "recording"
+): Promise<void> {
+  try {
+    await evoFetch(
+      "/message/presence",
+      "POST",
+      { number: to, presence },
+      instanceName
+    );
+  } catch (e) {
+    console.warn("[setChatPresence] Failed (non-critical):", e instanceof Error ? e.message : String(e));
+  }
+}
+
+/**
+ * Reacts to a message with an emoji.
+ * POST /message/react
+ *
+ * Pass an empty string as reaction to remove an existing reaction.
+ *
+ * Non-critical — failures are logged but do not throw.
+ */
+export async function reactToMessage(
+  instanceName: string,
+  key: { remoteJid: string; fromMe: boolean; id: string },
+  reaction: string
+): Promise<void> {
+  try {
+    await evoFetch(
+      "/message/react",
+      "POST",
+      { key, reaction },
+      instanceName
+    );
+  } catch (e) {
+    console.warn("[reactToMessage] Failed (non-critical):", e instanceof Error ? e.message : String(e));
+  }
+}

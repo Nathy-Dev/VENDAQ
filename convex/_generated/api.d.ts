@@ -15,6 +15,7 @@ import type * as adapters_whatsappAdapter from "../adapters/whatsappAdapter.js";
 import type * as ai from "../ai.js";
 import type * as auth from "../auth.js";
 import type * as businesses from "../businesses.js";
+import type * as cloudinary from "../cloudinary.js";
 import type * as evolutionGoClient from "../evolutionGoClient.js";
 import type * as http from "../http.js";
 import type * as interactions from "../interactions.js";
@@ -39,6 +40,7 @@ declare const fullApi: ApiFromModules<{
   ai: typeof ai;
   auth: typeof auth;
   businesses: typeof businesses;
+  cloudinary: typeof cloudinary;
   evolutionGoClient: typeof evolutionGoClient;
   http: typeof http;
   interactions: typeof interactions;
