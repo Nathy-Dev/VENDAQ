@@ -1874,7 +1874,6 @@ export const provisionEvolutionGoInstance = action({
     let instanceId = business?.evolutionInstanceId || evoClient.generateEvolutionInstanceId();
     const preferredNumber = business?.assistantAdminPhones?.[0];
     const webhookUrl = evoClient.getEvolutionWebhookUrl();
-    const subscribedEvents = ["QRCODE_UPDATED", "CONNECTION_UPDATE", "MESSAGES_UPSERT"];
 
     // Mark business as pending right away so UI shows loading state
     await ctx.runMutation(api.whatsapp.updateConnectionStatus, {
@@ -1968,7 +1967,6 @@ export const provisionEvolutionGoInstance = action({
       const connectResult = await evoClient.connectInstance(instanceName, {
         immediate: true,
         webhookUrl: webhookUrl || undefined,
-        subscribe: subscribedEvents,
       });
       console.log(`[provisionEvolutionGoInstance] connectInstance result for ${instanceName}`, connectResult);
     } catch (e: any) {
@@ -1977,9 +1975,7 @@ export const provisionEvolutionGoInstance = action({
 
     if (preferredNumber) {
       try {
-        const pairResult = await evoClient.pairInstance(instanceName, preferredNumber, {
-          subscribe: subscribedEvents,
-        });
+        const pairResult = await evoClient.pairInstance(instanceName, preferredNumber);
         console.log(`[provisionEvolutionGoInstance] pairInstance result for ${instanceName}`, pairResult);
         if (pairResult.pairingCode) {
           pairingCode = pairResult.pairingCode;
@@ -2254,14 +2250,12 @@ export const refreshQRCode = action({
     });
 
     const webhookUrl = evoClient.getEvolutionWebhookUrl();
-    const subscribedEvents = ["QRCODE_UPDATED", "CONNECTION_UPDATE", "MESSAGES_UPSERT"];
 
     // Re-trigger connect to get a fresh QR
     try {
       await evoClient.connectInstance(instanceName, {
         immediate: true,
         webhookUrl: webhookUrl || undefined,
-        subscribe: subscribedEvents,
       });
     } catch (e: any) {
       console.warn("[refreshQRCode] connectInstance error:", e?.message);
@@ -2272,9 +2266,7 @@ export const refreshQRCode = action({
     let pairingCode: string | null = null;
     if (preferredNumber) {
       try {
-        const pairResult = await evoClient.pairInstance(instanceName, preferredNumber, {
-          subscribe: subscribedEvents,
-        });
+        const pairResult = await evoClient.pairInstance(instanceName, preferredNumber);
         if (pairResult.pairingCode) {
           pairingCode = pairResult.pairingCode;
         }
@@ -2514,7 +2506,6 @@ export const reconnectInstance = action({
     });
 
     const webhookUrl = evoClient.getEvolutionWebhookUrl();
-    const subscribedEvents = ["QRCODE_UPDATED", "CONNECTION_UPDATE", "MESSAGES_UPSERT"];
 
     try {
       // Check if instance still exists on Evolution Go
@@ -2560,7 +2551,6 @@ export const reconnectInstance = action({
         await evoClient.connectInstance(instanceName, {
           immediate: true,
           webhookUrl: webhookUrl || undefined,
-          subscribe: subscribedEvents,
         });
       } catch (connectErr: any) {
         console.warn("[reconnectInstance] connectInstance error:", connectErr?.message);
@@ -2571,9 +2561,7 @@ export const reconnectInstance = action({
       let pairingCode: string | null = null;
       if (preferredNumber) {
         try {
-          const pairResult = await evoClient.pairInstance(instanceName, preferredNumber, {
-            subscribe: subscribedEvents,
-          });
+          const pairResult = await evoClient.pairInstance(instanceName, preferredNumber);
           if (pairResult.pairingCode) {
             pairingCode = pairResult.pairingCode;
           }

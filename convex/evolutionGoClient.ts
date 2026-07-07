@@ -46,7 +46,29 @@ type ConnectInstanceOptions = {
   webhookUrl?: string;
 };
 
-const DEFAULT_SUBSCRIBED_EVENTS = ["QRCODE_UPDATED", "CONNECTION_UPDATE", "MESSAGES_UPSERT"];
+const DEFAULT_SUBSCRIBED_EVENTS = [
+  "QRCODE_UPDATED",
+  "CONNECTION_UPDATE",
+  "MESSAGES_UPSERT",
+  "MESSAGES_UPDATE",
+  "MESSAGES_DELETE",
+  "SEND_MESSAGE",
+  "MESSAGE_REACTION",
+  "CONTACTS_SET",
+  "CONTACTS_UPSERT",
+  "CONTACTS_UPDATE",
+  "PRESENCE_UPDATE",
+  "CHATS_SET",
+  "CHATS_UPSERT",
+  "CHATS_UPDATE",
+  "CHATS_DELETE",
+  "GROUPS_UPSERT",
+  "GROUPS_UPDATE",
+  "GROUP_PARTICIPANTS_UPDATE",
+  "CALL",
+  "LABELS_EDIT",
+  "LABELS_ASSOCIATION",
+];
 
 function isEvolutionGoDebugEnabled(): boolean {
   return ["1", "true", "yes", "on"].includes((process.env.EVOLUTION_GO_DEBUG || "").toLowerCase());
