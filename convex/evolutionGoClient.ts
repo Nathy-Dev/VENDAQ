@@ -36,6 +36,8 @@ type CreateInstanceOptions = {
   instanceId?: string;
   token?: string;
   proxy?: Partial<ProxySettings>;
+  /** Controls what appears in WhatsApp → Linked Devices (defaults to "PIPELIXR") */
+  browserName?: string;
 };
 
 type ConnectInstanceOptions = {
@@ -221,7 +223,10 @@ export function generateEvolutionInstanceId(): string {
 
 /**
  * Builds the payload for POST /instance/create.
- * Documented body: { name, token, proxy? }
+ * Documented body: { name, token, proxy?, browserName? }
+ *
+ * `browserName` controls what appears in WhatsApp → Linked Devices.
+ * Defaults to "PIPELIXR" so users see "PIPELIXR" instead of "Google Chrome (Linux)".
  */
 function buildCreateInstancePayload(instanceName: string, options?: CreateInstanceOptions): Record<string, unknown> {
   const proxy = normalizeProxySettings(options?.proxy);
@@ -229,6 +234,7 @@ function buildCreateInstancePayload(instanceName: string, options?: CreateInstan
   return {
     name: options?.displayName || instanceName,
     token: options?.token || instanceName,
+    browserName: options?.browserName || "PIPELIXR",
     ...(proxy ? { proxy } : {}),
   };
 }
