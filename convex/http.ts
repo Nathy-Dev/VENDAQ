@@ -147,11 +147,21 @@ http.route({
           }
           // If disconnected/error → ignore "connecting" (auto-reconnect noise)
         } else if (rawState === "close" || rawState === "closed") {
-          // Explicit close state — mark as disconnected
-          await ctx.runMutation(api.whatsapp.updateConnectionStatus, {
-            businessId: business._id,
-            status: "disconnected",
-          });
+          // Explicit close state — but don't revert if we're in the middle of
+          // a reconnect flow (status === "pending"). During reconnection,
+          // Evolution Go often sends a "close" event for the OLD session right
+          // before the new QR/connection is established. Reverting to
+          // "disconnected" here would cause the dashboard to falsely show
+          // "QR code expired" seconds after the user clicked Reconnect.
+          // The reconnect poll and timeout will handle actual failures.
+          if (business.whatsappStatus === "pending") {
+            console.log(`[Webhook Evolution] Ignoring "close" event during pending reconnect for ${instance}`);
+          } else {
+            await ctx.runMutation(api.whatsapp.updateConnectionStatus, {
+              businessId: business._id,
+              status: "disconnected",
+            });
+          }
         } else if (rawState) {
           // Unknown state — log it and verify with Evolution Go
           console.warn(`[Webhook Evolution] Unknown connection state "${rawState}" for ${instance}, verifying...`);
