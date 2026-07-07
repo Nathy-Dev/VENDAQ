@@ -2546,6 +2546,17 @@ export const reconnectInstance = action({
         }
       }
 
+      // Clear any stale session before reconnecting — Evolution Go may refuse
+      // to generate a fresh QR if an old (dead) session is still cached.
+      try {
+        await evoClient.logoutInstance(instanceName);
+        // Give Evolution Go a moment to clean up the old session
+        await new Promise((r) => setTimeout(r, 2000));
+      } catch (logoutErr: any) {
+        // Logout may fail if the instance wasn't logged in — that's fine
+        console.warn("[reconnectInstance] logoutInstance (pre-cleanup) error:", logoutErr?.message);
+      }
+
       // Trigger connect to get a fresh QR
       try {
         await evoClient.connectInstance(instanceName, {
@@ -2555,6 +2566,11 @@ export const reconnectInstance = action({
       } catch (connectErr: any) {
         console.warn("[reconnectInstance] connectInstance error:", connectErr?.message);
       }
+
+      // Wait for Evolution Go to start generating the QR code —
+      // calling /instance/qr immediately after connect often returns
+      // 400 "no QR code available" because generation is still in progress.
+      await new Promise((r) => setTimeout(r, 3000));
 
       // If user provided a phone number, also request a pairing code
       const preferredNumber = business.assistantAdminPhones?.[0];
@@ -2570,11 +2586,11 @@ export const reconnectInstance = action({
         }
       }
 
-      // Poll for QR code
+      // Poll for QR code with a longer window to handle slow QR generation
       try {
         const connection = await evoClient.waitForConnectionArtifacts(instanceName, {
-          attempts: 6,
-          delayMs: 2000,
+          attempts: 10,
+          delayMs: 2500,
         });
         if (connection.qrCode) {
           await ctx.runMutation(api.whatsapp.updateQRCode, {

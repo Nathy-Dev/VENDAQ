@@ -397,7 +397,15 @@ export async function getConnectionArtifacts(instanceName: string): Promise<Conn
       return artifacts;
     }
   } catch (e) {
-    console.warn(`[getConnectionArtifacts] error: ${e instanceof Error ? e.message : String(e)}`);
+    const msg = e instanceof Error ? e.message : String(e);
+    // 400 "no QR code available" is a transient state — the QR is still being
+    // generated after connect. Log at debug level so it doesn't alarm users
+    // in the Convex logs. The caller (waitForConnectionArtifacts) will retry.
+    if (msg.includes("400") && msg.includes("no QR code available")) {
+      logEvolutionGoDebug(`[getConnectionArtifacts] QR not ready yet (transient 400), will retry...`);
+    } else {
+      console.warn(`[getConnectionArtifacts] error: ${msg}`);
+    }
   }
 
   return { qrCode: null, pairingCode: null };
