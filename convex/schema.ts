@@ -25,6 +25,10 @@ export default defineSchema({
     averageOrderValue: v.optional(v.number()),
     responseWindowMinutes: v.optional(v.number()),
     followUpTemplate: v.optional(v.string()),
+    // AI configuration
+    aiEnabled: v.optional(v.boolean()), // Default true — toggle AI processing
+    aiLlmModel: v.optional(v.string()), // e.g. "llama-3.3-70b-versatile"
+    aiVisionModel: v.optional(v.string()), // e.g. "gpt-4o-mini"
   }).index("by_owner", ["ownerId"]),
 
   customers: defineTable({
@@ -104,6 +108,12 @@ export default defineSchema({
     content: v.string(),
     timestamp: v.number(),
     intent: v.optional(v.string()),
+    // AI classification
+    aiClassification: v.optional(v.string()), // AI-determined intent (may differ from keyword)
+    aiConfidence: v.optional(v.number()), // 0-1 confidence score from AI
+    aiReasoning: v.optional(v.string()), // Brief explanation of why AI classified this way
+    imageAnalysis: v.optional(v.string()), // AI vision analysis of attached image
+    aiProcessedAt: v.optional(v.number()), // Timestamp when AI processed this message
     // Media support
     messageType: v.optional(v.union(v.literal("text"), v.literal("image"), v.literal("video"), v.literal("audio"), v.literal("document"), v.literal("location"))),
     mediaUrl: v.optional(v.string()),
@@ -218,6 +228,25 @@ export default defineSchema({
   }).index("by_business_sent", ["businessId", "sentAt"])
     .index("by_customer_status", ["customerId", "status"]),
 
+
+  aiActivityLog: defineTable({
+    businessId: v.id("businesses"),
+    type: v.union(
+      v.literal("classification"),    // AI classified a message
+      v.literal("image_analysis"),     // AI analyzed an image
+      v.literal("smart_reply"),        // AI generated a follow-up reply
+      v.literal("intent_upgrade"),     // AI upgraded keyword classification
+      v.literal("error")              // AI processing failed (logged for debugging)
+    ),
+    interactionId: v.optional(v.id("interactions")),
+    customerId: v.optional(v.id("customers")),
+    customerName: v.optional(v.string()),
+    summary: v.string(), // Human-readable summary of what AI did
+    details: v.optional(v.string()), // JSON details (model used, tokens, etc.)
+    model: v.string(), // Which model was used
+    confidence: v.optional(v.number()),
+    timestamp: v.number(),
+  }).index("by_business_time", ["businessId", "timestamp"]),
 
   disconnectionAlerts: defineTable({
     businessId: v.id("businesses"),

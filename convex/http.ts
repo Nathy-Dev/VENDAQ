@@ -164,7 +164,14 @@ http.route({
         for (const msg of messages) {
           const m = msg as {
             key?: { remoteJid?: string; fromMe?: boolean; id?: string };
-            message?: { conversation?: string; extendedTextMessage?: { text?: string } };
+            message?: {
+              conversation?: string;
+              extendedTextMessage?: { text?: string };
+              imageMessage?: { url?: string; caption?: string; mimetype?: string };
+              videoMessage?: { url?: string; caption?: string; mimetype?: string };
+              audioMessage?: { url?: string; mimetype?: string };
+              documentMessage?: { url?: string; fileName?: string; mimetype?: string };
+            };
             pushName?: string;
             messageType?: string;
             messageTimestamp?: number;
@@ -172,25 +179,78 @@ http.route({
 
           const remoteJid = m.key?.remoteJid || "";
           const fromMe = m.key?.fromMe ?? false;
-          const content =
-            m.message?.conversation ||
-            m.message?.extendedTextMessage?.text ||
-            "";
           const isGroup = remoteJid.endsWith("@g.us");
           const timestamp = (m.messageTimestamp || Date.now() / 1000) * 1000;
 
           if (!remoteJid) continue;
 
-          await ctx.runMutation(api.whatsapp.receiveMessage, {
+          // Extract content — text messages use conversation/extendedText,
+          // media messages may have captions
+          const imageMsg = m.message?.imageMessage;
+          const videoMsg = m.message?.videoMessage;
+          const audioMsg = m.message?.audioMessage;
+          const docMsg = m.message?.documentMessage;
+
+          const content =
+            m.message?.conversation ||
+            m.message?.extendedTextMessage?.text ||
+            imageMsg?.caption ||
+            videoMsg?.caption ||
+            "";
+
+          // Determine message type from actual message content
+          let messageType: "text" | "image" | "video" | "audio" | "document" | "location" = "text";
+          let mediaUrl: string | undefined;
+
+          if (imageMsg) {
+            messageType = "image";
+            mediaUrl = imageMsg.url;
+          } else if (videoMsg) {
+            messageType = "video";
+            mediaUrl = videoMsg.url;
+          } else if (audioMsg) {
+            messageType = "audio";
+            mediaUrl = audioMsg.url;
+          } else if (docMsg) {
+            messageType = "document";
+            mediaUrl = docMsg.url;
+          } else if (m.messageType) {
+            messageType = m.messageType as typeof messageType;
+          }
+
+          const result = await ctx.runMutation(api.whatsapp.receiveMessage, {
             businessId: business._id,
             sender: remoteJid,
             content,
             timestamp,
             fromMe,
             isGroup,
-            messageType: (m.messageType as "text" | "image" | "video" | "audio" | "document" | "location") || "text",
+            messageType,
             name: m.pushName,
+            whatsappMessageId: m.key?.id,
           });
+
+          // If this is a media message with a URL and it's from a customer,
+          // trigger AI image analysis asynchronously
+          if (!fromMe && mediaUrl && (messageType === "image" || messageType === "video")) {
+            const resultObj = result as { success?: boolean; messageId?: string } | undefined;
+            // We need the interaction ID — it was just created in receiveMessage
+            // Schedule vision analysis if we have a URL
+            try {
+              // Find the just-created interaction by whatsapp message ID
+              if (m.key?.id) {
+                await ctx.scheduler.runAfter(500, api.ai.analyzeImage, {
+                  businessId: business._id,
+                  interactionId: resultObj?.messageId as any, // Will be resolved by the action
+                  customerId: "" as any, // Will be looked up in the action
+                  imageUrl: mediaUrl,
+                  caption: content || undefined,
+                });
+              }
+            } catch (imgErr) {
+              console.warn("[Webhook Evolution] Could not schedule image analysis:", imgErr);
+            }
+          }
         }
       }
       // SEND_MESSAGE, READ_RECEIPT, PRESENCE and other events are intentionally ignored

@@ -12,6 +12,7 @@ import { formatDistanceToNow } from "date-fns";
 import styles from "./dashboard.module.css";
 import Loader from "@/components/Loader";
 import LeadPipeline from "@/components/LeadPipeline";
+import AIActivityFeed from "@/components/AIActivityFeed";
 import { PooledOrders } from "@/types";
 
 /** How often (ms) the dashboard checks connection health against Evolution Go. */
@@ -387,6 +388,11 @@ export default function DashboardPage() {
           </div>
         )}
 
+
+        {/* AI Activity Feed — Proof that Pipelixr AI is working */}
+        {business && (
+          <AIActivityFeed businessId={business._id} />
+        )}
 
         <div className={styles.dashboardGrid}>
           <div className="flex flex-col gap-6">

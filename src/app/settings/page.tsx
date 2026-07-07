@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Bell, Shield, Building, Moon, ChevronRight, Save, Store, Factory, Zap, Clock, Banknote, MessageSquare } from "lucide-react";
+import { Bell, Shield, Building, Moon, ChevronRight, Save, Store, Factory, Zap, Clock, Banknote, MessageSquare, Brain, Eye, CheckCircle2, XCircle } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
@@ -21,6 +21,7 @@ const SETTINGS_GROUPS: { title: string; items: SettingsItem[] }[] = [
     items: [
       { id: "business", label: "Business Profile", icon: <Building size={18} /> },
       { id: "automation", label: "Automation Config", icon: <Zap size={18} /> },
+      { id: "ai", label: "AI Models", icon: <Brain size={18} /> },
       { id: "notifications", label: "Notifications", icon: <Bell size={18} /> },
       { id: "security", label: "Security", icon: <Shield size={18} /> },
     ]
@@ -279,6 +280,115 @@ export default function SettingsPage() {
                 </div>
               )}
 
+              {/* AI MODELS TAB */}
+              {activeTab === "ai" && (
+                <div>
+                  <div className={styles.tabHeader}>
+                    <div className={styles.tabHeaderIcon}>
+                      <Brain size={22} />
+                    </div>
+                    <h3 className={styles.tabHeaderTitle}>AI Models</h3>
+                  </div>
+                  <p className={styles.tabHeaderDesc}>
+                    Pipelixr uses AI to classify messages, analyze images, and generate smart replies. These models run automatically when your WhatsApp is connected.
+                  </p>
+
+                  {/* Model Status Cards */}
+                  <div style={{ display: "flex", flexDirection: "column", gap: "1rem", marginTop: "1.5rem", maxWidth: "560px" }}>
+                    {/* Groq LLM */}
+                    <div style={{
+                      padding: "1rem 1.25rem",
+                      borderRadius: "0.75rem",
+                      background: "rgba(139, 92, 246, 0.06)",
+                      border: "1px solid rgba(139, 92, 246, 0.15)",
+                    }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.5rem" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                          <Brain size={16} style={{ color: "#8b5cf6" }} />
+                          <span style={{ fontWeight: 700, fontSize: "0.85rem", color: "#e2e8f0" }}>Text Intelligence</span>
+                        </div>
+                        <span style={{ fontSize: "0.65rem", padding: "0.15rem 0.5rem", borderRadius: "999px", background: "rgba(139,92,246,0.15)", color: "#a78bfa", fontWeight: 600 }}>
+                          Groq
+                        </span>
+                      </div>
+                      <div style={{ fontSize: "0.78rem", color: "#94a3b8", lineHeight: 1.5 }}>
+                        <strong style={{ color: "#cbd5e1" }}>Model:</strong> llama-3.3-70b-versatile<br />
+                        <strong style={{ color: "#cbd5e1" }}>Purpose:</strong> Classifies customer messages (buying signal vs noise), generates follow-up replies, understands Nigerian pidgin and context
+                      </div>
+                      <div style={{ marginTop: "0.5rem", display: "flex", alignItems: "center", gap: "0.35rem" }}>
+                        <CheckCircle2 size={12} style={{ color: "#10b981" }} />
+                        <span style={{ fontSize: "0.7rem", color: "#10b981", fontWeight: 600 }}>Active — processes every incoming message</span>
+                      </div>
+                    </div>
+
+                    {/* OpenAI Vision */}
+                    <div style={{
+                      padding: "1rem 1.25rem",
+                      borderRadius: "0.75rem",
+                      background: "rgba(59, 130, 246, 0.06)",
+                      border: "1px solid rgba(59, 130, 246, 0.15)",
+                    }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.5rem" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                          <Eye size={16} style={{ color: "#3b82f6" }} />
+                          <span style={{ fontWeight: 700, fontSize: "0.85rem", color: "#e2e8f0" }}>Image Analysis</span>
+                        </div>
+                        <span style={{ fontSize: "0.65rem", padding: "0.15rem 0.5rem", borderRadius: "999px", background: "rgba(59,130,246,0.15)", color: "#60a5fa", fontWeight: 600 }}>
+                          OpenAI
+                        </span>
+                      </div>
+                      <div style={{ fontSize: "0.78rem", color: "#94a3b8", lineHeight: 1.5 }}>
+                        <strong style={{ color: "#cbd5e1" }}>Model:</strong> gpt-4o-mini<br />
+                        <strong style={{ color: "#cbd5e1" }}>Purpose:</strong> Analyzes product photos, payment screenshots, and images customers send — detects buying intent from visuals
+                      </div>
+                      <div style={{ marginTop: "0.5rem", display: "flex", alignItems: "center", gap: "0.35rem" }}>
+                        <CheckCircle2 size={12} style={{ color: "#10b981" }} />
+                        <span style={{ fontSize: "0.7rem", color: "#10b981", fontWeight: 600 }}>Active — triggers on image/video messages</span>
+                      </div>
+                    </div>
+
+                    {/* AI Toggle */}
+                    <div style={{
+                      padding: "1rem 1.25rem",
+                      borderRadius: "0.75rem",
+                      background: "rgba(255, 255, 255, 0.02)",
+                      border: "1px solid rgba(255, 255, 255, 0.06)",
+                    }}>
+                      <div className={styles.toggleRow}>
+                        <div className={styles.toggleInfo}>
+                          <span className={styles.toggleLabel}>AI Processing</span>
+                          <span className={styles.toggleSub}>
+                            {business?.aiEnabled === false
+                              ? "AI is disabled — using keyword matching only"
+                              : "AI is active — classifying messages and generating replies"}
+                          </span>
+                        </div>
+                        <div className={`${styles.toggle} ${business?.aiEnabled !== false ? styles.toggleOn : styles.toggleOff}`}>
+                          <div className={`${styles.toggleDot} ${business?.aiEnabled !== false ? styles.toggleDotOn : ""}`}></div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* How it works */}
+                    <div style={{
+                      padding: "1rem 1.25rem",
+                      borderRadius: "0.75rem",
+                      background: "rgba(16, 185, 129, 0.04)",
+                      border: "1px solid rgba(16, 185, 129, 0.1)",
+                    }}>
+                      <p style={{ fontSize: "0.75rem", fontWeight: 700, color: "#10b981", margin: "0 0 0.5rem", letterSpacing: "0.05em" }}>HOW IT WORKS</p>
+                      <ol style={{ fontSize: "0.78rem", color: "#94a3b8", lineHeight: 1.7, margin: 0, paddingLeft: "1.25rem" }}>
+                        <li>Customer sends a WhatsApp message → keywords classify it instantly</li>
+                        <li>AI (Groq) re-classifies in the background with conversation context</li>
+                        <li>If AI detects a buying signal that keywords missed → upgrades the lead</li>
+                        <li>If an image is attached → OpenAI Vision analyzes the product/receipt</li>
+                        <li>If you don&apos;t reply in time → AI generates a personalized follow-up</li>
+                      </ol>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* NOTIFICATIONS TAB */}
               {activeTab === "notifications" && (
                 <div>
@@ -308,7 +418,7 @@ export default function SettingsPage() {
               )}
               
               {/* OTHER TABS */}
-              {(activeTab !== "business" && activeTab !== "notifications" && activeTab !== "automation") && (
+              {(activeTab !== "business" && activeTab !== "notifications" && activeTab !== "automation" && activeTab !== "ai") && (
                 <div className={styles.emptyState}>
                   <div className={styles.emptyIcon}>
                     <Shield size={36} strokeWidth={1.5} />

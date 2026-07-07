@@ -12,6 +12,7 @@ import type * as adapters_evolutionGoAdapter from "../adapters/evolutionGoAdapte
 import type * as adapters_index from "../adapters/index.js";
 import type * as adapters_types from "../adapters/types.js";
 import type * as adapters_whatsappAdapter from "../adapters/whatsappAdapter.js";
+import type * as ai from "../ai.js";
 import type * as auth from "../auth.js";
 import type * as businesses from "../businesses.js";
 import type * as evolutionGoClient from "../evolutionGoClient.js";
@@ -35,6 +36,7 @@ declare const fullApi: ApiFromModules<{
   "adapters/index": typeof adapters_index;
   "adapters/types": typeof adapters_types;
   "adapters/whatsappAdapter": typeof adapters_whatsappAdapter;
+  ai: typeof ai;
   auth: typeof auth;
   businesses: typeof businesses;
   evolutionGoClient: typeof evolutionGoClient;

@@ -407,6 +407,22 @@ export const receiveMessage = mutation({
       await ctx.db.patch(taskId, { scheduledFunctionId });
     }
 
+    // ── Schedule AI classification (async, non-blocking) ──
+    // The keyword classification is already stored. The AI action will
+    // run asynchronously, update the interaction record with richer
+    // classification, and upgrade the customer intent if AI disagrees.
+    if (!args.fromMe && classification !== "NOISE") {
+      await ctx.scheduler.runAfter(0, api.ai.classifyMessageWithAI, {
+        businessId: args.businessId,
+        interactionId,
+        customerId: customer._id,
+        content: args.content,
+        messageType: args.messageType || "text",
+        mediaUrl: args.mediaId ? undefined : undefined, // Media URL extracted in webhook
+        keywordClassification: classification,
+      });
+    }
+
     if (!args.fromMe) {
       const recentSentOutcome = await ctx.db
         .query("actionOutcomes")
@@ -1157,7 +1173,16 @@ export const processBuyingSignalFollowUp = action({
 
     const biz = await ctx.runQuery(api.whatsapp.getBusinessForAssistantAuth, { businessId: args.businessId });
     const customerName = customer.name || customer.phone.split("@")[0];
-    const content = buildBuyingSignalFollowUp(customerName, biz?.followUpTemplate);
+    
+    // Use AI-generated follow-up instead of static template
+    const aiReply = await ctx.runAction(api.ai.generateSmartFollowUp, {
+      businessId: args.businessId,
+      customerId: args.customerId,
+      customerName,
+      fallbackTemplate: biz?.followUpTemplate,
+    });
+    const content = aiReply.message;
+    
     const result = await ctx.runAction(api.whatsapp.sendRetargetMessage, {
       businessId: args.businessId,
       customerId: args.customerId,
