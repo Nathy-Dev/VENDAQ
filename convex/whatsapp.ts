@@ -1125,7 +1125,7 @@ export const getOwnerRepliesForCustomerSince = query({
       .take(1);
     return replies.length;
   },
-});
+}); 
 
 function buildBuyingSignalFollowUp(customerName: string, template?: string): string {
   if (template) {
