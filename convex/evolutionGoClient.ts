@@ -533,7 +533,7 @@ export async function deleteInstance(instanceId: string, instanceToken?: string)
  * as base64.
  *
  * @returns Base64-encoded media data (without data URI prefix) and mimetype
- */
+ */ 
 export async function downloadMedia(
   instanceName: string,
   messageData: {
