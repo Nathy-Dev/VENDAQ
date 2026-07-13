@@ -90,7 +90,7 @@ http.route({
       const eventUpper = (event || "").toUpperCase();
 
       // Handle both Evolution Go (Go port) and Evolution API (Node.js) event name variants
-      if (eventUpper === "RECEIPT") {
+      if (eventUpper === "RECEIPT" || eventUpper === "READ_RECEIPT" || eventUpper === "MESSAGES_READ") {
         // Evolution Go (Go port) sends receipt events for status views.
         // A status view receipt looks like:
         //   Receipt received with ID: <statusMsgId> from <viewer@lid> in status@broadcast with type read

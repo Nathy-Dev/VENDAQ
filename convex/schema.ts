@@ -25,6 +25,9 @@ export default defineSchema({
     averageOrderValue: v.optional(v.number()),
     responseWindowMinutes: v.optional(v.number()),
     followUpTemplate: v.optional(v.string()),
+    // Status-to-Cash: template used when nudging a status viewer who never DMs.
+    // Supports the placeholder [Customer Name].
+    viewedNoDmTemplate: v.optional(v.string()),
     // AI configuration
     aiEnabled: v.optional(v.boolean()), // Default true — toggle AI processing
     aiLlmModel: v.optional(v.string()), // e.g. "llama-3.3-70b-versatile"

@@ -363,6 +363,8 @@ export const receiveMessage = mutation({
     });
 
     if (args.fromMe) {
+      // Owner replied → cancel any pending buying_signal follow-up.
+      // (The owner is already handling this lead; no automation needed.)
       const pendingSignalTasks = await ctx.db
         .query("followUpTasks")
         .withIndex("by_customer_reason", (q) => q.eq("customerId", customer._id).eq("reason", "buying_signal"))
@@ -375,6 +377,45 @@ export const receiveMessage = mutation({
             await ctx.scheduler.cancel(task.scheduledFunctionId as any);
           } catch (error) {
             console.warn(`[receiveMessage] Could not cancel scheduled follow-up ${task.scheduledFunctionId}`, error);
+          }
+        }
+        await ctx.db.patch(task._id, { status: "cancelled" });
+      }
+
+      // Owner replied → also cancel any pending viewed_no_dm follow-up.
+      // No point auto-nudging a viewer the owner is already talking to.
+      const pendingViewerTasks = await ctx.db
+        .query("followUpTasks")
+        .withIndex("by_customer_reason", (q) => q.eq("customerId", customer._id).eq("reason", "viewed_no_dm"))
+        .filter((q) => q.eq(q.field("status"), "pending"))
+        .collect();
+
+      for (const task of pendingViewerTasks) {
+        if (task.scheduledFunctionId) {
+          try {
+            await ctx.scheduler.cancel(task.scheduledFunctionId as any);
+          } catch (error) {
+            console.warn(`[receiveMessage] Could not cancel viewed_no_dm follow-up ${task.scheduledFunctionId}`, error);
+          }
+        }
+        await ctx.db.patch(task._id, { status: "cancelled" });
+      }
+    } else {
+      // Viewer DM'd the business → they turned themselves into a real lead.
+      // Cancel any pending viewed_no_dm follow-up so we don't spam them right
+      // after they already reached out.
+      const pendingViewerTasks = await ctx.db
+        .query("followUpTasks")
+        .withIndex("by_customer_reason", (q) => q.eq("customerId", customer._id).eq("reason", "viewed_no_dm"))
+        .filter((q) => q.eq(q.field("status"), "pending"))
+        .collect();
+
+      for (const task of pendingViewerTasks) {
+        if (task.scheduledFunctionId) {
+          try {
+            await ctx.scheduler.cancel(task.scheduledFunctionId as any);
+          } catch (error) {
+            console.warn(`[receiveMessage] Could not cancel viewed_no_dm follow-up ${task.scheduledFunctionId}`, error);
           }
         }
         await ctx.db.patch(task._id, { status: "cancelled" });
@@ -714,14 +755,32 @@ export const syncStatusView = mutation({
         .first();
 
       if (!existingTask) {
-        await ctx.db.insert("followUpTasks", {
+        const now = Date.now();
+        const dueAt = args.timestamp + VIEWER_FOLLOW_UP_DELAY_MS;
+        // Ensure we never schedule in the past (e.g. historical status view backfills)
+        const delayMs = Math.max(0, dueAt - now);
+
+        const taskId = await ctx.db.insert("followUpTasks", {
           businessId: args.businessId,
           customerId: customer._id,
           reason: "viewed_no_dm",
-          dueAt: args.timestamp + VIEWER_FOLLOW_UP_DELAY_MS,
+          dueAt,
           status: "pending",
-          createdAt: Date.now(),
+          createdAt: now,
         });
+
+        // Schedule the automated follow-up to fire when the task becomes due.
+        // Without this, tasks would sit in "pending" state forever.
+        const scheduledFunctionId = await ctx.scheduler.runAfter(
+          delayMs,
+          api.whatsapp.processViewedNoDmFollowUp,
+          {
+            businessId: args.businessId,
+            customerId: customer._id,
+            taskId,
+          }
+        );
+        await ctx.db.patch(taskId, { scheduledFunctionId });
       }
     }
   },
@@ -1202,6 +1261,169 @@ export const processBuyingSignalFollowUp = action({
       initialIntent: "BUYING_SIGNAL",
       scoreAtSend: 100,
       estimatedValue: estimateCustomerValue(customer.totalValue, "BUYING_SIGNAL"),
+    });
+
+    return { sent: true };
+  },
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// STATUS-TO-CASH ENGINE — Automated follow-up for status viewers who don't DM
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Returns the count of inbound (customer-authored) interactions for a customer
+ * after the given timestamp. Used by `processViewedNoDmFollowUp` to detect if
+ * a viewer has DM'd the business since the follow-up was scheduled (in which
+ * case we cancel the follow-up — they're already in the funnel).
+ */
+export const getCustomerInboundSince = query({
+  args: {
+    customerId: v.id("customers"),
+    since: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const inbound = await ctx.db
+      .query("interactions")
+      .withIndex("by_customer", (q) => q.eq("customerId", args.customerId))
+      .filter((q) =>
+        q.and(
+          q.eq(q.field("role"), "customer"),
+          q.gt(q.field("timestamp"), args.since)
+        )
+      )
+      .take(1);
+    return inbound.length;
+  },
+});
+
+/**
+ * Builds a fallback follow-up message for a status viewer when the AI is
+ * unavailable. Personalises with the customer name.
+ */
+function buildViewedNoDmFollowUp(customerName: string, template?: string): string {
+  if (template) {
+    return template.replace(/\[Customer Name\]/gi, customerName);
+  }
+  return `Hi ${customerName}, thanks for checking out our latest post 🙌. If anything caught your eye, just reply here and I'll send you full details.`;
+}
+
+/**
+ * STATUS-TO-CASH FOLLOW-UP PROCESSOR
+ *
+ * Fires when a `viewed_no_dm` follow-up task becomes due (default 2h after
+ * the status view). Sends an AI-personalised opener to the viewer to pull
+ * them into a real conversation — turning a passive status viewer into an
+ * active lead.
+ *
+ * Guardrails (production safety):
+ *   1. Task must still be pending (not already handled)
+ *   2. Viewer must not have DM'd since the view (auto-cancel if they did)
+ *   3. Owner must not have already messaged them (avoid double-outreach)
+ *   4. Global send guardrails (quiet hours, daily caps) via canSendToCustomerNow
+ *   5. Customer must still exist and must not be a group chat
+ */
+export const processViewedNoDmFollowUp = action({
+  args: {
+    businessId: v.id("businesses"),
+    customerId: v.id("customers"),
+    taskId: v.id("followUpTasks"),
+  },
+  handler: async (ctx, args): Promise<{ sent: boolean; reason?: string }> => {
+    // 1. Verify the task is still pending and for the right reason
+    const task = await ctx.runQuery(api.whatsapp.getFollowUpTaskById, {
+      taskId: args.taskId,
+    });
+    if (!task || task.status !== "pending" || task.reason !== "viewed_no_dm") {
+      return { sent: false, reason: "task_not_pending" };
+    }
+
+    // 2. If the viewer has DM'd us since the view, they're already engaged.
+    //    Cancel the follow-up — no need to nudge someone who reached out.
+    const inboundCount = await ctx.runQuery(api.whatsapp.getCustomerInboundSince, {
+      customerId: args.customerId,
+      since: task.createdAt,
+    });
+    if (inboundCount > 0) {
+      await ctx.runMutation(api.whatsapp.markTaskCancelled, { taskId: args.taskId });
+      return { sent: false, reason: "viewer_already_dmed" };
+    }
+
+    // 3. If the owner has already messaged them, skip the automated outreach.
+    //    They're already in the funnel.
+    const ownerReplies = await ctx.runQuery(api.whatsapp.getOwnerRepliesForCustomerSince, {
+      customerId: args.customerId,
+      since: task.createdAt,
+    });
+    if (ownerReplies > 0) {
+      await ctx.runMutation(api.whatsapp.markTaskCancelled, { taskId: args.taskId });
+      return { sent: false, reason: "owner_already_reached_out" };
+    }
+
+    // 4. Global send guardrails (quiet hours, daily caps)
+    const allowed = await ctx.runQuery(api.whatsapp.canSendToCustomerNow, {
+      businessId: args.businessId,
+      customerId: args.customerId,
+    });
+    if (!allowed) {
+      await ctx.runMutation(api.whatsapp.markTaskSkipped, { taskId: args.taskId });
+      return { sent: false, reason: "guardrail_blocked" };
+    }
+
+    // 5. Customer must still exist and must not be a group chat
+    const customer = await ctx.runQuery(api.whatsapp.getCustomerLiteById, {
+      customerId: args.customerId,
+    });
+    if (!customer) {
+      await ctx.runMutation(api.whatsapp.markTaskSkipped, { taskId: args.taskId });
+      return { sent: false, reason: "customer_not_found" };
+    }
+    if (customer.isGroup) {
+      await ctx.runMutation(api.whatsapp.markTaskCancelled, { taskId: args.taskId });
+      return { sent: false, reason: "group_chat_not_supported" };
+    }
+
+    // 6. Compose the message — AI-first with a graceful fallback
+    const biz = await ctx.runQuery(api.whatsapp.getBusinessForAssistantAuth, {
+      businessId: args.businessId,
+    });
+    const customerName = customer.name || customer.phone.split("@")[0];
+
+    let content: string;
+    try {
+      const aiReply = await ctx.runAction(api.ai.generateSmartFollowUp, {
+        businessId: args.businessId,
+        customerId: args.customerId,
+        customerName,
+        fallbackTemplate: biz?.viewedNoDmTemplate || biz?.followUpTemplate,
+      });
+      content = aiReply.message || buildViewedNoDmFollowUp(customerName, biz?.viewedNoDmTemplate || biz?.followUpTemplate);
+    } catch (aiErr) {
+      console.warn("[processViewedNoDmFollowUp] AI failed, using template fallback:", aiErr);
+      content = buildViewedNoDmFollowUp(customerName, biz?.viewedNoDmTemplate || biz?.followUpTemplate);
+    }
+
+    // 7. Send via Evolution Go (respects the 3-12s human-paced delay)
+    const result = await ctx.runAction(api.whatsapp.sendRetargetMessage, {
+      businessId: args.businessId,
+      customerId: args.customerId,
+      content,
+    });
+
+    if (!result?.sent) {
+      await ctx.runMutation(api.whatsapp.markTaskSkipped, { taskId: args.taskId });
+      return { sent: false, reason: result?.reason || "send_failed" };
+    }
+
+    // 8. Close the task + log the revenue action outcome (feeds Revenue Loop metrics)
+    await ctx.runMutation(api.whatsapp.markTaskDone, { taskId: args.taskId });
+    await ctx.runMutation(api.whatsapp.logActionOutcomeSent, {
+      businessId: args.businessId,
+      customerId: args.customerId,
+      suggestedMessage: content,
+      initialIntent: "STATUS_VIEW",
+      scoreAtSend: 70,
+      estimatedValue: estimateCustomerValue(customer.totalValue, customer.lastIntent),
     });
 
     return { sent: true };
