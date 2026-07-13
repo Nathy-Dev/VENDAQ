@@ -6,9 +6,10 @@
 
 .main {
   flex: 1;
-  margin-left: 230px;
+  margin-left: var(--sidebar-width, 230px);
   min-height: 100vh;
   overflow-x: hidden;
+  transition: margin-left 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 @media (max-width: 768px) {

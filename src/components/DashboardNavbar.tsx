@@ -18,6 +18,7 @@ import {
   Menu,
   X,
   MessageCircle,
+  ChevronLeft,
 } from "lucide-react";
 import styles from "./DashboardNavbar.module.css";
 import { ChatThread } from "@/types";
@@ -38,7 +39,15 @@ export default function DashboardNavbar() {
   const pathname = usePathname();
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    document.documentElement.style.setProperty(
+      "--sidebar-width",
+      isCollapsed ? "64px" : "230px"
+    );
+  }, [isCollapsed]);
 
   const business = useQuery(
     api.businesses.getBusiness,
@@ -101,7 +110,7 @@ export default function DashboardNavbar() {
       />
 
       {/* Sidebar */}
-      <aside className={`${styles.sidebar} ${isMobileOpen ? styles.sidebarOpen : ""}`}>
+      <aside className={`${styles.sidebar} ${isMobileOpen ? styles.sidebarOpen : ""} ${isCollapsed ? styles.sidebarCollapsed : ""}`}>
         {/* Logo */}
         <div className={styles.logoSection}>
           <Link href="/dashboard" className={styles.logoLink} onClick={closeMobile}>
@@ -131,7 +140,7 @@ export default function DashboardNavbar() {
               onClick={closeMobile}
             >
               <Icon size={16} className={styles.navIcon} />
-              <span>{label}</span>
+              <span className={styles.navLabel}>{label}</span>
             </Link>
           ))}
 
@@ -142,7 +151,7 @@ export default function DashboardNavbar() {
               onClick={closeMobile}
             >
               <MessageCircle size={16} className={styles.navIcon} />
-              <span>New Messages</span>
+              <span className={styles.navLabel}>New Messages</span>
               <span className={styles.navBadge}>
                 {newChatsCount > 9 ? "9+" : newChatsCount}
               </span>
@@ -161,9 +170,18 @@ export default function DashboardNavbar() {
               onClick={closeMobile}
             >
               <Icon size={16} className={styles.navIcon} />
-              <span>{label}</span>
+              <span className={styles.navLabel}>{label}</span>
             </Link>
           ))}
+
+          <button
+            className={`${styles.navItem} ${styles.collapseNavBtn}`}
+            onClick={() => setIsCollapsed(!isCollapsed)}
+            aria-label="Toggle sidebar"
+          >
+            <ChevronLeft size={16} className={`${styles.collapseIcon} ${isCollapsed ? styles.collapseIconRotated : ""}`} />
+            <span className={styles.navLabel}>Collapse</span>
+          </button>
         </nav>
 
         {/* User card */}
