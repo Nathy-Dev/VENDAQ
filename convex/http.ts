@@ -90,7 +90,59 @@ http.route({
       const eventUpper = (event || "").toUpperCase();
 
       // Handle both Evolution Go (Go port) and Evolution API (Node.js) event name variants
-      if (eventUpper === "QRCODE_UPDATED" || eventUpper === "QRCODE") {
+      if (eventUpper === "RECEIPT") {
+        // Evolution Go (Go port) sends receipt events for status views.
+        // A status view receipt looks like:
+        //   Receipt received with ID: <statusMsgId> from <viewer@lid> in status@broadcast with type read
+        // The data shape varies. Try to extract from common formats.
+        const receiptData = data as Record<string, any>;
+        const receiptType = receiptData.type || receiptData.Type || receiptData.receiptType || "";
+        const remoteJid = receiptData.remoteJid || receiptData.RemoteJid || "";
+        const chatJid = receiptData.chat || receiptData.Chat || receiptData.fromJid || receiptData.FromJid || "";
+        const messageId = receiptData.id || receiptData.ID || receiptData.messageId || receiptData.MessageId || "";
+        const viewerJid = receiptData.sender || receiptData.Sender || receiptData.from || receiptData.From || "";
+
+        // Try nested data object (Go port may nest inside data.Receipt)
+        const rcptData = receiptData.Receipt || receiptData.receipt || receiptData.data || {};
+        const rcptType = rcptData.type || rcptData.Type || rcptData.receiptType || receiptType;
+        const rcptChat = rcptData.Chat || rcptData.chat || rcptData.remoteJid || rcptData.RemoteJid || chatJid;
+        const rcptMsgId = rcptData.ID || rcptData.id || rcptData.messageId || messageId;
+        const rcptSender = rcptData.Sender || rcptData.sender || rcptData.from || viewerJid;
+
+        // Determine if this is a status view receipt (either chat is status@broadcast or remoteJid contains it)
+        const isStatusView = (
+          rcptChat === "status@broadcast" ||
+          remoteJid === "status@broadcast" ||
+          chatJid === "status@broadcast" ||
+          (rcptChat && rcptChat.includes("status")) ||
+          (remoteJid && remoteJid.includes("status"))
+        );
+        const isReadType = rcptType.toLowerCase() === "read" || receiptType.toLowerCase() === "read";
+
+        if (isStatusView && isReadType && (rcptMsgId || messageId)) {
+          const finalViewerJid = rcptSender || viewerJid;
+          const finalMsgId = rcptMsgId || messageId;
+
+          console.log(`[Webhook Evolution] Status view receipt: msgId=${finalMsgId}, viewer=${finalViewerJid}`);
+
+          if (finalViewerJid && finalMsgId) {
+            // Extract the phone number from @lid or @s.whatsapp.net format
+            // WhatsApp privacy LID format: "254906611064927@lid" or "254906611064927@s.whatsapp.net"
+            const viewerPhone = finalViewerJid.includes("@")
+              ? finalViewerJid.split("@")[0]
+              : finalViewerJid;
+
+            await ctx.runMutation(api.whatsapp.syncStatusView, {
+              businessId: business._id,
+              whatsappStatusId: finalMsgId,
+              viewerPhone,
+              timestamp: Date.now(),
+            });
+          }
+        } else {
+          console.log(`[Webhook Evolution] Non-status receipt ignored: type=${rcptType || receiptType}, chat=${rcptChat || remoteJid || chatJid}`);
+        }
+      } else if (eventUpper === "QRCODE_UPDATED" || eventUpper === "QRCODE") {
         const qr = (data as { qrcode?: { base64?: string; code?: string } })?.qrcode;
         // Evolution Go may put the base64 directly on data
         const qrString = qr?.base64 || qr?.code || (data as { base64?: string })?.base64 || (data as { code?: string })?.code || "";
@@ -263,6 +315,7 @@ http.route({
           const remoteJid = m.key?.remoteJid || m.remoteJid || extractJid(m.Info?.RemoteJid) || extractJid(m.Info?.Chat) || extractJid(m.Info?.Sender) || "";
           const fromMe = m.key?.fromMe ?? m.fromMe ?? m.Info?.IsFromMe ?? false;
           const isGroup = remoteJid.endsWith("@g.us");
+          const isStatusBroadcast = remoteJid === "status@broadcast";
           const messageId = m.key?.id || m.id || m.Info?.ID || "";
           
           let timestamp = Date.now();
@@ -320,6 +373,29 @@ http.route({
             mediaMimetype = docMsg.mimetype || "application/octet-stream";
           } else if (m.messageType) {
             messageType = m.messageType as typeof messageType;
+          }
+
+          // ── Status broadcast messages (business owner's own statuses) ──
+          // When the business owner posts a status, Evolution Go fires MESSAGES_UPSERT
+          // with remoteJid = "status@broadcast". We need to:
+          //   - fromMe === true: Record the status via syncStatus (it's the owner's own status)
+          //   - fromMe === false: Discard (contacts' statuses are not our concern)
+          if (isStatusBroadcast) {
+            if (fromMe) {
+              console.log(`[Webhook Evolution] Owner status broadcast: id=${messageId}`);
+              await ctx.runMutation(api.whatsapp.syncStatus, {
+                businessId: business._id,
+                sender: remoteJid,
+                content: content as string,
+                mediaId: undefined,
+                mediaType: messageType !== "text" ? messageType : undefined,
+                timestamp,
+                whatsappMessageId: messageId,
+              });
+            } else {
+              console.log(`[Webhook Evolution] Contact status broadcast (ignored): id=${messageId}`);
+            }
+            continue; // Skip normal message processing for status broadcasts
           }
 
           const result = await ctx.runMutation(api.whatsapp.receiveMessage, {
@@ -399,7 +475,8 @@ http.route({
           }
         }
       }
-      // SEND_MESSAGE, READ_RECEIPT, PRESENCE and other events are intentionally ignored
+      // SEND_MESSAGE, PRESENCE and other events are intentionally ignored.
+      // RECEIPT events are handled above for status view tracking.
 
       return new Response(JSON.stringify({ ok: true }), {
         status: 200,
