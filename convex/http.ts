@@ -21,15 +21,50 @@ http.route({
   handler: httpAction(async (ctx, request) => {
     try {
       const body = await request.json();
-      const { event, instance, data } = body as {
-        event: string;
-        instance: string;
-        data: Record<string, unknown>;
-      };
 
-      // Guard: Evolution may send events (e.g. server-level) without an instance name
+      // Evolution Go (Go port) may use different field names/casing than Evolution API (Node.js).
+      // Go's default JSON serialization uses PascalCase, and different versions may use
+      // snake_case or camelCase. Extract from all known variants.
+      const event: string =
+        body.event || body.Event || body.event_type || body.EventType || "";
+
+      // Try body fields first, then headers, then URL path
+      let instance: string =
+        body.instance || body.Instance ||
+        body.instanceName || body.InstanceName || body.instance_name ||
+        body.apikey || body.Apikey || body.token || body.Token ||
+        // Some Evolution Go versions nest instance info inside data
+        body.data?.instance || body.data?.Instance ||
+        body.data?.instanceName || body.data?.InstanceName ||
+        body.data?.instance_name ||
+        "";
+
+      // Fallback: check request headers (Evolution Go may send instance token as apikey header)
       if (!instance) {
-        console.warn("[Webhook Evolution] Received event without instance name, ignoring.", { event });
+        instance =
+          request.headers.get("apikey") ||
+          request.headers.get("x-instance-name") ||
+          request.headers.get("x-instance") ||
+          request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ||
+          "";
+      }
+
+      const data: Record<string, unknown> = body.data || body.Data || body;
+
+      // Debug: log the raw payload shape so we can diagnose field naming issues
+      if (process.env.EVOLUTION_GO_DEBUG) {
+        console.log("[Webhook Evolution] Raw payload keys:", Object.keys(body), "event:", event, "instance:", instance);
+      }
+
+      if (!instance) {
+        // Always log full payload keys + a truncated body sample for debugging
+        const bodySample = JSON.stringify(body).slice(0, 500);
+        console.warn("[Webhook Evolution] Received event without instance name, ignoring.", {
+          event,
+          bodyKeys: Object.keys(body),
+          dataKeys: body.data ? Object.keys(body.data) : [],
+          bodySample,
+        });
         return new Response(JSON.stringify({ ok: true, skipped: "no instance name" }), {
           status: 200,
           headers: { "Content-Type": "application/json" },
@@ -48,7 +83,8 @@ http.route({
       }
 
       if (!business) {
-        return new Response(JSON.stringify({ error: "Cannot resolve business from instance name" }), { status: 400 });
+        console.warn(`[Webhook Evolution] Cannot resolve business from instance="${instance}". Available instance names may not match.`);
+        return new Response(JSON.stringify({ error: "Cannot resolve business from instance name", receivedInstance: instance }), { status: 400 });
       }
 
       const eventUpper = (event || "").toUpperCase();
