@@ -230,14 +230,28 @@ http.route({
             pushName?: string;
             messageType?: string;
             messageTimestamp?: number;
+            // Evolution Go alternate fields
+            remoteJid?: string;
+            id?: string;
+            fromMe?: boolean;
+            text?: string;
           };
 
-          const remoteJid = m.key?.remoteJid || "";
-          const fromMe = m.key?.fromMe ?? false;
+          if (process.env.EVOLUTION_GO_DEBUG) {
+             console.log("[Webhook Evolution] Processing message payload:", JSON.stringify(m).slice(0, 500));
+          }
+
+          // Try standard Node.js format first, fallback to flattened Go format
+          const remoteJid = m.key?.remoteJid || m.remoteJid || "";
+          const fromMe = m.key?.fromMe ?? m.fromMe ?? false;
           const isGroup = remoteJid.endsWith("@g.us");
           const timestamp = (m.messageTimestamp || Date.now() / 1000) * 1000;
+          const messageId = m.key?.id || m.id || "";
 
-          if (!remoteJid) continue;
+          if (!remoteJid) {
+             console.warn("[Webhook Evolution] Skipping message because remoteJid is missing", { msgKeys: Object.keys(m) });
+             continue;
+          }
 
           // Extract content — text messages use conversation/extendedText,
           // media messages may have captions
@@ -249,6 +263,7 @@ http.route({
           const content =
             m.message?.conversation ||
             m.message?.extendedTextMessage?.text ||
+            m.text || // Evolution Go flat text
             imageMsg?.caption ||
             videoMsg?.caption ||
             "";
@@ -281,13 +296,13 @@ http.route({
           const result = await ctx.runMutation(api.whatsapp.receiveMessage, {
             businessId: business._id,
             sender: remoteJid,
-            content,
+            content: content as string,
             timestamp,
             fromMe,
             isGroup,
             messageType,
             name: m.pushName,
-            whatsappMessageId: m.key?.id,
+            whatsappMessageId: messageId,
           });
 
           const resultObj = result as { success?: boolean; discarded?: boolean } | undefined;
@@ -299,8 +314,8 @@ http.route({
             !fromMe &&
             !resultObj?.discarded &&
             messageType !== "text" &&
-            m.key?.id &&
-            m.key?.remoteJid
+            messageId &&
+            remoteJid
           ) {
             try {
               // Build the raw message object for Evolution Go download endpoint
@@ -313,11 +328,11 @@ http.route({
               await ctx.scheduler.runAfter(500, api.ai.processMediaMessage, {
                 businessId: business._id,
                 sender: remoteJid,
-                whatsappMessageId: m.key.id,
+                whatsappMessageId: messageId,
                 messageKey: {
-                  remoteJid: m.key.remoteJid,
+                  remoteJid,
                   fromMe: false,
-                  id: m.key.id,
+                  id: messageId,
                 },
                 rawMessage: JSON.stringify(rawMessageObj),
                 messageType,
@@ -335,17 +350,17 @@ http.route({
             !fromMe &&
             !resultObj?.discarded &&
             messageType === "text" &&
-            m.key?.id &&
-            m.key?.remoteJid
+            messageId &&
+            remoteJid
           ) {
             try {
               await ctx.scheduler.runAfter(1000, api.whatsapp.markInboundAsRead, {
                 businessId: business._id,
                 messages: [
                   {
-                    remoteJid: m.key.remoteJid,
+                    remoteJid,
                     fromMe: false,
-                    id: m.key.id,
+                    id: messageId,
                   },
                 ],
               });
