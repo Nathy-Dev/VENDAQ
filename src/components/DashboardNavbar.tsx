@@ -4,185 +4,218 @@ import React, { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useSession, signOut } from "next-auth/react";
-import { 
-  User, 
-  Settings, 
-  LogOut, 
-  Bell,
-  LayoutDashboard,
-  Zap,
-  TrendingUp
-} from "lucide-react";
+import { usePathname } from "next/navigation";
 import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
-import { ChatThread } from "@/types";
+import {
+  LayoutDashboard,
+  Zap,
+  TrendingUp,
+  Settings,
+  User,
+  LogOut,
+  ChevronUp,
+  Menu,
+  X,
+  MessageCircle,
+} from "lucide-react";
 import styles from "./DashboardNavbar.module.css";
+import { ChatThread } from "@/types";
+
+const MAIN_NAV = [
+  { href: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
+  { href: "/status", icon: Zap, label: "Status-to-Cash" },
+  { href: "/revenue", icon: TrendingUp, label: "Revenue Ops" },
+];
+
+const ACCOUNT_NAV = [
+  { href: "/profile", icon: User, label: "Profile" },
+  { href: "/settings", icon: Settings, label: "Settings" },
+];
 
 export default function DashboardNavbar() {
   const { data: session } = useSession();
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
-  const notificationsRef = useRef<HTMLDivElement>(null);
+  const pathname = usePathname();
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const [isMobileOpen, setIsMobileOpen] = useState(false);
+  const userMenuRef = useRef<HTMLDivElement>(null);
 
-  const business = useQuery(api.businesses.getBusiness, 
+  const business = useQuery(
+    api.businesses.getBusiness,
     session?.user?.id ? { ownerId: session.user.id } : "skip"
   );
 
-  const chats = useQuery(api.interactions.getRecentChats,
+  const chats = useQuery(
+    api.interactions.getRecentChats,
     business ? { businessId: business._id } : "skip"
   ) as ChatThread[] | undefined;
 
-  // Close menu when clicking outside
+  const newChatsCount = chats?.length ?? 0;
+
   useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        setIsMenuOpen(false);
-      }
-      if (notificationsRef.current && !notificationsRef.current.contains(event.target as Node)) {
-        setIsNotificationsOpen(false);
+    function handleOutsideClick(e: MouseEvent) {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
+        setIsUserMenuOpen(false);
       }
     }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+    document.addEventListener("mousedown", handleOutsideClick);
+    return () => document.removeEventListener("mousedown", handleOutsideClick);
   }, []);
 
-  const handleLogout = () => {
-    signOut({ callbackUrl: "/login" });
-  };
+  const userInitial = (
+    session?.user?.name?.[0] ||
+    session?.user?.email?.[0] ||
+    "U"
+  ).toUpperCase();
 
-  const userInitial = session?.user?.name?.[0] || session?.user?.email?.[0] || "U";
+  const closeMobile = () => setIsMobileOpen(false);
 
   return (
-    <nav className={styles.navbar}>
-      <div className={styles.container}>
-        {/* Logo Section */}
-        <Link href="/dashboard" className={styles.logoArea}>
-          <Image 
-            src="/logo.png" 
-            alt="Logo" 
-            width={36} 
-            height={36} 
-            className={styles.logoImg}
+    <>
+      {/* Mobile top bar */}
+      <div className={styles.mobileHeader}>
+        <button
+          className={styles.hamburger}
+          onClick={() => setIsMobileOpen(true)}
+          aria-label="Open menu"
+        >
+          <Menu size={18} />
+        </button>
+        <Link href="/dashboard" onClick={closeMobile}>
+          <Image
+            src="/logo.png"
+            alt="PIPELIXR"
+            width={30}
+            height={30}
+            style={{ borderRadius: 7, display: "block" }}
           />
         </Link>
+        <div style={{ width: 36 }} />
+      </div>
 
-        {/* Actions Section */}
-        <div className={styles.navActions}>
-          <div className={styles.userMenuWrapper} ref={notificationsRef}>
-            <button 
-              className={styles.avatarBtn} 
-              style={{ background: 'transparent', border: 'none', color: isNotificationsOpen ? '#10b981' : '#94a3b8', width: 'auto', height: 'auto', marginRight: '0.5rem', position: 'relative' }}
-              onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
-              aria-label="Notifications"
-            >
-              <Bell size={20} />
-              {chats && chats.length > 0 && (
-                <span className="absolute top-1 right-0 w-2 h-2 bg-red-500 rounded-full animate-pulse border border-[#0f172a]"></span>
-              )}
-            </button>
+      {/* Mobile overlay */}
+      <div
+        className={`${styles.mobileOverlay} ${isMobileOpen ? styles.mobileOverlayVisible : ""}`}
+        onClick={closeMobile}
+        aria-hidden="true"
+      />
 
-            {isNotificationsOpen && (
-              <div className={`${styles.dropdown} w-80 max-h-96 overflow-y-auto`} style={{ right: '-120px' }}>
-                <div className="p-3 border-b border-slate-800 flex items-center justify-between sticky top-0 bg-[#0f172a]/95 backdrop-blur-sm z-10">
-                  <span className="font-bold text-slate-200">Notifications</span>
-                  {chats && chats.length > 0 && <span className="text-xs bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full">{chats.length} New</span>}
-                </div>
-                
-                <div className="flex flex-col">
-                  {chats && chats.length > 0 ? (
-                    chats.slice(0, 5).map((chat) => (
-                      <div 
-                        key={chat._id} 
-                        className="p-4 hover:bg-slate-800/50 border-b border-slate-800/50 transition-colors"
-                      >
-                        <div className="flex items-start gap-3">
-                          <div className="w-8 h-8 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center shrink-0 font-bold text-xs uppercase">
-                            {chat.name?.[0] || chat.phone.substring(0, 2)}
-                          </div>
-                          <div>
-                            <p className="text-sm font-semibold text-slate-200">{chat.name || chat.phone}</p>
-                            <p className="text-xs text-slate-400 mt-1 line-clamp-1">{chat.lastMessage}</p>
-                          </div>
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="p-8 text-center text-slate-500 text-sm">
-                      <Bell size={24} className="mx-auto mb-2 opacity-50" />
-                      No new notifications
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-          
-          <div className={styles.userMenuWrapper} ref={menuRef}>
-            <button 
-              className={styles.avatarBtn}
-              onClick={() => setIsMenuOpen(!isMenuOpen)}
-              aria-label="User menu"
+      {/* Sidebar */}
+      <aside className={`${styles.sidebar} ${isMobileOpen ? styles.sidebarOpen : ""}`}>
+        {/* Logo */}
+        <div className={styles.logoSection}>
+          <Link href="/dashboard" className={styles.logoLink} onClick={closeMobile}>
+            <Image
+              src="/logo.png"
+              alt="PIPELIXR"
+              width={30}
+              height={30}
+              className={styles.logoImg}
+            />
+            <span className={styles.logoText}>PIPELIXR</span>
+          </Link>
+          <button className={styles.closeBtn} onClick={closeMobile} aria-label="Close menu">
+            <X size={15} />
+          </button>
+        </div>
+
+        {/* Navigation */}
+        <nav className={styles.nav}>
+          <span className={styles.navSectionLabel}>Workspace</span>
+
+          {MAIN_NAV.map(({ href, icon: Icon, label }) => (
+            <Link
+              key={href}
+              href={href}
+              className={`${styles.navItem} ${pathname === href ? styles.navItemActive : ""}`}
+              onClick={closeMobile}
             >
+              <Icon size={16} className={styles.navIcon} />
+              <span>{label}</span>
+            </Link>
+          ))}
+
+          {newChatsCount > 0 && (
+            <Link
+              href="/dashboard"
+              className={styles.navItem}
+              onClick={closeMobile}
+            >
+              <MessageCircle size={16} className={styles.navIcon} />
+              <span>New Messages</span>
+              <span className={styles.navBadge}>
+                {newChatsCount > 9 ? "9+" : newChatsCount}
+              </span>
+            </Link>
+          )}
+
+          <span className={styles.navSectionLabel} style={{ marginTop: "0.5rem" }}>
+            Account
+          </span>
+
+          {ACCOUNT_NAV.map(({ href, icon: Icon, label }) => (
+            <Link
+              key={href}
+              href={href}
+              className={`${styles.navItem} ${pathname === href ? styles.navItemActive : ""}`}
+              onClick={closeMobile}
+            >
+              <Icon size={16} className={styles.navIcon} />
+              <span>{label}</span>
+            </Link>
+          ))}
+        </nav>
+
+        {/* User card */}
+        <div className={styles.userSection} ref={userMenuRef}>
+          {isUserMenuOpen && (
+            <div className={styles.dropdown}>
+              <button
+                className={`${styles.dropdownItem} ${styles.logoutItem}`}
+                onClick={() => {
+                  signOut({ callbackUrl: "/login" });
+                  setIsUserMenuOpen(false);
+                }}
+              >
+                <LogOut size={14} />
+                Sign Out
+              </button>
+            </div>
+          )}
+
+          <button
+            className={styles.userCard}
+            onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
+            aria-expanded={isUserMenuOpen}
+          >
+            <div className={styles.avatar}>
               {session?.user?.image ? (
-                <Image 
-                  src={session.user.image} 
-                  alt="Avatar" 
-                  width={44} 
-                  height={44} 
+                <Image
+                  src={session.user.image}
+                  alt="Avatar"
+                  width={33}
+                  height={33}
                   className={styles.avatarImg}
                 />
               ) : (
-                <span style={{ fontWeight: 700, fontSize: '1rem' }}>{userInitial}</span>
+                <span>{userInitial}</span>
               )}
-            </button>
-
-            {isMenuOpen && (
-              <div className={styles.dropdown}>
-                <div className={styles.userInfo}>
-                  <span className={styles.userName}>{session?.user?.name || "User"}</span>
-                  <span className={styles.userEmail}>{session?.user?.email || ""}</span>
-                </div>
-                
-                <Link href="/dashboard" className={styles.menuItem} onClick={() => setIsMenuOpen(false)}>
-                  <LayoutDashboard size={18} className={styles.menuIcon} />
-                  Dashboard
-                </Link>
-                
-                <Link href="/profile" className={styles.menuItem} onClick={() => setIsMenuOpen(false)}>
-                  <User size={18} className={styles.menuIcon} />
-                  Profile Settings
-                </Link>
-                
-                <Link href="/settings" className={styles.menuItem} onClick={() => setIsMenuOpen(false)}>
-                  <Settings size={18} className={styles.menuIcon} />
-                  Account Settings
-                </Link>
-
-                <Link href="/status" className={styles.menuItem} onClick={() => setIsMenuOpen(false)}>
-                  <Zap size={18} className={styles.menuIcon} color="#00a884" />
-                  Status-to-Cash
-                </Link>
-
-                <Link href="/revenue" className={styles.menuItem} onClick={() => setIsMenuOpen(false)}>
-                  <TrendingUp size={18} className={styles.menuIcon} color="#10b981" />
-                  Revenue Ops
-                </Link>
-                
-                <div className={styles.divider} />
-                
-                <button 
-                  onClick={handleLogout}
-                  className={`${styles.menuItem} ${styles.logoutBtn}`}
-                >
-                  <LogOut size={18} />
-                  Log Out
-                </button>
-              </div>
-            )}
-          </div>
+            </div>
+            <div className={styles.userMeta}>
+              <span className={styles.userName}>
+                {session?.user?.name || "User"}
+              </span>
+              <span className={styles.userEmail}>
+                {session?.user?.email || ""}
+              </span>
+            </div>
+            <ChevronUp
+              size={13}
+              className={`${styles.chevron} ${isUserMenuOpen ? styles.chevronDown : ""}`}
+            />
+          </button>
         </div>
-      </div>
-    </nav>
+      </aside>
+    </>
   );
 }

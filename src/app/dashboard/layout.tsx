@@ -1,16 +1,11 @@
 import DashboardNavbar from "@/components/DashboardNavbar";
+import styles from "./layout.module.css";
 
-export default function DashboardLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', backgroundColor: '#020617' }}>
+    <div className={styles.layout}>
       <DashboardNavbar />
-      <main style={{ flex: 1 }}>
-        {children}
-      </main>
+      <main className={styles.main}>{children}</main>
     </div>
   );
 }

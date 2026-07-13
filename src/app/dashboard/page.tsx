@@ -7,7 +7,18 @@ import { api } from "../../../convex/_generated/api";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useState, useEffect, useRef, useCallback } from "react";
-import { AlertTriangle, Banknote, MessageSquare, Reply, Send, Wifi, WifiOff, Loader2, RefreshCcw, X, type LucideIcon } from "lucide-react";
+import {
+  AlertTriangle,
+  Banknote,
+  MessageSquare,
+  Reply,
+  Send,
+  Wifi,
+  WifiOff,
+  Loader2,
+  RefreshCcw,
+  type LucideIcon,
+} from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import styles from "./dashboard.module.css";
 import Loader from "@/components/Loader";
@@ -15,12 +26,9 @@ import LeadPipeline from "@/components/LeadPipeline";
 import AIActivityFeed from "@/components/AIActivityFeed";
 import { PooledOrders } from "@/types";
 
-/** How often (ms) the dashboard checks connection health against Evolution Go. */
-const HEALTH_CHECK_INTERVAL_MS = 30_000; // 30 seconds
-/** How often (ms) to poll while reconnecting (waiting for QR scan). */
+const HEALTH_CHECK_INTERVAL_MS = 30_000;
 const RECONNECT_POLL_INTERVAL_MS = 8_000;
-/** Max time (ms) to stay in "reconnecting" state before auto-cancelling. */
-const RECONNECT_TIMEOUT_MS = 120_000; // 2 minutes
+const RECONNECT_TIMEOUT_MS = 120_000;
 
 export default function DashboardPage() {
   const { data: session, status: sessionStatus } = useSession();
@@ -29,25 +37,30 @@ export default function DashboardPage() {
   const [isReconnecting, setIsReconnecting] = useState(false);
   const [reconnectError, setReconnectError] = useState<string | null>(null);
 
-  const business = useQuery(api.businesses.getBusiness,
+  const business = useQuery(
+    api.businesses.getBusiness,
     session?.user?.id ? { ownerId: session.user.id } : "skip"
   );
 
-  const orders = useQuery(api.orders.getOrdersByBusiness,
+  const orders = useQuery(
+    api.orders.getOrdersByBusiness,
     business ? { businessId: business._id } : "skip"
   ) as PooledOrders | undefined;
 
-  const mvpMetrics = useQuery(api.whatsapp.getMvpRevenueMetrics,
+  const mvpMetrics = useQuery(
+    api.whatsapp.getMvpRevenueMetrics,
     business ? { businessId: business._id, period } : "skip"
   );
 
-  // Reactive QR data — used during reconnect flow
-  const qrData = useQuery(api.whatsapp.getBusinessQR,
-    business && business.whatsappStatus !== "connected" ? { businessId: business._id } : "skip"
+  const qrData = useQuery(
+    api.whatsapp.getBusinessQR,
+    business && business.whatsappStatus !== "connected"
+      ? { businessId: business._id }
+      : "skip"
   );
 
-  // PRD: Disconnection alerts — reactive query for in-app notifications
-  const disconnectionAlerts = useQuery(api.safeguards.getActiveDisconnectionAlerts,
+  const disconnectionAlerts = useQuery(
+    api.safeguards.getActiveDisconnectionAlerts,
     business ? { businessId: business._id } : "skip"
   );
   const dismissAlert = useMutation(api.safeguards.dismissDisconnectionAlert);
@@ -57,20 +70,11 @@ export default function DashboardPage() {
   const pollStatus = useAction(api.whatsapp.pollConnectionStatus);
   const updateStatus = useMutation(api.whatsapp.updateConnectionStatus);
 
-  // ---- Connection health polling ----
   const healthIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const reconnectPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  // Tracks whether the reconnectInstance action has finished. The poll must
-  // NOT call pollConnectionStatus until this is true, otherwise it sees
-  // Evolution Go in state "close" (instance still booting) and immediately
-  // reverts to "disconnected" with a false "QR expired" message.
   const reconnectActionDoneRef = useRef(false);
 
-  // Health check: runs every 30s whenever an instance exists.
-  // Detects BOTH disconnections (connected → disconnected) AND
-  // reconnections (disconnected → connected, e.g. via Evolution Go dashboard).
   useEffect(() => {
-    // Only poll if the business has an Evolution Go instance configured
     if (!business || !business.evolutionInstanceName) {
       if (healthIntervalRef.current) {
         clearInterval(healthIntervalRef.current);
@@ -79,21 +83,14 @@ export default function DashboardPage() {
       return;
     }
 
-    // Don't run health checks while actively reconnecting via our UI
-    // (the reconnect poll effect handles that case at a faster interval)
-    if (isReconnecting && business.whatsappStatus === "pending") {
-      return;
-    }
+    if (isReconnecting && business.whatsappStatus === "pending") return;
 
     const doCheck = async () => {
       try {
         await checkHealth({ businessId: business._id });
-      } catch (_e) {
-        // Silently ignore — transient errors shouldn't panic the UI
-      }
+      } catch (_e) {}
     };
 
-    // Run one check immediately, then set interval
     doCheck();
     healthIntervalRef.current = setInterval(doCheck, HEALTH_CHECK_INTERVAL_MS);
 
@@ -103,9 +100,14 @@ export default function DashboardPage() {
         healthIntervalRef.current = null;
       }
     };
-  }, [business?._id, business?.evolutionInstanceName, business?.whatsappStatus, isReconnecting, checkHealth]);
+  }, [
+    business?._id,
+    business?.evolutionInstanceName,
+    business?.whatsappStatus,
+    isReconnecting,
+    checkHealth,
+  ]);
 
-  // Reconnect polling: runs every 8s while pending (waiting for QR scan)
   useEffect(() => {
     if (!business || business.whatsappStatus !== "pending" || !isReconnecting) {
       if (reconnectPollRef.current) {
@@ -116,22 +118,14 @@ export default function DashboardPage() {
     }
 
     reconnectPollRef.current = setInterval(async () => {
-      // Don't poll until the reconnectInstance action has finished setting up
-      // the connection. Otherwise we see "close" state prematurely.
       if (!reconnectActionDoneRef.current) return;
-
       try {
         const result = await pollStatus({ businessId: business._id });
         if (result.connected) {
           setIsReconnecting(false);
           setReconnectError(null);
         }
-        // If Evolution Go reports "close" state, the QR expired or instance
-        // stopped — pollConnectionStatus will revert DB to "disconnected",
-        // which will cause this effect to clean up on next render cycle.
-      } catch (_e) {
-        // Silently ignore
-      }
+      } catch (_e) {}
     }, RECONNECT_POLL_INTERVAL_MS);
 
     return () => {
@@ -142,16 +136,12 @@ export default function DashboardPage() {
     };
   }, [business?._id, business?.whatsappStatus, isReconnecting, pollStatus]);
 
-  // Reconnect timeout: auto-cancel after RECONNECT_TIMEOUT_MS to prevent
-  // the UI from being stuck at "Reconnecting..." forever if the QR is never
-  // scanned or something goes wrong on the backend.
   const reconnectStartedAtRef = useRef<number | null>(null);
   useEffect(() => {
     if (isReconnecting) {
       if (!reconnectStartedAtRef.current) {
         reconnectStartedAtRef.current = Date.now();
       }
-
       const elapsed = Date.now() - reconnectStartedAtRef.current;
       const remaining = Math.max(0, RECONNECT_TIMEOUT_MS - elapsed);
 
@@ -159,11 +149,10 @@ export default function DashboardPage() {
         setIsReconnecting(false);
         setReconnectError("Reconnection timed out. Please try again.");
         reconnectStartedAtRef.current = null;
-        // Revert DB status so the user sees the Reconnect button
         if (business) {
           try {
             await updateStatus({ businessId: business._id, status: "disconnected" });
-          } catch (_e) { /* ignore */ }
+          } catch (_e) {}
         }
       }, remaining);
 
@@ -173,8 +162,6 @@ export default function DashboardPage() {
     }
   }, [isReconnecting, business, updateStatus]);
 
-  // Reset reconnecting state when status changes to connected OR
-  // reverts to disconnected (e.g. QR expired, backend detected it).
   const prevWhatsappStatus = useRef(business?.whatsappStatus);
   useEffect(() => {
     const currentStatus = business?.whatsappStatus;
@@ -187,7 +174,6 @@ export default function DashboardPage() {
             setReconnectError(null);
           });
         } else if (currentStatus === "disconnected") {
-          // Backend reverted status (QR expired, instance gone, etc.)
           queueMicrotask(() => {
             setIsReconnecting(false);
             setReconnectError("QR code expired. Tap Reconnect to try again.");
@@ -198,206 +184,164 @@ export default function DashboardPage() {
   }, [business?.whatsappStatus, isReconnecting]);
 
   useEffect(() => {
-    if (sessionStatus === "unauthenticated") {
-      router.push("/login");
-    }
+    if (sessionStatus === "unauthenticated") router.push("/login");
   }, [sessionStatus, router]);
 
   const handleReconnect = useCallback(async () => {
     if (!business || isReconnecting) return;
-    reconnectActionDoneRef.current = false; // Block polling until action finishes
+    reconnectActionDoneRef.current = false;
     setIsReconnecting(true);
     setReconnectError(null);
-
     try {
       const result = await reconnectInstance({ businessId: business._id });
-      reconnectActionDoneRef.current = true; // Action done — allow polling now
-
+      reconnectActionDoneRef.current = true;
       if (!result.success) {
         setReconnectError(result.error || "Reconnection failed. Please try again.");
         setIsReconnecting(false);
       } else if (!result.needsQR) {
-        // Already connected — the reactive query will update the UI
         setIsReconnecting(false);
       }
-      // If needsQR is true, we stay in reconnecting state and show QR
     } catch (e) {
-      reconnectActionDoneRef.current = true; // Unblock on error too
-      setReconnectError(e instanceof Error ? e.message : "Reconnection failed. Please try again.");
+      reconnectActionDoneRef.current = true;
+      setReconnectError(
+        e instanceof Error ? e.message : "Reconnection failed. Please try again."
+      );
       setIsReconnecting(false);
     }
   }, [business, isReconnecting, reconnectInstance]);
 
-  const isBusinessLoading = sessionStatus === "authenticated" && session?.user?.id && business === undefined;
+  const isBusinessLoading =
+    sessionStatus === "authenticated" && session?.user?.id && business === undefined;
 
-  if (sessionStatus === "loading" || isBusinessLoading) {
-    return <Loader />;
-  }
+  if (sessionStatus === "loading" || isBusinessLoading) return <Loader />;
+  if (sessionStatus === "unauthenticated") return null;
 
-  if (sessionStatus === "unauthenticated") {
-    return null;
-  }
-
-  // Determine if this is a reconnect scenario vs first-time setup
   const hasExistingInstance = !!business?.evolutionInstanceName;
   const isDisconnected = business && business.whatsappStatus !== "connected";
   const isPending = business?.whatsappStatus === "pending";
   const showReconnectBanner = isDisconnected && hasExistingInstance;
   const showOnboardingBanner = !business || (isDisconnected && !hasExistingInstance);
 
+  const PERIOD_LABELS: Record<typeof period, string> = {
+    today: "Today",
+    week: "This Week",
+    month: "This Month",
+  };
+
+  const firstName = session?.user?.name?.split(" ")[0] || "there";
+
   return (
     <div className={styles.container}>
       <div className={styles.wrapper}>
+
+        {/* ── Header ─────────────────────────────────────────── */}
         <header className={styles.header}>
-          <div>
-            <h1 className={styles.welcomeTitle}>Welcome back, {session?.user?.name || "Partner"}!</h1>
-            <p className={styles.subTitle}>Here&apos;s what&apos;s happening with PIPELIXR today.</p>
+          <div className={styles.headerLeft}>
+            <h1 className={styles.welcomeTitle}>
+              Welcome back, {firstName}!
+            </h1>
+            <p className={styles.subTitle}>Here&apos;s what&apos;s happening with your business today.</p>
             {business?.lastHistorySyncAt && (
               <p className={styles.syncStatus}>
-                Recent sync: {business.lastHistorySyncCount || 0} messages in last {business.lastHistorySyncWindowHours || 24}h, updated {formatDistanceToNow(business.lastHistorySyncAt, { addSuffix: true })}.
+                Last sync: {business.lastHistorySyncCount || 0} messages ·{" "}
+                {formatDistanceToNow(business.lastHistorySyncAt, { addSuffix: true })}
               </p>
             )}
           </div>
-          <div className={styles.periodFilter}>
-            <select value={period} onChange={(e) => setPeriod(e.target.value as any)} className="bg-slate-800 text-white rounded-lg px-3 py-2 text-sm outline-none border border-slate-700">
-              <option value="today">Today</option>
-              <option value="week">This Week</option>
-              <option value="month">This Month</option>
-            </select>
+
+          <div className={styles.periodToggle}>
+            {(["today", "week", "month"] as const).map((p) => (
+              <button
+                key={p}
+                className={`${styles.periodBtn} ${period === p ? styles.periodBtnActive : ""}`}
+                onClick={() => setPeriod(p)}
+              >
+                {PERIOD_LABELS[p]}
+              </button>
+            ))}
           </div>
         </header>
 
-        <div className={styles.statsGrid}>
-          <StatCard
-            icon={MessageSquare}
-            label="Total Signals"
-            value={mvpMetrics?.totalSignals?.toString() || "0"}
-            color="rgba(59, 130, 246, 0.1)"
-            iconColor="#3b82f6"
-          />
-          <StatCard
-            icon={Reply}
-            label="Replied"
-            value={mvpMetrics?.replied?.toString() || "0"}
-            color="rgba(16, 185, 129, 0.1)"
-            iconColor="#10b981"
-          />
-          <StatCard
-            icon={Send}
-            label="Followed Up"
-            value={mvpMetrics?.followedUp?.toString() || "0"}
-            color="rgba(139, 92, 246, 0.1)"
-            iconColor="#8b5cf6"
-          />
-          <StatCard
-            icon={AlertTriangle}
-            label="Lost"
-            value={mvpMetrics?.lost?.toString() || "0"}
-            color="rgba(245, 158, 11, 0.1)"
-            iconColor="#f59e0b"
-          />
-        </div>
-
-        {/* Hero: Estimated Lost Revenue — PRD: this is the emotional anchor */}
-        <div className={styles.lostRevenueHero}>
-          <div className={styles.lostRevenueIcon}>
-            <Banknote size={28} />
-          </div>
-          <div className={styles.lostRevenueContent}>
-            <div className={styles.lostRevenueLabel}>Estimated Lost Revenue</div>
-            <div className={styles.lostRevenueValue}>
-              NGN {(mvpMetrics?.estimatedLostRevenue || 0).toLocaleString()}
-            </div>
-            <div className={styles.lostRevenueSub}>
-              {(mvpMetrics?.lost || 0)} buying signal{(mvpMetrics?.lost || 0) !== 1 ? 's' : ''} went unanswered · You could have closed {(mvpMetrics?.lost || 0) > 0 ? 'these' : 'more'} deals
-            </div>
-          </div>
-        </div>
-
-        {/* Reconnect Banner — for users who have an instance but are disconnected */}
+        {/* ── Connection banners ──────────────────────────────── */}
         {showReconnectBanner && (
-          <div className={styles.connectBanner} style={{
-            borderColor: (isReconnecting || isPending) ? '#f59e0b' : business.whatsappStatus === "error" ? '#ef4444' : '#ef4444',
-            borderWidth: '1px',
-            borderStyle: 'solid',
-          }}>
-            <div className={styles.connectInfo}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
-                <WifiOff size={18} style={{ color: (isReconnecting || isPending) ? '#f59e0b' : '#ef4444' }} />
-                <h3 className={styles.connectTitle} style={{ margin: 0 }}>
-                  {(isReconnecting || isPending) ? "Reconnecting..." : business.whatsappStatus === "error" ? "Connection Error" : "WhatsApp Disconnected"}
-                </h3>
+          <div
+            className={`${styles.alertBanner} ${
+              isReconnecting || isPending ? styles.alertBannerWarning : ""
+            }`}
+          >
+            <div className={styles.alertInfo}>
+              <div className={styles.alertTitle}>
+                <WifiOff
+                  size={16}
+                  style={{ color: isReconnecting || isPending ? "#f59e0b" : "#ef4444" }}
+                />
+                {isReconnecting || isPending
+                  ? "Connecting…"
+                  : business.whatsappStatus === "error"
+                  ? "Connection Error"
+                  : "WhatsApp Disconnected"}
               </div>
-              <p className={styles.connectDesc}>
-                {(isReconnecting || isPending)
-                  ? "Waiting for you to scan the QR code. Open WhatsApp → Linked Devices → Link a Device."
-                  : "Your WhatsApp session was disconnected. Tap Reconnect to link again — no need to start over."}
+              <p className={styles.alertDesc}>
+                {isReconnecting || isPending
+                  ? "Open WhatsApp → Linked Devices → Link a Device, then scan the QR code below."
+                  : "Your WhatsApp session ended. Tap Reconnect to re-link — your data is safe."}
               </p>
-              {reconnectError && (
-                <p style={{ color: '#ef4444', fontSize: '0.8rem', marginTop: '0.25rem' }}>{reconnectError}</p>
-              )}
+              {reconnectError && <p className={styles.alertError}>{reconnectError}</p>}
 
-              {/* Inline QR display during reconnect */}
               {isReconnecting && (qrData?.qrCode || qrData?.pairingCode) && (
-                <div style={{
-                  marginTop: '0.75rem',
-                  padding: '0.75rem',
-                  background: 'rgba(255,255,255,0.03)',
-                  borderRadius: '0.75rem',
-                  border: '1px solid rgba(255,255,255,0.06)',
-                }}>
+                <div className={styles.qrPanel}>
                   {qrData.pairingCode ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                      <p style={{ fontSize: '0.8rem', color: '#94a3b8', margin: 0 }}>Enter this pairing code on WhatsApp:</p>
-                      <div style={{ display: 'flex', gap: '0.35rem', justifyContent: 'center' }}>
+                    <>
+                      <p className={styles.qrHint}>Enter this pairing code on WhatsApp:</p>
+                      <div className={styles.pairingGrid}>
                         {qrData.pairingCode.split("").map((char, i) => (
-                          <span key={i} style={{
-                            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                            width: '2rem', height: '2.5rem', background: 'rgba(16,185,129,0.1)',
-                            border: '1px solid rgba(16,185,129,0.3)', borderRadius: '0.375rem',
-                            color: '#10b981', fontWeight: 700, fontSize: '1.1rem', fontFamily: 'monospace',
-                          }}>{char}</span>
+                          <span key={i} className={styles.pairingChar}>{char}</span>
                         ))}
                       </div>
-                    </div>
+                    </>
                   ) : qrData.qrCode ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
-                      <p style={{ fontSize: '0.8rem', color: '#94a3b8', margin: 0 }}>Scan this QR with WhatsApp:</p>
-                      <div style={{ background: 'white', padding: '0.5rem', borderRadius: '0.5rem', display: 'inline-block' }}>
-                        {(qrData.qrCode.startsWith('data:image') || qrData.qrCode.length > 500) ? (
+                    <>
+                      <p className={styles.qrHint}>Scan this QR code with WhatsApp:</p>
+                      <div style={{ background: "white", padding: "0.5rem", borderRadius: "0.5rem" }}>
+                        {qrData.qrCode.startsWith("data:image") || qrData.qrCode.length > 500 ? (
                           <Image
-                            src={qrData.qrCode.startsWith('data:image') ? qrData.qrCode : `data:image/png;base64,${qrData.qrCode}`}
+                            src={
+                              qrData.qrCode.startsWith("data:image")
+                                ? qrData.qrCode
+                                : `data:image/png;base64,${qrData.qrCode}`
+                            }
                             alt="WhatsApp QR Code"
                             width={160}
                             height={160}
                             unoptimized
                           />
                         ) : (
-                          <div style={{ width: 160, height: 160, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem', color: '#64748b' }}>QR Code Ready</div>
+                          <div style={{ width: 160, height: 160, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.7rem", color: "#64748b" }}>
+                            QR Code Ready
+                          </div>
                         )}
                       </div>
-                    </div>
+                    </>
                   ) : null}
                 </div>
               )}
 
-              {/* Loading spinner during reconnect before QR arrives */}
               {isReconnecting && !qrData?.qrCode && !qrData?.pairingCode && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.5rem' }}>
-                  <Loader2 size={16} className="animate-spin" style={{ color: '#f59e0b' }} />
-                  <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Generating QR code...</span>
+                <div className={styles.qrSpinner}>
+                  <Loader2 size={14} className="animate-spin" style={{ color: "#f59e0b" }} />
+                  <span>Generating QR code…</span>
                 </div>
               )}
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', flexShrink: 0 }}>
+
+            <div className={styles.alertActions}>
               {!isReconnecting && !isPending && (
                 <button
                   onClick={handleReconnect}
-                  className={styles.connectButton}
+                  className={`${styles.alertBtn} ${styles.alertBtnPrimary}`}
                   disabled={isReconnecting}
-                  style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
                 >
-                  <RefreshCcw size={16} />
+                  <RefreshCcw size={14} />
                   Reconnect
                 </button>
               )}
@@ -406,15 +350,13 @@ export default function DashboardPage() {
                   onClick={async () => {
                     setIsReconnecting(false);
                     setReconnectError(null);
-                    // Also reset DB status so the banner shows "Reconnect" button
                     if (business) {
                       try {
                         await updateStatus({ businessId: business._id, status: "disconnected" });
-                      } catch (_e) { /* ignore */ }
+                      } catch (_e) {}
                     }
                   }}
-                  className={styles.connectButton}
-                  style={{ background: 'rgba(255,255,255,0.05)', color: '#94a3b8', fontSize: '0.8rem' }}
+                  className={`${styles.alertBtn} ${styles.alertBtnSecondary}`}
                 >
                   Cancel
                 </button>
@@ -423,62 +365,114 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* First-time onboarding banner — no existing instance */}
         {showOnboardingBanner && (
-          <div className={styles.connectBanner}>
-            <div className={styles.connectInfo}>
-              <h3 className={styles.connectTitle}>
-                {!business ? "Welcome to PIPELIXR! Connect your WhatsApp" : "Set Up WhatsApp Connection"}
-              </h3>
-              <p className={styles.connectDesc}>
+          <div className={`${styles.alertBanner} ${styles.alertBannerGreen}`}>
+            <div className={styles.alertInfo}>
+              <div className={styles.alertTitle}>
+                <Wifi size={16} style={{ color: "#10b981" }} />
+                {!business ? "Welcome to PIPELIXR!" : "Connect Your WhatsApp"}
+              </div>
+              <p className={styles.alertDesc}>
                 {!business
                   ? "Finalize your setup to start capturing leads and managing your pipeline automatically."
-                  : "Complete the setup to connect your WhatsApp and start syncing messages."}
+                  : "Complete setup to connect WhatsApp and start syncing messages."}
               </p>
             </div>
-            <button
-              onClick={() => router.push("/onboarding")}
-              className={styles.connectButton}
-            >
-              Get Started
-            </button>
-          </div>
-        )}
-
-
-        {/* AI Activity Feed — Proof that Pipelixr AI is working */}
-        {business && (
-          <AIActivityFeed businessId={business._id} />
-        )}
-
-        <div className={styles.dashboardGrid}>
-          <div className="flex flex-col gap-6">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-bold text-slate-500 uppercase tracking-widest px-1">Lead Pipeline</h3>
-              {business?.whatsappStatus === "connected" ? (
-                <span className="text-[10px] bg-emerald-500/10 text-emerald-500 px-2 py-1 rounded-full font-bold flex items-center gap-1">
-                  <Wifi size={10} /> LIVE SYNC ACTIVE
-                </span>
-              ) : business?.whatsappStatus === "pending" ? (
-                <span className="text-[10px] bg-amber-500/10 text-amber-500 px-2 py-1 rounded-full font-bold flex items-center gap-1">
-                  <Loader2 size={10} style={{ animation: 'spin 1s linear infinite' }} /> CONNECTING...
-                </span>
-              ) : business?.evolutionInstanceName ? (
-                <span className="text-[10px] bg-red-500/10 text-red-500 px-2 py-1 rounded-full font-bold flex items-center gap-1">
-                  <WifiOff size={10} /> DISCONNECTED
-                </span>
-              ) : null}
+            <div className={styles.alertActions}>
+              <button
+                onClick={() => router.push("/onboarding")}
+                className={`${styles.alertBtn} ${styles.alertBtnPrimary}`}
+              >
+                Get Started
+              </button>
             </div>
-            <LeadPipeline orders={orders} isLoading={orders === undefined} />
           </div>
+        )}
+
+        {/* ── Stat cards ──────────────────────────────────────── */}
+        <div className={styles.statsGrid}>
+          <StatCard
+            icon={MessageSquare}
+            label="Total Signals"
+            value={mvpMetrics?.totalSignals?.toString() ?? "0"}
+            color="rgba(59, 130, 246, 0.12)"
+            iconColor="#3b82f6"
+          />
+          <StatCard
+            icon={Reply}
+            label="Replied"
+            value={mvpMetrics?.replied?.toString() ?? "0"}
+            color="rgba(16, 185, 129, 0.12)"
+            iconColor="#10b981"
+          />
+          <StatCard
+            icon={Send}
+            label="Followed Up"
+            value={mvpMetrics?.followedUp?.toString() ?? "0"}
+            color="rgba(139, 92, 246, 0.12)"
+            iconColor="#8b5cf6"
+          />
+          <StatCard
+            icon={AlertTriangle}
+            label="Missed"
+            value={mvpMetrics?.lost?.toString() ?? "0"}
+            color="rgba(245, 158, 11, 0.12)"
+            iconColor="#f59e0b"
+          />
         </div>
 
+        {/* ── Lost revenue hero ────────────────────────────────── */}
+        <div className={styles.lostRevenueCard}>
+          <div className={styles.lostRevenueLeft}>
+            <div className={styles.lostRevenueIconBox}>
+              <Banknote size={24} />
+            </div>
+            <div className={styles.lostRevenueContent}>
+              <div className={styles.lostRevenueLabel}>Estimated Lost Revenue</div>
+              <div className={styles.lostRevenueAmount}>
+                NGN {(mvpMetrics?.estimatedLostRevenue || 0).toLocaleString()}
+              </div>
+              <div className={styles.lostRevenueSub}>
+                {mvpMetrics?.lost || 0} buying signal
+                {(mvpMetrics?.lost || 0) !== 1 ? "s" : ""} went unanswered this period
+              </div>
+            </div>
+          </div>
+          {(mvpMetrics?.lost || 0) > 0 && (
+            <div className={styles.lostRevenueBadge}>
+              {mvpMetrics?.lost} missed deal{(mvpMetrics?.lost || 0) !== 1 ? "s" : ""}
+            </div>
+          )}
+        </div>
+
+        {/* ── AI Activity Feed ────────────────────────────────── */}
+        {business && <AIActivityFeed businessId={business._id} />}
+
+        {/* ── Lead Pipeline ───────────────────────────────────── */}
+        <div>
+          <div className={styles.sectionHeader}>
+            <h3 className={styles.sectionTitle}>Lead Pipeline</h3>
+            {business?.whatsappStatus === "connected" ? (
+              <span className={`${styles.statusPill} ${styles.statusPillGreen}`}>
+                <Wifi size={10} /> Live Sync Active
+              </span>
+            ) : business?.whatsappStatus === "pending" ? (
+              <span className={`${styles.statusPill} ${styles.statusPillAmber}`}>
+                <Loader2 size={10} style={{ animation: "spin 1s linear infinite" }} /> Connecting
+              </span>
+            ) : business?.evolutionInstanceName ? (
+              <span className={`${styles.statusPill} ${styles.statusPillRed}`}>
+                <WifiOff size={10} /> Disconnected
+              </span>
+            ) : null}
+          </div>
+          <LeadPipeline orders={orders} isLoading={orders === undefined} />
+        </div>
 
       </div>
     </div>
   );
 }
-
 
 interface StatCardProps {
   icon: LucideIcon;
@@ -490,14 +484,20 @@ interface StatCardProps {
 
 function StatCard({ icon: Icon, label, value, color, iconColor }: StatCardProps) {
   return (
-    <div className={styles.statCard}>
-      <div className={styles.statIconWrapper} style={{ backgroundColor: color, color: iconColor }}>
-        <Icon size={22} />
+    <div
+      className={styles.statCard}
+      style={{ "--stat-color": iconColor } as React.CSSProperties}
+    >
+      <div className={styles.statHeader}>
+        <div
+          className={styles.statIconBadge}
+          style={{ background: color, color: iconColor }}
+        >
+          <Icon size={16} />
+        </div>
+        <span className={styles.statLabel}>{label}</span>
       </div>
-      <div>
-        <div className={styles.statLabel}>{label}</div>
-        <div className={styles.statValue}>{value}</div>
-      </div>
+      <div className={styles.statValue}>{value}</div>
     </div>
   );
 }
