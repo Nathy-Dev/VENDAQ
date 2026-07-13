@@ -85,12 +85,35 @@ export const updateBusinessDetails = mutation({
     averageOrderValue: v.optional(v.number()),
     responseWindowMinutes: v.optional(v.number()),
     followUpTemplate: v.optional(v.string()),
+    // AI Behaviour — plain-language settings the owner controls from Settings → AI Behavior.
+    aiEnabled: v.optional(v.boolean()),
+    aiTone: v.optional(v.union(v.literal("friendly"), v.literal("professional"), v.literal("playful"))),
+    aiLanguageStyle: v.optional(v.union(v.literal("english"), v.literal("pidgin"), v.literal("mixed"))),
+    aiBusinessContext: v.optional(v.string()),
+    aiWorkHoursEnabled: v.optional(v.boolean()),
+    aiWorkHoursStart: v.optional(v.number()),
+    aiWorkHoursEnd: v.optional(v.number()),
+    aiNeverQuotePrice: v.optional(v.boolean()),
+    aiNeverSendPaymentLink: v.optional(v.boolean()),
+    aiNeverOfferDiscount: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     // PRD: Response window must be between 30 minutes and 1440 minutes (24 hours)
     if (args.responseWindowMinutes !== undefined) {
       if (args.responseWindowMinutes < 30 || args.responseWindowMinutes > 1440) {
         throw new Error("Response window must be between 30 minutes and 24 hours (1440 minutes).");
+      }
+    }
+    // Guard: business context free-text should not be arbitrarily long. Keep it
+    // short enough that we can safely inject it into every system prompt.
+    if (args.aiBusinessContext !== undefined && args.aiBusinessContext.length > 500) {
+      throw new Error("Business context must be 500 characters or fewer.");
+    }
+    // Guard: work-hours window must be a valid minutes-since-midnight range.
+    for (const field of ["aiWorkHoursStart", "aiWorkHoursEnd"] as const) {
+      const val = args[field];
+      if (val !== undefined && (val < 0 || val > 24 * 60)) {
+        throw new Error(`${field} must be between 0 and 1440 minutes.`);
       }
     }
     const { businessId, ...updates } = args;
@@ -100,6 +123,7 @@ export const updateBusinessDetails = mutation({
     await ctx.db.patch(businessId, filtered);
   },
 });
+
 
 export const setEvolutionInstance = mutation({
   args: {

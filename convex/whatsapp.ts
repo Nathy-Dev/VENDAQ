@@ -452,7 +452,23 @@ export const receiveMessage = mutation({
     // The keyword classification is already stored. The AI action will
     // run asynchronously, update the interaction record with richer
     // classification, and upgrade the customer intent if AI disagrees.
-    if (!args.fromMe && classification !== "NOISE") {
+    //
+    // GROUP GATING: In group chats, we only run AI if the owner has explicitly
+    // opted this group in from Settings → Groups & Communities. This keeps AI
+    // costs down and stops the assistant from acting in groups the user just
+    // happens to be a member of.
+    let aiAllowedForThisChat = true;
+    if (args.isGroup) {
+      const managedGroup = await ctx.db
+        .query("managedGroups")
+        .withIndex("by_business_group", (q) =>
+          q.eq("businessId", args.businessId).eq("groupJid", args.sender)
+        )
+        .unique();
+      aiAllowedForThisChat = !!managedGroup?.isEnabled;
+    }
+
+    if (!args.fromMe && classification !== "NOISE" && aiAllowedForThisChat) {
       await ctx.scheduler.runAfter(0, api.ai.classifyMessageWithAI, {
         businessId: args.businessId,
         interactionId,
@@ -463,6 +479,7 @@ export const receiveMessage = mutation({
         keywordClassification: classification,
       });
     }
+
 
     if (!args.fromMe) {
       const recentSentOutcome = await ctx.db

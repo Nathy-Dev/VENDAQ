@@ -17,6 +17,7 @@ import type * as auth from "../auth.js";
 import type * as businesses from "../businesses.js";
 import type * as cloudinary from "../cloudinary.js";
 import type * as evolutionGoClient from "../evolutionGoClient.js";
+import type * as groups from "../groups.js";
 import type * as http from "../http.js";
 import type * as interactions from "../interactions.js";
 import type * as orders from "../orders.js";
@@ -42,6 +43,7 @@ declare const fullApi: ApiFromModules<{
   businesses: typeof businesses;
   cloudinary: typeof cloudinary;
   evolutionGoClient: typeof evolutionGoClient;
+  groups: typeof groups;
   http: typeof http;
   interactions: typeof interactions;
   orders: typeof orders;

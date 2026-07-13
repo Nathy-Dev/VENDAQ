@@ -178,6 +178,94 @@ const REPLY_SYSTEM_PROMPT = `You are a friendly, efficient WhatsApp sales assist
 
 DO NOT include any preamble or explanation. Output ONLY the message to send.`;
 
+/**
+ * Builds a system prompt tailored to the owner's Business Configuration:
+ *   - tone (friendly / professional / playful)
+ *   - language style (english / pidgin / mixed)
+ *   - one-line business context ("What does your business do?")
+ *   - guardrails (never quote price, never send payment link, never offer discount)
+ *
+ * Falls back to the generic REPLY_SYSTEM_PROMPT when no config is set,
+ * so existing customers keep working with zero changes.
+ */
+function buildOwnerAwareReplyPrompt(business: {
+  name?: string;
+  aiTone?: "friendly" | "professional" | "playful";
+  aiLanguageStyle?: "english" | "pidgin" | "mixed";
+  aiBusinessContext?: string;
+  aiNeverQuotePrice?: boolean;
+  aiNeverSendPaymentLink?: boolean;
+  aiNeverOfferDiscount?: boolean;
+} | null | undefined): string {
+  if (!business) return REPLY_SYSTEM_PROMPT;
+
+  const toneLine = (() => {
+    switch (business.aiTone) {
+      case "professional":
+        return "Speak in a polite, professional tone. Avoid slang.";
+      case "playful":
+        return "Speak in a playful, upbeat tone. Feel free to add light humour.";
+      case "friendly":
+      default:
+        return "Speak warmly and casually, like a helpful shopkeeper.";
+    }
+  })();
+
+  const languageLine = (() => {
+    switch (business.aiLanguageStyle) {
+      case "pidgin":
+        return "Reply in Nigerian Pidgin English. Keep it natural, don't force it.";
+      case "mixed":
+        return "You may mix English with a little Nigerian Pidgin where it feels natural, but stay understandable.";
+      case "english":
+      default:
+        return "Reply in clear, simple English.";
+    }
+  })();
+
+  const contextLine = business.aiBusinessContext
+    ? `About the business: ${business.aiBusinessContext.trim()}`
+    : `You represent ${business.name || "the business"}.`;
+
+  const guardrails: string[] = [];
+  if (business.aiNeverQuotePrice) {
+    guardrails.push(
+      "Never state a specific price or amount. If asked for price, say the owner will confirm shortly."
+    );
+  }
+  if (business.aiNeverSendPaymentLink) {
+    guardrails.push(
+      "Never send a payment link, bank account, or payment details. The owner handles all payments."
+    );
+  }
+  if (business.aiNeverOfferDiscount) {
+    guardrails.push(
+      "Never offer a discount or promise a lower price. If pushed, say you'll ask the owner."
+    );
+  }
+  const guardrailBlock = guardrails.length
+    ? `\n\nStrict rules you MUST follow:\n- ${guardrails.join("\n- ")}`
+    : "";
+
+  return `You are a WhatsApp sales assistant for a Nigerian business.
+
+${contextLine}
+${toneLine}
+${languageLine}
+
+Style rules:
+- Get straight to helping them buy — don't waste their time
+- Use the customer's name naturally
+- Reference their specific interest if known
+- Keep replies concise (2-3 sentences max, WhatsApp messages should be short)
+- Never use markdown, bullet points, or formatting — plain text only
+- At most 1 emoji if appropriate
+- End with a clear next step or question${guardrailBlock}
+
+DO NOT include any preamble or explanation. Output ONLY the message to send.`;
+}
+
+
 // ─── Image Analysis ─────────────────────────────────────────────────────────
 
 const VISION_PROMPT = `Analyze this image sent by a customer on WhatsApp to a business. Determine:
@@ -786,9 +874,51 @@ export const getBusinessAIConfig = query({
       aiLlmModel: biz.aiLlmModel,
       aiVisionModel: biz.aiVisionModel,
       followUpTemplate: biz.followUpTemplate,
+      // Business Configuration (owner-facing settings)
+      aiTone: biz.aiTone,
+      aiLanguageStyle: biz.aiLanguageStyle,
+      aiBusinessContext: biz.aiBusinessContext,
+      aiWorkHoursEnabled: biz.aiWorkHoursEnabled,
+      aiWorkHoursStart: biz.aiWorkHoursStart,
+      aiWorkHoursEnd: biz.aiWorkHoursEnd,
+      aiNeverQuotePrice: biz.aiNeverQuotePrice,
+      aiNeverSendPaymentLink: biz.aiNeverSendPaymentLink,
+      aiNeverOfferDiscount: biz.aiNeverOfferDiscount,
     };
   },
 });
+
+/**
+ * Returns true if the current time is inside the owner-configured work-hours
+ * window. Used by `generateAssistantReply` to stay silent outside working
+ * hours (the owner will handle the message later). Follow-up tasks respect
+ * this too by re-checking before firing.
+ *
+ * If work-hours are disabled OR not fully configured, returns true (always allow).
+ * Uses a simple minutes-since-midnight comparison; handles overnight windows
+ * (e.g. 22:00 → 06:00) by inverting the comparison when start > end.
+ */
+function isWithinWorkHours(business: {
+  aiWorkHoursEnabled?: boolean;
+  aiWorkHoursStart?: number;
+  aiWorkHoursEnd?: number;
+}): boolean {
+  if (!business.aiWorkHoursEnabled) return true;
+  if (business.aiWorkHoursStart == null || business.aiWorkHoursEnd == null) return true;
+
+  const now = new Date();
+  const minutesNow = now.getHours() * 60 + now.getMinutes();
+  const { aiWorkHoursStart: start, aiWorkHoursEnd: end } = business;
+
+  if (start === end) return true; // 24/7
+  if (start < end) {
+    // Same-day window, e.g. 09:00 → 21:00
+    return minutesNow >= start && minutesNow < end;
+  }
+  // Overnight window, e.g. 22:00 → 06:00
+  return minutesNow >= start || minutesNow < end;
+}
+
 
 /** Returns recent conversation messages for context. */
 export const getRecentConversation = query({

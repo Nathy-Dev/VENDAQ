@@ -690,7 +690,101 @@ export async function setChatPresence(
 }
 
 /**
+ * Fetches all groups the connected WhatsApp account is a member of.
+ * GET /group/fetchAllGroups (Evolution Go / Baileys)
+ *
+ * Response shape varies slightly between builds — we normalise to a common
+ * `WhatsAppGroup` list. Silently returns [] if the endpoint isn't available
+ * (e.g. Evolution Go build without group listing) so the caller can gracefully
+ * fall back to the "groups we've seen in inbound traffic" strategy.
+ */
+export type WhatsAppGroup = {
+  jid: string;
+  name: string;
+  memberCount: number;
+  /** WhatsApp account's role in this group */
+  role: "owner" | "admin" | "member";
+};
+
+export async function fetchAllGroups(instanceName: string): Promise<WhatsAppGroup[]> {
+  // The connected number is authoritative for role detection. Evolution Go
+  // returns it as part of /instance/status → `Name`, but the actual JID we
+  // need to match against `participant.jid` isn't always exposed. As a
+  // pragmatic fallback we let the caller pass it in — but the endpoint
+  // itself is best-effort.
+  try {
+    const raw: any = await evoFetch("/group/fetchAllGroups", "GET", undefined, instanceName);
+    const groups = normaliseGroupList(raw);
+    return groups;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    // 404 / not implemented: swallow and let caller fall back.
+    if (/40[04]|not.*implemented|method.*not.*allowed/i.test(msg)) {
+      logEvolutionGoDebug("[fetchAllGroups] endpoint not available, returning []", msg);
+      return [];
+    }
+    console.warn("[fetchAllGroups] failed:", msg);
+    return [];
+  }
+}
+
+/**
+ * Normalises the many shapes Baileys/Evolution Go emit into a flat list.
+ * Handles:
+ *   { data: [...] }
+ *   { data: { groups: [...] } }
+ *   { groups: [...] }
+ *   [ ... ]
+ */
+function normaliseGroupList(raw: unknown): WhatsAppGroup[] {
+  const data = (raw as any)?.data ?? raw;
+  const list: any[] = Array.isArray(data)
+    ? data
+    : Array.isArray(data?.groups)
+    ? data.groups
+    : Array.isArray(data?.data)
+    ? data.data
+    : [];
+
+  return list
+    .map((g: any) => {
+      const jid: string = g.id || g.jid || g.groupJid || g.remoteJid || "";
+      if (!jid || !jid.endsWith("@g.us")) return null;
+
+      const name: string = g.subject || g.name || g.groupName || jid.split("@")[0];
+      // Prefer explicit participant array length; fall back to `size` field.
+      const memberCount: number = Array.isArray(g.participants)
+        ? g.participants.length
+        : typeof g.size === "number"
+        ? g.size
+        : 0;
+
+      // Role: Baileys sometimes exposes an `owner` field and `admins` array,
+      // or per-participant admin flags. We try multiple shapes.
+      let role: "owner" | "admin" | "member" = "member";
+      const selfJid: string | undefined = g.selfJid || g.selfParticipantId;
+      if (selfJid) {
+        const selfParticipant = Array.isArray(g.participants)
+          ? g.participants.find((p: any) => p.id === selfJid || p.jid === selfJid)
+          : null;
+        if (g.owner === selfJid) role = "owner";
+        else if (selfParticipant?.admin === "superadmin") role = "owner";
+        else if (selfParticipant?.admin === "admin") role = "admin";
+        else if (selfParticipant?.isAdmin || selfParticipant?.isSuperAdmin) role = "admin";
+      } else if (typeof g.role === "string") {
+        // Some builds pre-compute the role.
+        if (g.role === "owner" || g.role === "superadmin") role = "owner";
+        else if (g.role === "admin") role = "admin";
+      }
+
+      return { jid, name, memberCount, role } as WhatsAppGroup;
+    })
+    .filter((g): g is WhatsAppGroup => g !== null);
+}
+
+/**
  * Reacts to a message with an emoji.
+
  * POST /message/react
  *
  * Pass an empty string as reaction to remove an existing reaction.

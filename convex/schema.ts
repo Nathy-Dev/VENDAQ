@@ -32,7 +32,32 @@ export default defineSchema({
     aiEnabled: v.optional(v.boolean()), // Default true — toggle AI processing
     aiLlmModel: v.optional(v.string()), // e.g. "llama-3.3-70b-versatile"
     aiVisionModel: v.optional(v.string()), // e.g. "gpt-4o-mini"
+
+    // ── AI Behaviour (owner-facing, plain-language settings) ──
+    // "How should the assistant sound?"
+    aiTone: v.optional(v.union(
+      v.literal("friendly"),
+      v.literal("professional"),
+      v.literal("playful"),
+    )),
+    aiLanguageStyle: v.optional(v.union(
+      v.literal("english"),
+      v.literal("pidgin"),
+      v.literal("mixed"),
+    )),
+    aiBusinessContext: v.optional(v.string()), // one-liner about the business (max ~300 chars)
+
+    // "When should the assistant reply?"
+    aiWorkHoursEnabled: v.optional(v.boolean()),
+    aiWorkHoursStart: v.optional(v.number()), // minutes-since-midnight, e.g. 9*60 = 540
+    aiWorkHoursEnd: v.optional(v.number()),   // e.g. 21*60 = 1260
+
+    // "What should the assistant never do?" (guardrails)
+    aiNeverQuotePrice: v.optional(v.boolean()),
+    aiNeverSendPaymentLink: v.optional(v.boolean()),
+    aiNeverOfferDiscount: v.optional(v.boolean()),
   }).index("by_owner", ["ownerId"]),
+
 
   customers: defineTable({
     businessId: v.id("businesses"),
@@ -251,7 +276,34 @@ export default defineSchema({
     timestamp: v.number(),
   }).index("by_business_time", ["businessId", "timestamp"]),
 
+  // ── Groups & Communities the owner has opted the AI into ──
+  // By default the assistant stays silent in ALL group chats. A group only
+  // becomes "AI-managed" when the owner flips it on from the settings screen.
+  managedGroups: defineTable({
+    businessId: v.id("businesses"),
+    groupJid: v.string(),               // e.g. 12036...@g.us
+    groupName: v.optional(v.string()),
+    memberCount: v.optional(v.number()),
+    // Owner's role in the group as reported by WhatsApp. We only surface
+    // groups where the connected number is owner/admin by default.
+    role: v.optional(v.union(
+      v.literal("owner"),
+      v.literal("admin"),
+      v.literal("member"),
+    )),
+    // Owner-controlled toggle. false = assistant stays silent in this group.
+    isEnabled: v.boolean(),
+    // If true, assistant only replies when it's tagged/mentioned (safer default
+    // for community groups). If false, assistant replies to any buying signal.
+    mentionOnly: v.optional(v.boolean()),
+    // Metadata refresh
+    lastRefreshedAt: v.optional(v.number()),
+    addedAt: v.number(),
+  }).index("by_business_group", ["businessId", "groupJid"])
+    .index("by_business_enabled", ["businessId", "isEnabled"]),
+
   disconnectionAlerts: defineTable({
+
     businessId: v.id("businesses"),
     detectedAt: v.number(),
     resolvedAt: v.optional(v.number()),
