@@ -20,7 +20,13 @@ export const getBusinessByEvolutionInstanceName = query({
   args: { instanceName: v.string() },
   handler: async (ctx, args) => {
     const businesses = await ctx.db.query("businesses").collect();
-    return businesses.find((business) => business.evolutionInstanceName === args.instanceName) || null;
+    return businesses.find((business) => 
+      business.evolutionInstanceName === args.instanceName || 
+      business.evolutionInstanceId === args.instanceName ||
+      business.name === args.instanceName ||
+      // Sometimes Evolution Go sends "My Business" etc. with whitespace differences
+      business.name?.trim().toLowerCase() === args.instanceName.trim().toLowerCase()
+    ) || null;
   },
 });
 
