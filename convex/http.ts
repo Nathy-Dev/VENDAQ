@@ -235,34 +235,63 @@ http.route({
             id?: string;
             fromMe?: boolean;
             text?: string;
+            // Evolution Go / whatsmeow Info struct
+            Info?: {
+              Chat?: string | { user?: string; server?: string };
+              Sender?: string | { user?: string; server?: string };
+              RemoteJid?: string;
+              ID?: string;
+              IsFromMe?: boolean;
+              PushName?: string;
+              Timestamp?: string | number;
+            };
+            Message?: Record<string, unknown>;
           };
 
           if (process.env.EVOLUTION_GO_DEBUG) {
              console.log("[Webhook Evolution] Processing message payload:", JSON.stringify(m).slice(0, 500));
           }
 
-          // Try standard Node.js format first, fallback to flattened Go format
-          const remoteJid = m.key?.remoteJid || m.remoteJid || "";
-          const fromMe = m.key?.fromMe ?? m.fromMe ?? false;
+          // Helper to extract JID if it's an object from Go
+          const extractJid = (jid: any): string => {
+            if (typeof jid === "string") return jid;
+            if (jid?.user && jid?.server) return `${jid.user}@${jid.server}`;
+            return "";
+          };
+
+          // Try standard Node.js format first, fallback to flattened Go format, then Info format
+          const remoteJid = m.key?.remoteJid || m.remoteJid || extractJid(m.Info?.RemoteJid) || extractJid(m.Info?.Chat) || extractJid(m.Info?.Sender) || "";
+          const fromMe = m.key?.fromMe ?? m.fromMe ?? m.Info?.IsFromMe ?? false;
           const isGroup = remoteJid.endsWith("@g.us");
-          const timestamp = (m.messageTimestamp || Date.now() / 1000) * 1000;
-          const messageId = m.key?.id || m.id || "";
+          const messageId = m.key?.id || m.id || m.Info?.ID || "";
+          
+          let timestamp = Date.now();
+          if (m.messageTimestamp) {
+            timestamp = m.messageTimestamp * 1000;
+          } else if (m.Info?.Timestamp) {
+            // Timestamp might be a string (ISO) or number (seconds)
+            timestamp = typeof m.Info.Timestamp === "string" ? new Date(m.Info.Timestamp).getTime() : m.Info.Timestamp * 1000;
+          }
+
+          const pushName = m.pushName || m.Info?.PushName;
 
           if (!remoteJid) {
-             console.warn("[Webhook Evolution] Skipping message because remoteJid is missing", { msgKeys: Object.keys(m) });
+             console.warn("[Webhook Evolution] Skipping message because remoteJid is missing", { msgKeys: Object.keys(m), infoKeys: m.Info ? Object.keys(m.Info) : [] });
              continue;
           }
 
           // Extract content — text messages use conversation/extendedText,
           // media messages may have captions
-          const imageMsg = m.message?.imageMessage as Record<string, any> | undefined;
-          const videoMsg = m.message?.videoMessage as Record<string, any> | undefined;
-          const audioMsg = m.message?.audioMessage as Record<string, any> | undefined;
-          const docMsg = m.message?.documentMessage as Record<string, any> | undefined;
+          const msgObj = m.message || m.Message;
+          const imageMsg = msgObj?.imageMessage as Record<string, any> | undefined;
+          const videoMsg = msgObj?.videoMessage as Record<string, any> | undefined;
+          const audioMsg = msgObj?.audioMessage as Record<string, any> | undefined;
+          const docMsg = msgObj?.documentMessage as Record<string, any> | undefined;
 
+          // Safely extract from msgObj treating it as any to bypass TS Record<string, unknown> strictness
           const content =
-            m.message?.conversation ||
-            m.message?.extendedTextMessage?.text ||
+            (msgObj as any)?.conversation ||
+            (msgObj as any)?.extendedTextMessage?.text ||
             m.text || // Evolution Go flat text
             imageMsg?.caption ||
             videoMsg?.caption ||
