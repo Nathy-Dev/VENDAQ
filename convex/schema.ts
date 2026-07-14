@@ -302,6 +302,23 @@ export default defineSchema({
   }).index("by_business_group", ["businessId", "groupJid"])
     .index("by_business_enabled", ["businessId", "isEnabled"]),
 
+  dailySnapshots: defineTable({
+    businessId: v.id("businesses"),
+    date: v.string(), // "YYYY-MM-DD"
+    statusesPosted: v.number(),
+    totalViews: v.number(),
+    uniqueViewers: v.number(),
+    dmsStarted: v.number(),
+    ordersCreated: v.number(),
+    paymentsClosed: v.number(),
+    revenueCollected: v.number(),
+    followUpsSent: v.number(),
+    revenueRecovered: v.number(),
+    hotLeads: v.number(),
+    coldViewers: v.number(),
+    lostOpportunities: v.number(),
+  }).index("by_business_date", ["businessId", "date"]),
+
   disconnectionAlerts: defineTable({
 
     businessId: v.id("businesses"),

@@ -1,0 +1,245 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+/* ── Funnel Waterfall ── */
+.funnelSection {
+  background: rgba(30, 41, 59, 0.5);
+  border: 1px solid rgba(148, 163, 184, 0.1);
+  border-radius: 0.75rem;
+  padding: 1.5rem;
+}
+
+.sectionTitle {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #f1f5f9;
+  margin-bottom: 1rem;
+}
+
+.sectionSubtitle {
+  font-size: 0.8rem;
+  color: #94a3b8;
+  margin-bottom: 1rem;
+}
+
+.funnelSteps {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  overflow-x: auto;
+  padding-bottom: 0.5rem;
+}
+
+.funnelStep {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 5.5rem;
+  padding: 0.75rem 0.5rem;
+  border-radius: 0.5rem;
+  background: rgba(15, 23, 42, 0.5);
+  border: 1px solid rgba(148, 163, 184, 0.08);
+}
+
+.funnelValue {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #f1f5f9;
+}
+
+.funnelLabel {
+  font-size: 0.65rem;
+  color: #94a3b8;
+  text-align: center;
+  margin-top: 0.25rem;
+}
+
+.funnelArrow {
+  color: #475569;
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.conversionBadge {
+  font-size: 0.6rem;
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.1);
+  padding: 0.15rem 0.4rem;
+  border-radius: 99px;
+  margin-top: 0.25rem;
+}
+
+/* ── Recovery Metrics ── */
+.recoveryGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.75rem;
+}
+
+.recoveryCard {
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(148, 163, 184, 0.08);
+  border-radius: 0.5rem;
+  padding: 1rem;
+  text-align: center;
+}
+
+.recoveryValue {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #f1f5f9;
+}
+
+.recoveryValueGreen {
+  color: #10b981;
+}
+
+.recoveryValueRed {
+  color: #ef4444;
+}
+
+.recoveryLabel {
+  font-size: 0.7rem;
+  color: #94a3b8;
+  margin-top: 0.25rem;
+}
+
+/* ── Priority Board ── */
+.boardGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1rem;
+}
+
+.boardColumn {
+  background: rgba(30, 41, 59, 0.5);
+  border: 1px solid rgba(148, 163, 184, 0.1);
+  border-radius: 0.75rem;
+  padding: 1rem;
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+.boardColumnHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.08);
+}
+
+.boardColumnTitle {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #f1f5f9;
+}
+
+.boardColumnCount {
+  font-size: 0.7rem;
+  background: rgba(148, 163, 184, 0.15);
+  color: #94a3b8;
+  padding: 0.1rem 0.4rem;
+  border-radius: 99px;
+}
+
+.leadCard {
+  background: rgba(15, 23, 42, 0.5);
+  border: 1px solid rgba(148, 163, 184, 0.06);
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.leadName {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: #e2e8f0;
+}
+
+.leadPhone {
+  font-size: 0.7rem;
+  color: #64748b;
+}
+
+.leadMeta {
+  font-size: 0.65rem;
+  color: #94a3b8;
+  margin-top: 0.25rem;
+}
+
+.leadReason {
+  font-size: 0.65rem;
+  color: #f59e0b;
+  margin-top: 0.2rem;
+}
+
+.leadValue {
+  font-size: 0.7rem;
+  color: #10b981;
+  font-weight: 500;
+  margin-top: 0.2rem;
+}
+
+/* ── Loading / Empty ── */
+.loading {
+  text-align: center;
+  color: #94a3b8;
+  padding: 2rem;
+}
+
+.empty {
+  text-align: center;
+  color: #64748b;
+  padding: 1.5rem;
+  font-size: 0.8rem;
+}
+
+/* ── Period toggle ── */
+.periodToggle {
+  display: flex;
+  gap: 0.25rem;
+  background: rgba(15, 23, 42, 0.6);
+  padding: 0.25rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(148, 163, 184, 0.08);
+}
+
+.periodBtn {
+  padding: 0.4rem 0.75rem;
+  font-size: 0.75rem;
+  border: none;
+  background: transparent;
+  color: #94a3b8;
+  border-radius: 0.35rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.periodBtnActive {
+  background: rgba(59, 130, 246, 0.15);
+  color: #3b82f6;
+}
+
+.headerRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.pageTitle {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #f1f5f9;
+}
+
+.pageSubtitle {
+  font-size: 0.8rem;
+  color: #94a3b8;
+}

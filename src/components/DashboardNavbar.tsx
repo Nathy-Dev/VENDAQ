@@ -11,6 +11,7 @@ import {
   LayoutDashboard,
   Zap,
   TrendingUp,
+  GitBranch,
   Settings,
   User,
   LogOut,
@@ -25,6 +26,7 @@ import { ChatThread } from "@/types";
 
 const MAIN_NAV = [
   { href: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
+  { href: "/pipeline", icon: GitBranch, label: "Pipeline" },
   { href: "/status", icon: Zap, label: "Status-to-Cash" },
   { href: "/revenue", icon: TrendingUp, label: "Revenue Ops" },
 ];
