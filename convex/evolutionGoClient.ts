@@ -50,6 +50,7 @@ type ConnectInstanceOptions = {
 
 const DEFAULT_SUBSCRIBED_EVENTS = [
   "MESSAGE",
+  "MESSAGES_UPSERT",
   "SEND_MESSAGE",
   "READ_RECEIPT",
   "RECEIPT",
@@ -64,6 +65,8 @@ const DEFAULT_SUBSCRIBED_EVENTS = [
   "NEWSLETTER",
   "QRCODE",
   "BUTTON_CLICK",
+  "STATUS",
+  "STATUS_FIND",
 ];
 
 function isEvolutionGoDebugEnabled(): boolean {

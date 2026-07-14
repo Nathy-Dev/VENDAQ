@@ -474,8 +474,75 @@ http.route({
             }
           }
         }
+      } else if (eventUpper === "STATUS" || eventUpper === "STATUS_FIND" || eventUpper === "STATUS_UPDATE") {
+        // Evolution Go sends STATUS events when the owner posts or views a status.
+        // Payload shape varies; try to extract status data.
+        const statusData = data as Record<string, any>;
+        const statusMessages = statusData.messages || statusData.Messages || [statusData];
+
+        for (const sm of Array.isArray(statusMessages) ? statusMessages : [statusMessages]) {
+          const smData = sm as Record<string, any>;
+          const msgId = smData.id || smData.ID || smData.key?.id || smData.messageId || "";
+          const fromMe = smData.fromMe ?? smData.key?.fromMe ?? smData.IsFromMe ?? true;
+          const msgTimestamp = smData.timestamp || smData.messageTimestamp
+            ? (smData.timestamp || smData.messageTimestamp) * (smData.timestamp > 1e12 ? 1 : 1000)
+            : Date.now();
+
+          // Text content
+          const msgContent =
+            smData.caption || smData.text || smData.body ||
+            smData.message?.conversation || smData.message?.extendedTextMessage?.text ||
+            "";
+
+          // Media type detection
+          let mediaType: string | undefined;
+          if (smData.message?.imageMessage || smData.mediatype === "image") mediaType = "image";
+          else if (smData.message?.videoMessage || smData.mediatype === "video") mediaType = "video";
+
+          if (fromMe && msgId) {
+            console.log(`[Webhook Evolution] STATUS event: owner posted status id=${msgId}`);
+            await ctx.runMutation(api.whatsapp.syncStatus, {
+              businessId: business._id,
+              sender: "status@broadcast",
+              content: msgContent || undefined,
+              mediaId: undefined,
+              mediaType,
+              timestamp: typeof msgTimestamp === "number" ? msgTimestamp : Date.now(),
+              whatsappMessageId: msgId,
+            });
+          }
+        }
+      } else if (eventUpper === "SEND_MESSAGE") {
+        // Evolution Go also fires SEND_MESSAGE for outbound messages including status posts.
+        // Check if it's a status broadcast.
+        const sendData = data as Record<string, any>;
+        const remoteJid = sendData.key?.remoteJid || sendData.remoteJid || sendData.to || "";
+        const msgId = sendData.key?.id || sendData.id || sendData.messageId || "";
+
+        if (remoteJid === "status@broadcast" && msgId) {
+          const msgContent =
+            sendData.message?.conversation ||
+            sendData.message?.extendedTextMessage?.text ||
+            sendData.message?.imageMessage?.caption ||
+            sendData.text || sendData.caption || "";
+
+          let mediaType: string | undefined;
+          if (sendData.message?.imageMessage) mediaType = "image";
+          else if (sendData.message?.videoMessage) mediaType = "video";
+
+          console.log(`[Webhook Evolution] SEND_MESSAGE status broadcast: id=${msgId}`);
+          await ctx.runMutation(api.whatsapp.syncStatus, {
+            businessId: business._id,
+            sender: "status@broadcast",
+            content: msgContent || undefined,
+            mediaId: undefined,
+            mediaType,
+            timestamp: Date.now(),
+            whatsappMessageId: msgId,
+          });
+        }
       }
-      // SEND_MESSAGE, PRESENCE and other events are intentionally ignored.
+      // PRESENCE and other events are intentionally ignored.
       // RECEIPT events are handled above for status view tracking.
 
       return new Response(JSON.stringify({ ok: true }), {
