@@ -712,20 +712,25 @@ export async function fetchAllGroups(instanceName: string): Promise<WhatsAppGrou
   // need to match against `participant.jid` isn't always exposed. As a
   // pragmatic fallback we let the caller pass it in — but the endpoint
   // itself is best-effort.
-  try {
-    const raw: any = await evoFetch("/group/fetchAllGroups", "GET", undefined, instanceName);
-    const groups = normaliseGroupList(raw);
-    return groups;
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    // 404 / not implemented: swallow and let caller fall back.
-    if (/40[04]|not.*implemented|method.*not.*allowed/i.test(msg)) {
-      logEvolutionGoDebug("[fetchAllGroups] endpoint not available, returning []", msg);
-      return [];
+  // Try /group/list first (Evolution Go canonical endpoint), then fall back
+  // to /group/fetchAllGroups (older Baileys-based builds).
+  const endpoints = ["/group/list", "/group/fetchAllGroups"];
+  for (const endpoint of endpoints) {
+    try {
+      const raw: any = await evoFetch(endpoint, "GET", undefined, instanceName);
+      const groups = normaliseGroupList(raw);
+      if (groups.length > 0) return groups;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      // 404 / not implemented: try next endpoint.
+      if (/40[04]|not.*implemented|method.*not.*allowed/i.test(msg)) {
+        logEvolutionGoDebug(`[fetchAllGroups] ${endpoint} not available, trying next`, msg);
+        continue;
+      }
+      console.warn(`[fetchAllGroups] ${endpoint} failed:`, msg);
     }
-    console.warn("[fetchAllGroups] failed:", msg);
-    return [];
   }
+  return [];
 }
 
 /**
@@ -748,33 +753,65 @@ function normaliseGroupList(raw: unknown): WhatsAppGroup[] {
 
   return list
     .map((g: any) => {
-      const jid: string = g.id || g.jid || g.groupJid || g.remoteJid || "";
+      // Handle both camelCase (Baileys/JS) and PascalCase (Evolution Go/Go)
+      const jid: string = g.id || g.jid || g.groupJid || g.remoteJid || g.JID || "";
       if (!jid || !jid.endsWith("@g.us")) return null;
 
-      const name: string = g.subject || g.name || g.groupName || jid.split("@")[0];
-      // Prefer explicit participant array length; fall back to `size` field.
-      const memberCount: number = Array.isArray(g.participants)
-        ? g.participants.length
+      const name: string =
+        g.subject || g.name || g.groupName ||
+        g.Name || g.Subject ||
+        jid.split("@")[0];
+
+      // Prefer explicit participant array length; fall back to `size` / `ParticipantCount`.
+      const participants = g.participants || g.Participants || [];
+      const memberCount: number = Array.isArray(participants)
+        ? participants.length
         : typeof g.size === "number"
         ? g.size
+        : typeof g.Size === "number"
+        ? g.Size
+        : typeof g.ParticipantCount === "number" && g.ParticipantCount > 0
+        ? g.ParticipantCount
         : 0;
 
-      // Role: Baileys sometimes exposes an `owner` field and `admins` array,
-      // or per-participant admin flags. We try multiple shapes.
+      // Role detection: try multiple shapes for both JS and Go responses.
       let role: "owner" | "admin" | "member" = "member";
       const selfJid: string | undefined = g.selfJid || g.selfParticipantId;
       if (selfJid) {
-        const selfParticipant = Array.isArray(g.participants)
-          ? g.participants.find((p: any) => p.id === selfJid || p.jid === selfJid)
+        const selfParticipant = Array.isArray(participants)
+          ? participants.find((p: any) => p.id === selfJid || p.jid === selfJid || p.JID === selfJid)
           : null;
         if (g.owner === selfJid) role = "owner";
         else if (selfParticipant?.admin === "superadmin") role = "owner";
         else if (selfParticipant?.admin === "admin") role = "admin";
-        else if (selfParticipant?.isAdmin || selfParticipant?.isSuperAdmin) role = "admin";
+        else if (selfParticipant?.isAdmin || selfParticipant?.isSuperAdmin || selfParticipant?.IsAdmin || selfParticipant?.IsSuperAdmin) role = "admin";
       } else if (typeof g.role === "string") {
         // Some builds pre-compute the role.
         if (g.role === "owner" || g.role === "superadmin") role = "owner";
         else if (g.role === "admin") role = "admin";
+      }
+
+      // Go response: detect role from PascalCase participant flags when selfJid
+      // is unavailable. Check if any participant is a super admin (owner).
+      if (role === "member" && !selfJid && Array.isArray(participants) && participants.length > 0) {
+        const ownerJid = g.owner || g.OwnerJID || g.ownerJid;
+        // Look for the connected account among participants by checking
+        // IsSuperAdmin (Go) / isSuperAdmin (JS) flags. In the Go response the
+        // owner is typically the IsSuperAdmin participant.
+        for (const p of participants) {
+          const isSuperAdmin = p.IsSuperAdmin === true || p.isSuperAdmin === true;
+          const isAdmin = p.IsAdmin === true || p.isAdmin === true || p.admin === "admin";
+          const pJid = p.JID || p.jid || p.id || "";
+          if (isSuperAdmin && pJid === ownerJid) {
+            role = "owner";
+            break;
+          }
+          if (isSuperAdmin) {
+            role = "admin"; // At minimum we know admins exist
+          } else if (isAdmin && role !== "admin") {
+            role = "admin";
+          }
+        }
       }
 
       return { jid, name, memberCount, role } as WhatsAppGroup;

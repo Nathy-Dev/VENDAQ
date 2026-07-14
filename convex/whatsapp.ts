@@ -1248,6 +1248,14 @@ export const processBuyingSignalFollowUp = action({
     }
 
     const biz = await ctx.runQuery(api.whatsapp.getBusinessForAssistantAuth, { businessId: args.businessId });
+
+    // ── Guard: If the owner turned off "Let the AI reply on my behalf",
+    //    skip ALL automated outbound messages (AI or template). ──
+    if (biz?.aiEnabled === false) {
+      await ctx.runMutation(api.whatsapp.markTaskSkipped, { taskId: args.taskId });
+      return { sent: false, reason: "ai_reply_disabled" };
+    }
+
     const customerName = customer.name || customer.phone.split("@")[0];
     
     // Use AI-generated follow-up instead of static template
@@ -1404,6 +1412,14 @@ export const processViewedNoDmFollowUp = action({
     const biz = await ctx.runQuery(api.whatsapp.getBusinessForAssistantAuth, {
       businessId: args.businessId,
     });
+
+    // ── Guard: If the owner turned off "Let the AI reply on my behalf",
+    //    skip ALL automated outbound messages (AI or template). ──
+    if (biz?.aiEnabled === false) {
+      await ctx.runMutation(api.whatsapp.markTaskSkipped, { taskId: args.taskId });
+      return { sent: false, reason: "ai_reply_disabled" };
+    }
+
     const customerName = customer.name || customer.phone.split("@")[0];
 
     let content: string;
@@ -1616,6 +1632,15 @@ export const handleRealtimeAssistantReply = action({
 
     if (!customer) return { sent: false, reason: "customer_not_found" };
     if (customer.isGroup) return { sent: false, reason: "group_chat_not_supported" };
+
+    // ── Guard: If the owner turned off "Let the AI reply on my behalf",
+    //    skip ALL automated outbound messages (AI or template). ──
+    const biz = await ctx.runQuery(api.whatsapp.getBusinessForAssistantAuth, {
+      businessId: args.businessId,
+    });
+    if (biz?.aiEnabled === false) {
+      return { sent: false, reason: "ai_reply_disabled" };
+    }
 
     const recentOutbound = await ctx.runQuery(api.whatsapp.getRecentOutboundForCustomer, {
       customerId: customer._id,
