@@ -304,16 +304,19 @@ http.route({
              console.log("[Webhook Evolution] Processing message payload:", JSON.stringify(m).slice(0, 500));
           }
 
-          // Helper to extract JID if it's an object from Go
+          // Helper to extract JID — handles both camelCase (Node.js/Baileys) and
+          // PascalCase (Go/whatsmeow JSON serialization: { User, Server })
           const extractJid = (jid: any): string => {
             if (typeof jid === "string") return jid;
-            if (jid?.user && jid?.server) return `${jid.user}@${jid.server}`;
+            const user = jid?.user || jid?.User || "";
+            const server = jid?.server || jid?.Server || "";
+            if (user && server) return `${user}@${server}`;
             return "";
           };
 
           // Try standard Node.js format first, fallback to flattened Go format, then Info format
           const remoteJid = m.key?.remoteJid || m.remoteJid || extractJid(m.Info?.RemoteJid) || extractJid(m.Info?.Chat) || extractJid(m.Info?.Sender) || "";
-          const fromMe = m.key?.fromMe ?? m.fromMe ?? m.Info?.IsFromMe ?? false;
+          const fromMe = m.key?.fromMe ?? m.fromMe ?? m.Info?.IsFromMe ?? (m as any).IsFromMe ?? false;
           const isGroup = remoteJid.endsWith("@g.us");
           const isStatusBroadcast = remoteJid === "status@broadcast";
           const messageId = m.key?.id || m.id || m.Info?.ID || "";
@@ -382,7 +385,7 @@ http.route({
           //   - fromMe === false: Discard (contacts' statuses are not our concern)
           if (isStatusBroadcast) {
             if (fromMe) {
-              console.log(`[Webhook Evolution] Owner status broadcast: id=${messageId}`);
+              console.warn(`[Webhook Evolution] Owner status broadcast: id=${messageId}, type=${messageType}`);
               await ctx.runMutation(api.whatsapp.syncStatus, {
                 businessId: business._id,
                 sender: remoteJid,
@@ -393,7 +396,7 @@ http.route({
                 whatsappMessageId: messageId,
               });
             } else {
-              console.log(`[Webhook Evolution] Contact status broadcast (ignored): id=${messageId}`);
+              console.warn(`[Webhook Evolution] Contact status broadcast (ignored): id=${messageId}, fromMe=${fromMe}, remoteJid=${remoteJid}`);
             }
             continue; // Skip normal message processing for status broadcasts
           }
