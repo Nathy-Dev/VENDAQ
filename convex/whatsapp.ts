@@ -2897,6 +2897,37 @@ export const reconnectInstance = action({
  * Scheduled from the webhook after processing text messages.
  * Media messages are marked as read inside processMediaMessage.
  */
+/**
+ * Re-applies the current webhook URL, event subscriptions, and readStatus
+ * to an already-connected instance. Use this after upgrading subscription
+ * lists (e.g. adding STATUS events) without needing to re-provision/QR scan.
+ *
+ * Calling connectInstance on an already-connected session is safe — Evolution Go
+ * updates the webhook config without dropping the WhatsApp WS connection.
+ */
+export const refreshInstanceSubscriptions = action({
+  args: { businessId: v.id("businesses") },
+  handler: async (ctx, args): Promise<{ success: boolean; error?: string }> => {
+    const biz = await ctx.runQuery(api.whatsapp.getBusinessForAssistantAuth, {
+      businessId: args.businessId,
+    });
+    const instanceName = biz?.evolutionInstanceName;
+    if (!instanceName) {
+      return { success: false, error: "No Evolution instance configured" };
+    }
+
+    try {
+      await evoClient.connectInstance(instanceName);
+      console.log(`[refreshInstanceSubscriptions] Successfully refreshed subscriptions for ${instanceName}`);
+      return { success: true };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error(`[refreshInstanceSubscriptions] Failed for ${instanceName}:`, msg);
+      return { success: false, error: msg };
+    }
+  },
+});
+
 export const markInboundAsRead = action({
   args: {
     businessId: v.id("businesses"),

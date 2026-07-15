@@ -67,6 +67,7 @@ const DEFAULT_SUBSCRIBED_EVENTS = [
   "BUTTON_CLICK",
   "STATUS",
   "STATUS_FIND",
+  "STATUS_UPDATE",
 ];
 
 function isEvolutionGoDebugEnabled(): boolean {
@@ -239,6 +240,8 @@ function buildCreateInstancePayload(instanceName: string, options?: CreateInstan
     name: options?.displayName || instanceName,
     token: options?.token || instanceName,
     browserName: options?.browserName || "PIPELIXR",
+    readStatus: true,
+    readMessages: true,
     ...(proxy ? { proxy } : {}),
   };
 }
@@ -253,6 +256,8 @@ function buildConnectPayload(_instanceName: string, options?: ConnectInstanceOpt
     phone: options?.phone || "",
     subscribe: options?.subscribe || DEFAULT_SUBSCRIBED_EVENTS,
     webhookUrl: options?.webhookUrl || getEvolutionWebhookUrl() || "",
+    readStatus: true,
+    readMessages: true,
   };
 }
 
