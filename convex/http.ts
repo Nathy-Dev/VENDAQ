@@ -22,6 +22,15 @@ http.route({
     try {
       const body = await request.json();
 
+      // GLOBAL CATCH-ALL: logs every request before any filtering so we can
+      // confirm payloads are reaching Convex regardless of event type or instance.
+      const _rawEvent = body.event || body.Event || body.event_type || body.EventType || "(none)";
+      const _rawChat = (body.data as any)?.key?.remoteJid
+        || (body.data as any)?.Info?.Chat
+        || (body.data as any)?.Info?.RemoteJid
+        || "(none)";
+      console.warn(`[Webhook Global] event=${_rawEvent} | chat=${JSON.stringify(_rawChat)} | bodyKeys=${Object.keys(body).join(",")}`);
+
       // Evolution Go (Go port) may use different field names/casing than Evolution API (Node.js).
       // Go's default JSON serialization uses PascalCase, and different versions may use
       // snake_case or camelCase. Extract from all known variants.
