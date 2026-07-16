@@ -1,6 +1,6 @@
 import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
-import { api } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 import * as evoClient from "./evolutionGoClient";
 
@@ -456,9 +456,8 @@ http.route({
               console.log(`[Webhook Evolution] Status deletion detected: targetId=${targetMessageId}, stubType=${stubType}, protocolType=${protocolType}`);
 
               if (targetMessageId) {
-                await ctx.runMutation(api.whatsapp.deleteStatus, {
-                  businessId: business._id,
-                  whatsappMessageId: targetMessageId,
+                await ctx.runMutation(internal.whatsapp.deleteStatus, {
+                  targetMessageId,
                 });
               }
               continue; // Don't create a new status for deletion events

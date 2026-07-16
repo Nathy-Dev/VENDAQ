@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation, query, action } from "./_generated/server";
+import { mutation, query, action, internalMutation } from "./_generated/server";
 import { api } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 import * as evoClient from "./evolutionGoClient";
@@ -690,42 +690,37 @@ export const syncStatus = mutation({
   },
 });
 
-export const deleteStatus = mutation({
+export const deleteStatus = internalMutation({
   args: {
-    businessId: v.id("businesses"),
-    whatsappMessageId: v.string(),
+    targetMessageId: v.string(),
   },
   handler: async (ctx, args) => {
     // Find the status by its WhatsApp message ID
-    const status = await ctx.db
+    const existingStatus = await ctx.db
       .query("statuses")
-      .withIndex("by_whatsapp_id", (q) => q.eq("whatsappMessageId", args.whatsappMessageId))
+      .withIndex("by_whatsapp_id", (q) => q.eq("whatsappMessageId", args.targetMessageId))
       .first();
 
-    if (!status) {
-      console.log(`[deleteStatus] No status found with whatsappMessageId=${args.whatsappMessageId}, nothing to delete.`);
-      return;
-    }
-
-    // Verify it belongs to the correct business
-    if (status.businessId !== args.businessId) {
-      console.warn(`[deleteStatus] Status ${args.whatsappMessageId} belongs to a different business, skipping.`);
-      return;
+    if (!existingStatus) {
+      console.log(`[deleteStatus] Deletion skipped: No record found for ID ${args.targetMessageId}`);
+      return { success: false, reason: "not_found" };
     }
 
     // Delete associated status views
-    const views = await ctx.db
+    const associatedViews = await ctx.db
       .query("statusViews")
-      .withIndex("by_status", (q) => q.eq("whatsappStatusId", args.whatsappMessageId))
+      .withIndex("by_status", (q) => q.eq("whatsappStatusId", args.targetMessageId))
       .collect();
 
-    for (const view of views) {
+    for (const view of associatedViews) {
       await ctx.db.delete(view._id);
     }
 
     // Delete the status itself
-    await ctx.db.delete(status._id);
-    console.log(`[deleteStatus] Deleted status ${args.whatsappMessageId} and ${views.length} associated views.`);
+    await ctx.db.delete(existingStatus._id);
+    console.log(`[deleteStatus] Successfully deleted status record: ${args.targetMessageId}`);
+
+    return { success: true, removed: existingStatus._id };
   },
 });
 
