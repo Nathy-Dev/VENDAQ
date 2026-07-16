@@ -450,8 +450,12 @@ http.route({
               null;
 
             const protocolType = protocolMsg?.type || protocolMsg?.Type || "";
+            // FIX: If the message is a protocol message and belongs to a status channel, 
+            // force isDeletion to true regardless of what value is inside protocolType.
+            const isStatusDeletion = remoteJid === "status@broadcast" || protocolMsg?.key?.remoteJid === "status@broadcast";
 
             const isDeletion =
+              isStatusDeletion || // <-- Inject this global bypass gate here
               stubType === "REVOKE" ||
               stubType === 0x44 || // numeric REVOKE stub type
               protocolType === 2 ||
