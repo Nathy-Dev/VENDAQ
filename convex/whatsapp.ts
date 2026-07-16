@@ -690,6 +690,45 @@ export const syncStatus = mutation({
   },
 });
 
+export const deleteStatus = mutation({
+  args: {
+    businessId: v.id("businesses"),
+    whatsappMessageId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    // Find the status by its WhatsApp message ID
+    const status = await ctx.db
+      .query("statuses")
+      .withIndex("by_whatsapp_id", (q) => q.eq("whatsappMessageId", args.whatsappMessageId))
+      .first();
+
+    if (!status) {
+      console.log(`[deleteStatus] No status found with whatsappMessageId=${args.whatsappMessageId}, nothing to delete.`);
+      return;
+    }
+
+    // Verify it belongs to the correct business
+    if (status.businessId !== args.businessId) {
+      console.warn(`[deleteStatus] Status ${args.whatsappMessageId} belongs to a different business, skipping.`);
+      return;
+    }
+
+    // Delete associated status views
+    const views = await ctx.db
+      .query("statusViews")
+      .withIndex("by_status", (q) => q.eq("whatsappStatusId", args.whatsappMessageId))
+      .collect();
+
+    for (const view of views) {
+      await ctx.db.delete(view._id);
+    }
+
+    // Delete the status itself
+    await ctx.db.delete(status._id);
+    console.log(`[deleteStatus] Deleted status ${args.whatsappMessageId} and ${views.length} associated views.`);
+  },
+});
+
 export const syncStatusView = mutation({
   args: {
     businessId: v.id("businesses"),

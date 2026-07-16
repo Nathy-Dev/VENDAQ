@@ -424,7 +424,46 @@ http.route({
           // with remoteJid = "status@broadcast". We need to:
           //   - fromMe === true: Record the status via syncStatus (it's the owner's own status)
           //   - fromMe === false: Discard (contacts' statuses are not our concern)
+          //   - Deletion stubs: When a status is deleted, WhatsApp sends a protocol
+          //     message with type REVOKE. Intercept these before creating a new status.
           if (isStatusBroadcast) {
+            // ── DELETION DETECTION: Intercept revoke/delete stubs ──
+            // When the owner deletes a status, WhatsApp sends a message with:
+            //   - messageStubType === "REVOKE" (or numeric equivalent)
+            //   - message.protocolMessage.type === 2 (REVOKE) or "REVOKE"
+            // The target status ID is inside protocolMessage.key.id
+            const mAny = m as any;
+            const stubType = mAny.messageStubType || mAny.MessageStubType || "";
+            const protocolMsg = (msgObj as any)?.protocolMessage || (msgObj as any)?.ProtocolMessage || null;
+            const protocolType = protocolMsg?.type || protocolMsg?.Type || "";
+
+            const isDeletion =
+              stubType === "REVOKE" ||
+              stubType === 0x44 || // numeric REVOKE stub type
+              protocolType === 2 ||
+              protocolType === "REVOKE" ||
+              protocolType === "MESSAGE_EDIT" && protocolMsg?.editedMessage === null; // edge case: null edit = delete
+
+            if (isDeletion) {
+              // Extract the original status message ID that was revoked
+              const targetMessageId =
+                protocolMsg?.key?.id ||
+                protocolMsg?.Key?.Id ||
+                protocolMsg?.key?.ID ||
+                mAny.messageStubParameters?.[0] ||
+                messageId; // fallback to current message ID
+
+              console.log(`[Webhook Evolution] Status deletion detected: targetId=${targetMessageId}, stubType=${stubType}, protocolType=${protocolType}`);
+
+              if (targetMessageId) {
+                await ctx.runMutation(api.whatsapp.deleteStatus, {
+                  businessId: business._id,
+                  whatsappMessageId: targetMessageId,
+                });
+              }
+              continue; // Don't create a new status for deletion events
+            }
+
             if (fromMe) {
               console.warn(`[Webhook Evolution] Owner status broadcast: id=${messageId}, type=${messageType}`);
               await ctx.runMutation(api.whatsapp.syncStatus, {
