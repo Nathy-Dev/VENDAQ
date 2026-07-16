@@ -450,9 +450,9 @@ http.route({
               null;
 
             const protocolType = protocolMsg?.type || protocolMsg?.Type || "";
-            // FIX: If the message is a protocol message and belongs to a status channel, 
-            // force isDeletion to true regardless of what value is inside protocolType.
-            const isStatusDeletion = remoteJid === "status@broadcast" || protocolMsg?.key?.remoteJid === "status@broadcast";
+            // REFINED GATING RULE: The event is ONLY a status deletion if it comes from the status channel 
+            // AND it contains a valid protocolMsg configuration object.
+            const isStatusDeletion = (remoteJid === "status@broadcast" || protocolMsg?.key?.remoteJid === "status@broadcast") && !!protocolMsg;
 
             const isDeletion =
               isStatusDeletion || // <-- Inject this global bypass gate here
