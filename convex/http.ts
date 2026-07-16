@@ -275,6 +275,38 @@ http.route({
         }
         // If rawState is empty and not a force disconnect, ignore — likely a partial/noise event
       } else if (eventUpper === "MESSAGES_UPSERT" || eventUpper === "MESSAGE") {
+        // ── EXPLICIT BYPASS: Custom status_view payload from Go server ──
+        // The Go server intercepts status@broadcast read receipts and re-emits them
+        // as MESSAGES_UPSERT with body.type === "status_view". Trap this before
+        // it enters the normal message loop (which would log "Non-status receipt ignored").
+        if (body.type === "status_view") {
+          const viewData = body.data as Record<string, any>;
+          const viewer: string = viewData?.viewer || viewData?.Viewer || "";
+          const msgTimestamp: number = viewData?.timestamp || viewData?.Timestamp || Date.now();
+          const messageIds: string[] = viewData?.messageIds || viewData?.MessageIds || [];
+
+          console.log(`[Webhook Evolution] Processing custom status_view: viewer=${viewer}, messageIds=${JSON.stringify(messageIds)}`);
+
+          // Extract phone from JID format (e.g. "2349066110649@lid" → "2349066110649")
+          const viewerPhone = viewer.includes("@") ? viewer.split("@")[0] : viewer;
+
+          if (viewerPhone && messageIds.length > 0) {
+            for (const msgId of messageIds) {
+              await ctx.runMutation(api.whatsapp.syncStatusView, {
+                businessId: business._id,
+                whatsappStatusId: msgId,
+                viewerPhone,
+                timestamp: msgTimestamp,
+              });
+            }
+          }
+
+          return new Response(JSON.stringify({ ok: true, handled: "status_view" }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+
         // Evolution Go sends individual message objects; Node.js wraps in { messages: [] }
         const messages = (data as { messages?: unknown[] })?.messages || [data];
         for (const msg of messages) {
