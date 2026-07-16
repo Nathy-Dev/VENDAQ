@@ -428,13 +428,27 @@ http.route({
           //     message with type REVOKE. Intercept these before creating a new status.
           if (isStatusBroadcast) {
             // ── DELETION DETECTION: Intercept revoke/delete stubs ──
-            // When the owner deletes a status, WhatsApp sends a message with:
-            //   - messageStubType === "REVOKE" (or numeric equivalent)
-            //   - message.protocolMessage.type === 2 (REVOKE) or "REVOKE"
-            // The target status ID is inside protocolMessage.key.id
+            // When the owner deletes a status, WhatsApp sends a MESSAGES_UPSERT with:
+            //   - data.message.protocolMessage.type === 2 (REVOKE)
+            //   - data.message.protocolMessage.key.id === "ORIGINAL_STATUS_ID"
+            //   - OR messageStubType === "REVOKE"
+            // The payload has NO actual text/media content — just the protocol wrapper.
             const mAny = m as any;
             const stubType = mAny.messageStubType || mAny.MessageStubType || "";
-            const protocolMsg = (msgObj as any)?.protocolMessage || (msgObj as any)?.ProtocolMessage || null;
+
+            // Check protocolMessage in all possible locations:
+            // 1. Inside m.message.protocolMessage (standard path)
+            // 2. Inside m.Message.protocolMessage (Go PascalCase)
+            // 3. Directly on the message object as ProtocolMessage
+            const protocolMsg =
+              (msgObj as any)?.protocolMessage ||
+              (msgObj as any)?.ProtocolMessage ||
+              mAny.message?.protocolMessage ||
+              mAny.Message?.ProtocolMessage ||
+              mAny.protocolMessage ||
+              mAny.ProtocolMessage ||
+              null;
+
             const protocolType = protocolMsg?.type || protocolMsg?.Type || "";
 
             const isDeletion =
@@ -442,10 +456,10 @@ http.route({
               stubType === 0x44 || // numeric REVOKE stub type
               protocolType === 2 ||
               protocolType === "REVOKE" ||
-              protocolType === "MESSAGE_EDIT" && protocolMsg?.editedMessage === null; // edge case: null edit = delete
+              (protocolType === "MESSAGE_EDIT" && protocolMsg?.editedMessage === null);
 
             if (isDeletion) {
-              // Extract the original status message ID that was revoked
+              // Extract the exact ID of the original status that was deleted
               const targetMessageId =
                 protocolMsg?.key?.id ||
                 protocolMsg?.Key?.Id ||
@@ -460,7 +474,14 @@ http.route({
                   targetMessageId,
                 });
               }
-              continue; // Don't create a new status for deletion events
+              continue; // Stop here — never let deletion stubs reach syncStatus
+            }
+
+            // ADDITIONAL GUARD: If we have a protocolMessage but it wasn't caught
+            // above (unknown type), still skip — protocol messages are never real statuses.
+            if (protocolMsg) {
+              console.log(`[Webhook Evolution] Unknown protocol message in status@broadcast (type=${protocolType}), skipping.`);
+              continue;
             }
 
             if (fromMe) {
