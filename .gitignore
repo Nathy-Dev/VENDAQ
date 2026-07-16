@@ -41,5 +41,7 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# docs
+# Evolution Go
+/evolution-src
+/Evolution_Go_Status_Webhook_Documentation.md
 /docs
