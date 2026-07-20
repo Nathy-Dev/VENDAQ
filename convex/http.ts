@@ -132,11 +132,11 @@ http.route({
           const finalViewerJid = rcptSender || viewerJid;
           const finalMsgId = rcptMsgId || messageId;
 
-          console.log(`[Webhook Evolution] Status view receipt: msgId=${finalMsgId}, viewer=${finalViewerJid}`);
-
-          if (finalViewerJid && finalMsgId) {
-            // Extract the phone number from @lid or @s.whatsapp.net format
-            // WhatsApp privacy LID format: "254906611064927@lid" or "254906611064927@s.whatsapp.net"
+          // Reject @lid JIDs — WhatsApp linked device privacy IDs, not real contacts.
+          // Receipts from @lid JIDs are device-layer acknowledgements, not real views.
+          if (finalViewerJid.endsWith("@lid")) {
+            console.log(`[Webhook Evolution] Ignoring @lid receipt: ${finalViewerJid}`);
+          } else if (finalViewerJid && finalMsgId) {
             const viewerPhone = finalViewerJid.includes("@")
               ? finalViewerJid.split("@")[0]
               : finalViewerJid;
@@ -288,6 +288,15 @@ http.route({
           console.log(`[Webhook Evolution] Processing custom status_view: viewer=${viewer}, messageIds=${JSON.stringify(messageIds)}`);
 
           // Extract phone from JID format (e.g. "2349066110649@lid" → "2349066110649")
+          // Reject @lid JIDs — these are linked device IDs, not real contacts.
+          if (viewer.endsWith("@lid")) {
+            console.log(`[Webhook Evolution] Ignoring @lid status_view viewer: ${viewer}`);
+            return new Response(JSON.stringify({ ok: true, skipped: "lid_jid" }), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            });
+          }
+
           const viewerPhone = viewer.includes("@") ? viewer.split("@")[0] : viewer;
 
           if (viewerPhone && messageIds.length > 0) {

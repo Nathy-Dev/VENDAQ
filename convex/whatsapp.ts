@@ -732,17 +732,33 @@ export const syncStatusView = mutation({
     timestamp: v.number(),
   },
   handler: async (ctx, args) => {
+    // Reject @lid JIDs — these are WhatsApp privacy-layer linked device IDs, not real
+    // phone contacts. Evolution Go sometimes emits read receipts with @lid sender JIDs
+    // when a contact's device reads a status. Messaging these would fire at random
+    // people (or bounce) and is the primary cause of unsolicited messages.
+    if (args.viewerPhone.includes("@lid") || args.viewerPhone.endsWith("@lid")) {
+      console.log(`[syncStatusView] Skipping @lid viewer: ${args.viewerPhone}`);
+      return;
+    }
+    // Strip the @s.whatsapp.net suffix if the caller passed the full JID instead of
+    // just the phone number (defensive normalisation — http.ts already strips it, but
+    // other callers might not).
+    const normalizedPhone = args.viewerPhone.includes("@")
+      ? args.viewerPhone.split("@")[0]
+      : args.viewerPhone;
+
     // 1. Find the status if it exists
     const status = await ctx.db
         .query("statuses")
         .withIndex("by_whatsapp_id", (q) => q.eq("whatsappMessageId", args.whatsappStatusId))
         .first();
 
-    // 2. Deduplicate view
+    // 2. Deduplicate this exact (statusId, viewer) pair — blocks the same webhook
+    //    path from double-firing for the same status message.
     const existing = await ctx.db
         .query("statusViews")
         .withIndex("by_status", (q) => q.eq("whatsappStatusId", args.whatsappStatusId))
-        .filter((q) => q.eq(q.field("viewerPhone"), args.viewerPhone))
+        .filter((q) => q.eq(q.field("viewerPhone"), normalizedPhone))
         .first();
     
     if (existing) return;
@@ -752,7 +768,7 @@ export const syncStatusView = mutation({
         businessId: args.businessId,
         statusId: status?._id,
         whatsappStatusId: args.whatsappStatusId,
-        viewerPhone: args.viewerPhone,
+        viewerPhone: normalizedPhone,
         timestamp: args.timestamp,
     });
     
@@ -760,15 +776,15 @@ export const syncStatusView = mutation({
     let customer = await ctx.db
         .query("customers")
         .withIndex("by_business_phone", (q) => 
-            q.eq("businessId", args.businessId).eq("phone", args.viewerPhone)
+            q.eq("businessId", args.businessId).eq("phone", normalizedPhone)
         )
         .unique();
     
     if (!customer) {
         const customerId = await ctx.db.insert("customers", {
             businessId: args.businessId,
-            phone: args.viewerPhone,
-            name: args.viewerPhone, // We don't have a name yet
+            phone: normalizedPhone,
+            name: normalizedPhone,
             totalValue: 0,
             lastInteraction: args.timestamp,
             leadSource: "status_view",
@@ -778,7 +794,6 @@ export const syncStatusView = mutation({
         });
         customer = await ctx.db.get(customerId);
     } else {
-        // Tag existing customer as status viewer if not already
         await ctx.db.patch(customer._id, {
           tags: customer.tags.includes("status-viewer") ? customer.tags : [...customer.tags, "status-viewer"],
           leadSource: customer.leadSource || "status_view",
@@ -799,16 +814,28 @@ export const syncStatusView = mutation({
       .first();
 
     if (!recentInbound) {
-      const existingTask = await ctx.db
+      // Global per-customer dedup gate: check across ALL viewed_no_dm tasks
+      // (pending OR recently completed) within a 24h cooldown window. This is
+      // the critical fix for multiple webhook paths (RECEIPT, status_view,
+      // STATUS_FIND) each registering different whatsappStatusIds for the same
+      // physical status post and each independently scheduling a follow-up.
+      const COOLDOWN_MS = 24 * 60 * 60 * 1000;
+      const cooldownSince = Date.now() - COOLDOWN_MS;
+
+      const recentTask = await ctx.db
         .query("followUpTasks")
         .withIndex("by_customer_reason", (q) => q.eq("customerId", customer!._id).eq("reason", "viewed_no_dm"))
-        .filter((q) => q.eq(q.field("status"), "pending"))
+        .filter((q) =>
+          q.or(
+            q.eq(q.field("status"), "pending"),
+            q.gt(q.field("createdAt"), cooldownSince)
+          )
+        )
         .first();
 
-      if (!existingTask) {
+      if (!recentTask) {
         const now = Date.now();
         const dueAt = args.timestamp + VIEWER_FOLLOW_UP_DELAY_MS;
-        // Ensure we never schedule in the past (e.g. historical status view backfills)
         const delayMs = Math.max(0, dueAt - now);
 
         const taskId = await ctx.db.insert("followUpTasks", {
@@ -820,8 +847,6 @@ export const syncStatusView = mutation({
           createdAt: now,
         });
 
-        // Schedule the automated follow-up to fire when the task becomes due.
-        // Without this, tasks would sit in "pending" state forever.
         const scheduledFunctionId = await ctx.scheduler.runAfter(
           delayMs,
           api.whatsapp.processViewedNoDmFollowUp,
@@ -1417,6 +1442,20 @@ export const processViewedNoDmFollowUp = action({
     if (ownerReplies > 0) {
       await ctx.runMutation(api.whatsapp.markTaskCancelled, { taskId: args.taskId });
       return { sent: false, reason: "owner_already_reached_out" };
+    }
+
+    // 3b. Last-resort 24h cooldown: if a viewed_no_dm message was already sent to
+    //     this customer within the last 24 hours (by a sibling task that fired first),
+    //     cancel this one. This guards against any race or duplicate tasks that slipped
+    //     through the syncStatusView gate (e.g. from historical backfills or retries).
+    const COOLDOWN_MS = 24 * 60 * 60 * 1000;
+    const recentlySentInteraction = await ctx.runQuery(api.whatsapp.getOwnerRepliesForCustomerSince, {
+      customerId: args.customerId,
+      since: Date.now() - COOLDOWN_MS,
+    });
+    if (recentlySentInteraction > 0) {
+      await ctx.runMutation(api.whatsapp.markTaskCancelled, { taskId: args.taskId });
+      return { sent: false, reason: "cooldown_active" };
     }
 
     // 4. Global send guardrails (quiet hours, daily caps)

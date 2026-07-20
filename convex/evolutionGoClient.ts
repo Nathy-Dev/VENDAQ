@@ -534,7 +534,14 @@ export async function deleteInstance(instanceId: string, instanceToken?: string)
 
 /**
  * Downloads media from a WhatsApp message via Evolution Go.
- * POST /message/downloadimage
+ *
+ * Evolution Go (Go port) and Evolution API (Node.js) use different endpoint
+ * paths for media download. This function tries multiple known endpoints in
+ * order until one succeeds:
+ *   1. /chat/downloadMediaMessage  (Evolution Go canonical)
+ *   2. /message/downloadMedia      (Evolution Go alternate)
+ *   3. /message/download           (some Evolution Go builds)
+ *   4. /message/downloadimage      (legacy Evolution API / Node.js)
  *
  * When a customer sends an image, the webhook provides metadata
  * (directPath, mediaKey, fileEncSHA256, etc.) but the actual media URL
@@ -542,7 +549,7 @@ export async function deleteInstance(instanceId: string, instanceToken?: string)
  * as base64.
  *
  * @returns Base64-encoded media data (without data URI prefix) and mimetype
- */ 
+ */
 export async function downloadMedia(
   instanceName: string,
   messageData: {
@@ -554,64 +561,94 @@ export async function downloadMedia(
 
   logEvolutionGoDebug("downloadMedia request", messageData);
 
-  const res = await fetch(`${url}/message/downloadimage`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      apikey: instanceName,
-    },
-    body: JSON.stringify(messageData),
-  });
+  // Try multiple endpoint paths — Evolution Go versions vary
+  const endpoints = [
+    "/chat/downloadMediaMessage",
+    "/message/downloadMedia",
+    "/message/download",
+    "/message/downloadimage",
+  ];
 
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Evolution Go downloadMedia -> ${res.status}: ${text}`);
-  }
+  let lastError: Error | null = null;
 
-  // Evolution Go may return JSON with base64, or raw binary
-  const contentType = res.headers.get("content-type") || "";
+  for (const endpoint of endpoints) {
+    try {
+      const res = await fetch(`${url}${endpoint}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: instanceName,
+        },
+        body: JSON.stringify(messageData),
+      });
 
-  if (contentType.includes("application/json")) {
-    const data = (await res.json()) as any;
-    const result = data?.data || data;
+      // 404 or 405 means this endpoint doesn't exist — try next
+      if (res.status === 404 || res.status === 405) {
+        logEvolutionGoDebug(`downloadMedia ${endpoint} -> ${res.status}, trying next endpoint`);
+        continue;
+      }
 
-    let base64: string = result?.base64 || result?.media || result?.data || "";
-    const mimetype: string =
-      result?.mimetype || result?.mimeType || result?.mediatype || "application/octet-stream";
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Evolution Go ${endpoint} -> ${res.status}: ${text}`);
+      }
 
-    // Strip data URI prefix if present (e.g. "data:image/jpeg;base64,...")
-    if (base64.includes(",")) {
-      base64 = base64.split(",")[1];
+      // Evolution Go may return JSON with base64, or raw binary
+      const contentType = res.headers.get("content-type") || "";
+
+      if (contentType.includes("application/json")) {
+        const data = (await res.json()) as any;
+        const result = data?.data || data;
+
+        let base64: string = result?.base64 || result?.media || result?.data || "";
+        const mimetype: string =
+          result?.mimetype || result?.mimeType || result?.mediatype || "application/octet-stream";
+
+        // Strip data URI prefix if present (e.g. "data:image/jpeg;base64,...")
+        if (base64.includes(",")) {
+          base64 = base64.split(",")[1];
+        }
+
+        if (!base64) {
+          throw new Error(`No media data in Evolution Go download response (JSON) from ${endpoint}`);
+        }
+
+        logEvolutionGoDebug(`downloadMedia success via ${endpoint}`, { mimetype, base64Length: base64.length });
+        return { base64, mimetype };
+      }
+
+      // Binary response — convert ArrayBuffer to base64
+      const buffer = await res.arrayBuffer();
+      const bytes = new Uint8Array(buffer);
+
+      if (bytes.length === 0) {
+        throw new Error(`No media data in Evolution Go download response (binary) from ${endpoint}`);
+      }
+
+      // Chunk-safe ArrayBuffer → base64
+      const CHUNK = 0x8000;
+      const parts: string[] = [];
+      for (let i = 0; i < bytes.length; i += CHUNK) {
+        const chunk = bytes.subarray(i, i + CHUNK);
+        parts.push(String.fromCharCode(...chunk));
+      }
+      const base64 = btoa(parts.join(""));
+      const mimetype = contentType.split(";")[0].trim() || "application/octet-stream";
+
+      logEvolutionGoDebug(`downloadMedia success (binary) via ${endpoint}`, { mimetype, bytes: bytes.length });
+      return { base64, mimetype };
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      // If this is a non-404 error (actual failure, not "endpoint not found"), throw immediately
+      if (!lastError.message.includes("404") && !lastError.message.includes("405")) {
+        throw lastError;
+      }
+      logEvolutionGoDebug(`downloadMedia ${endpoint} failed: ${lastError.message}`);
     }
-
-    if (!base64) {
-      throw new Error("No media data in Evolution Go download response (JSON)");
-    }
-
-    logEvolutionGoDebug("downloadMedia success", { mimetype, base64Length: base64.length });
-    return { base64, mimetype };
   }
 
-  // Binary response — convert ArrayBuffer to base64
-  const buffer = await res.arrayBuffer();
-  const bytes = new Uint8Array(buffer);
-
-  if (bytes.length === 0) {
-    throw new Error("No media data in Evolution Go download response (binary)");
-  }
-
-  // Chunk-safe ArrayBuffer → base64
-  const CHUNK = 0x8000;
-  const parts: string[] = [];
-  for (let i = 0; i < bytes.length; i += CHUNK) {
-    const chunk = bytes.subarray(i, i + CHUNK);
-    parts.push(String.fromCharCode(...chunk));
-  }
-  const base64 = btoa(parts.join(""));
-  const mimetype = contentType.split(";")[0].trim() || "application/octet-stream";
-
-  logEvolutionGoDebug("downloadMedia success (binary)", { mimetype, bytes: bytes.length });
-  return { base64, mimetype };
+  // All endpoints failed
+  throw lastError || new Error("Evolution Go downloadMedia: all endpoint variants returned 404");
 }
 
 /**
