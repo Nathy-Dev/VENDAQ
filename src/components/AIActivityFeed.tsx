@@ -10,7 +10,6 @@ import {
   MessageSquareReply,
   ArrowUpCircle,
   AlertCircle,
-  Zap,
   CheckCircle2,
   XCircle,
   ChevronDown,
@@ -20,33 +19,38 @@ import { useState } from "react";
 const TYPE_CONFIG = {
   classification: {
     icon: Brain,
-    color: "#8b5cf6",
-    bg: "rgba(139, 92, 246, 0.1)",
-    label: "Classified",
+    color: "#a78bfa",
+    bg: "rgba(167, 139, 250, 0.1)",
+    label: "Message Read",
+    plain: "AI read and understood the message",
   },
   image_analysis: {
     icon: Eye,
-    color: "#3b82f6",
-    bg: "rgba(59, 130, 246, 0.1)",
-    label: "Image Read",
+    color: "#60a5fa",
+    bg: "rgba(96, 165, 250, 0.1)",
+    label: "Image Seen",
+    plain: "AI looked at the image in the message",
   },
   smart_reply: {
     icon: MessageSquareReply,
-    color: "#10b981",
-    bg: "rgba(16, 185, 129, 0.1)",
-    label: "Auto-Reply",
+    color: "#34d399",
+    bg: "rgba(52, 211, 153, 0.1)",
+    label: "Reply Sent",
+    plain: "AI replied on your behalf",
   },
   intent_upgrade: {
     icon: ArrowUpCircle,
-    color: "#f59e0b",
-    bg: "rgba(245, 158, 11, 0.1)",
-    label: "Intent Upgrade",
+    color: "#fbbf24",
+    bg: "rgba(251, 191, 36, 0.1)",
+    label: "Interest Detected",
+    plain: "AI noticed the customer is more interested",
   },
   error: {
     icon: AlertCircle,
-    color: "#ef4444",
-    bg: "rgba(239, 68, 68, 0.1)",
-    label: "Error",
+    color: "#f87171",
+    bg: "rgba(248, 113, 113, 0.1)",
+    label: "Issue",
+    plain: "Something went wrong",
   },
 } as const;
 
@@ -59,38 +63,51 @@ export default function AIActivityFeed({ businessId }: AIActivityFeedProps) {
   const metrics = useQuery(api.ai.getAIMetrics, { businessId });
   const [expanded, setExpanded] = useState(false);
 
+  const cardStyle: React.CSSProperties = {
+    background: "#0d1420",
+    border: "1px solid rgba(255,255,255,0.06)",
+    borderRadius: "1rem",
+    overflow: "hidden",
+  };
+
   if (activities === undefined || metrics === undefined) {
     return (
       <div style={cardStyle}>
-        <div style={cardHeaderStyle}>
+        <div style={headerStyle}>
           <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-            <div style={iconDotStyle("#8b5cf6")}>
+            <div style={iconBadge("#a78bfa")}>
               <Brain size={13} />
             </div>
-            <span style={sectionTitleStyle}>AI Engine</span>
+            <span style={titleStyle}>AI Assistant</span>
           </div>
         </div>
-        <div style={{ padding: "1.25rem", color: "#374151", fontSize: "0.8rem" }}>
+        <div style={{ padding: "1.5rem", color: "rgba(255,255,255,0.2)", fontSize: "0.82rem", textAlign: "center" }}>
           Loading AI activity…
         </div>
       </div>
     );
   }
 
+  const totalActions =
+    metrics.totalSmartRepliesToday +
+    metrics.totalClassificationsToday +
+    metrics.totalImageAnalysesToday +
+    metrics.totalIntentUpgradesToday;
+
   return (
     <div style={cardStyle}>
-      {/* Header row */}
-      <div style={cardHeaderStyle}>
+      {/* Header */}
+      <div style={headerStyle}>
         <div style={{ display: "flex", alignItems: "center", gap: "0.625rem" }}>
-          <div style={iconDotStyle("#8b5cf6")}>
+          <div style={iconBadge("#a78bfa")}>
             <Brain size={13} />
           </div>
-          <span style={sectionTitleStyle}>AI Engine</span>
+          <span style={titleStyle}>AI Assistant</span>
 
-          {/* Model status pills */}
-          <div style={{ display: "flex", gap: "0.5rem", marginLeft: "0.25rem" }}>
-            <ModelPill label="Groq" active={metrics.groqConfigured} />
-            <ModelPill label="Vision" active={metrics.openaiConfigured} />
+          {/* Status pills */}
+          <div style={{ display: "flex", gap: "0.4rem", marginLeft: "0.15rem" }}>
+            <StatusPill label="Active" active={metrics.groqConfigured} />
+            <StatusPill label="Vision" active={metrics.openaiConfigured} />
           </div>
         </div>
 
@@ -102,7 +119,7 @@ export default function AIActivityFeed({ businessId }: AIActivityFeedProps) {
             gap: "0.3rem",
             background: "none",
             border: "none",
-            color: "#4A5568",
+            color: "rgba(255,255,255,0.28)",
             fontSize: "0.75rem",
             cursor: "pointer",
             fontFamily: "inherit",
@@ -110,10 +127,10 @@ export default function AIActivityFeed({ businessId }: AIActivityFeedProps) {
             borderRadius: "0.375rem",
             transition: "color 0.15s",
           }}
-          onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.color = "#8892A4")}
-          onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.color = "#4A5568")}
+          onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.color = "rgba(255,255,255,0.55)")}
+          onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.color = "rgba(255,255,255,0.28)")}
         >
-          {expanded ? "Hide" : "Show activity"}
+          {expanded ? "Hide" : "See activity"}
           <ChevronDown
             size={13}
             style={{
@@ -124,43 +141,43 @@ export default function AIActivityFeed({ businessId }: AIActivityFeedProps) {
         </button>
       </div>
 
-      {/* Metrics row — always visible */}
-      <div style={metricsRowStyle}>
-        <MetricTile label="Classified" value={metrics.totalClassificationsToday} color="#8b5cf6" />
-        <MetricTile label="Images Read" value={metrics.totalImageAnalysesToday} color="#3b82f6" />
-        <MetricTile label="Auto-Replies" value={metrics.totalSmartRepliesToday} color="#10b981" />
-        <MetricTile label="Upgrades" value={metrics.totalIntentUpgradesToday} color="#f59e0b" />
+      {/* Summary metrics — always visible */}
+      <div style={{ display: "flex", gap: "0.5rem", padding: "0.875rem 1.25rem", flexWrap: "wrap" }}>
+        <MetricTile label="Replied" value={metrics.totalSmartRepliesToday} color="#34d399" />
+        <MetricTile label="Messages Read" value={metrics.totalClassificationsToday} color="#a78bfa" />
+        <MetricTile label="Images Seen" value={metrics.totalImageAnalysesToday} color="#60a5fa" />
+        <MetricTile label="Interest Bumps" value={metrics.totalIntentUpgradesToday} color="#fbbf24" />
         {metrics.avgConfidenceToday > 0 && (
           <MetricTile
-            label="Avg Confidence"
+            label="Confidence"
             value={`${metrics.avgConfidenceToday}%`}
             color="#06b6d4"
           />
         )}
       </div>
 
-      {/* Activity feed — toggleable */}
+      {/* Activity log — expandable */}
       {expanded && (
         <div
           style={{
             borderTop: "1px solid rgba(255,255,255,0.05)",
-            maxHeight: 300,
+            maxHeight: 320,
             overflowY: "auto",
           }}
         >
           {activities.length === 0 ? (
             <div
               style={{
-                padding: "2rem 1.25rem",
+                padding: "2.5rem 1.5rem",
                 textAlign: "center",
-                color: "#374151",
-                fontSize: "0.8rem",
+                color: "rgba(255,255,255,0.2)",
+                fontSize: "0.82rem",
               }}
             >
-              <Brain size={22} style={{ margin: "0 auto 0.5rem", opacity: 0.2 }} />
-              <p style={{ margin: 0 }}>No activity yet.</p>
-              <p style={{ margin: "0.2rem 0 0", fontSize: "0.72rem", color: "#2D3A4A" }}>
-                Activity will appear as messages come in.
+              <Brain size={24} style={{ margin: "0 auto 0.6rem", opacity: 0.15, display: "block" }} />
+              <p style={{ margin: 0 }}>No activity yet</p>
+              <p style={{ margin: "0.25rem 0 0", fontSize: "0.72rem", color: "rgba(255,255,255,0.14)" }}>
+                The AI will show its work here as messages come in.
               </p>
             </div>
           ) : (
@@ -174,7 +191,7 @@ export default function AIActivityFeed({ businessId }: AIActivityFeedProps) {
                   style={{
                     display: "flex",
                     gap: "0.75rem",
-                    padding: "0.7rem 1.25rem",
+                    padding: "0.75rem 1.25rem",
                     borderBottom: "1px solid rgba(255,255,255,0.03)",
                     alignItems: "flex-start",
                     transition: "background 0.12s",
@@ -187,7 +204,6 @@ export default function AIActivityFeed({ businessId }: AIActivityFeedProps) {
                     ((e.currentTarget as HTMLDivElement).style.background = "transparent")
                   }
                 >
-                  {/* Icon */}
                   <div
                     style={{
                       width: 28,
@@ -204,13 +220,12 @@ export default function AIActivityFeed({ businessId }: AIActivityFeedProps) {
                     <Icon size={13} style={{ color: config.color }} />
                   </div>
 
-                  {/* Content */}
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div
                       style={{
-                        fontSize: "0.8rem",
-                        color: "#94A3B8",
-                        lineHeight: 1.45,
+                        fontSize: "0.79rem",
+                        color: "rgba(255,255,255,0.55)",
+                        lineHeight: 1.5,
                         wordBreak: "break-word",
                       }}
                     >
@@ -221,31 +236,28 @@ export default function AIActivityFeed({ businessId }: AIActivityFeedProps) {
                         display: "flex",
                         alignItems: "center",
                         gap: "0.5rem",
-                        marginTop: "0.25rem",
+                        marginTop: "0.2rem",
                       }}
                     >
-                      <span style={{ fontSize: "0.67rem", color: "#2D3A4A" }}>
+                      <span style={{ fontSize: "0.65rem", color: "rgba(255,255,255,0.2)" }}>
                         {formatDistanceToNow(activity.timestamp, { addSuffix: true })}
                       </span>
                       {activity.confidence !== undefined && activity.confidence !== null && (
                         <span
                           style={{
-                            fontSize: "0.67rem",
+                            fontSize: "0.65rem",
                             fontWeight: 600,
                             color:
                               activity.confidence >= 0.8
-                                ? "#10b981"
+                                ? "#34d399"
                                 : activity.confidence >= 0.6
-                                ? "#f59e0b"
-                                : "#ef4444",
+                                ? "#fbbf24"
+                                : "#f87171",
                           }}
                         >
-                          {Math.round(activity.confidence * 100)}%
+                          {Math.round(activity.confidence * 100)}% confident
                         </span>
                       )}
-                      <span style={{ fontSize: "0.62rem", color: "#1E293B" }}>
-                        {activity.model}
-                      </span>
                     </div>
                   </div>
                 </div>
@@ -260,27 +272,23 @@ export default function AIActivityFeed({ businessId }: AIActivityFeedProps) {
 
 /* ── Sub-components ──────────────────────────────────────── */
 
-function ModelPill({ label, active }: { label: string; active: boolean }) {
+function StatusPill({ label, active }: { label: string; active: boolean }) {
   return (
     <div
       style={{
         display: "flex",
         alignItems: "center",
-        gap: "0.3rem",
-        padding: "0.2rem 0.5rem",
+        gap: "0.25rem",
+        padding: "0.18rem 0.5rem",
         borderRadius: 9999,
-        background: active ? "rgba(16,185,129,0.08)" : "rgba(239,68,68,0.06)",
-        border: `1px solid ${active ? "rgba(16,185,129,0.18)" : "rgba(239,68,68,0.15)"}`,
-        fontSize: "0.65rem",
-        color: active ? "#10b981" : "#ef4444",
+        background: active ? "rgba(52,211,153,0.08)" : "rgba(248,113,113,0.06)",
+        border: `1px solid ${active ? "rgba(52,211,153,0.18)" : "rgba(248,113,113,0.15)"}`,
+        fontSize: "0.62rem",
+        color: active ? "#34d399" : "#f87171",
         fontWeight: 600,
       }}
     >
-      {active ? (
-        <CheckCircle2 size={10} />
-      ) : (
-        <XCircle size={10} />
-      )}
+      {active ? <CheckCircle2 size={10} /> : <XCircle size={10} />}
       {label}
     </div>
   );
@@ -304,11 +312,11 @@ function MetricTile({
         border: "1px solid rgba(255,255,255,0.05)",
         textAlign: "center",
         flex: 1,
-        minWidth: 72,
+        minWidth: 70,
       }}
     >
-      <div style={{ fontSize: "1.25rem", fontWeight: 700, color, lineHeight: 1 }}>{value}</div>
-      <div style={{ fontSize: "0.65rem", color: "#374151", marginTop: "0.25rem", fontWeight: 500 }}>
+      <div style={{ fontSize: "1.2rem", fontWeight: 700, color, lineHeight: 1 }}>{value}</div>
+      <div style={{ fontSize: "0.62rem", color: "rgba(255,255,255,0.25)", marginTop: "0.25rem", fontWeight: 500 }}>
         {label}
       </div>
     </div>
@@ -317,14 +325,7 @@ function MetricTile({
 
 /* ── Style helpers ───────────────────────────────────────── */
 
-const cardStyle: React.CSSProperties = {
-  background: "#0D1117",
-  border: "1px solid rgba(255,255,255,0.06)",
-  borderRadius: "1rem",
-  overflow: "hidden",
-};
-
-const cardHeaderStyle: React.CSSProperties = {
+const headerStyle: React.CSSProperties = {
   display: "flex",
   alignItems: "center",
   justifyContent: "space-between",
@@ -332,22 +333,15 @@ const cardHeaderStyle: React.CSSProperties = {
   borderBottom: "1px solid rgba(255,255,255,0.05)",
 };
 
-const sectionTitleStyle: React.CSSProperties = {
-  fontSize: "0.72rem",
+const titleStyle: React.CSSProperties = {
+  fontSize: "0.7rem",
   fontWeight: 700,
   textTransform: "uppercase",
-  letterSpacing: "0.12em",
-  color: "#4A5568",
+  letterSpacing: "0.1em",
+  color: "rgba(255,255,255,0.22)",
 };
 
-const metricsRowStyle: React.CSSProperties = {
-  display: "flex",
-  gap: "0.625rem",
-  padding: "0.875rem 1.25rem",
-  flexWrap: "wrap",
-};
-
-function iconDotStyle(color: string): React.CSSProperties {
+function iconBadge(color: string): React.CSSProperties {
   return {
     width: 26,
     height: 26,

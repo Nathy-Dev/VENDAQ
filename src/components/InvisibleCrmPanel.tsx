@@ -35,22 +35,22 @@ export default function InvisibleCrmPanel({ businessId }: InvisibleCrmPanelProps
     <section className={styles.panel}>
       <header className={styles.header}>
         <div>
-          <h3 className={styles.title}>Revenue Action Feed</h3>
-          <p className={styles.subtitle}>No CRM admin. Just the next messages most likely to close.</p>
+          <h3 className={styles.title}>Who to Message Right Now</h3>
+          <p className={styles.subtitle}>The AI picked these people based on who is most likely to buy. One tap sends the message.</p>
         </div>
       </header>
 
       <div className={styles.kpis}>
         <Kpi label="Hot Leads" value={overview?.hotLeads ?? 0} icon={<TrendingUp size={14} />} />
-        <Kpi label="Stalled After Quote" value={overview?.stalledAfterQuote ?? 0} icon={<AlertTriangle size={14} />} />
-        <Kpi label="Potential Revenue At Risk" value={`NGN ${(overview?.potentialRevenueAtRisk ?? 0).toLocaleString()}`} icon={<TrendingUp size={14} />} />
+        <Kpi label="Stalled (Need a Nudge)" value={overview?.stalledAfterQuote ?? 0} icon={<AlertTriangle size={14} />} />
+        <Kpi label="Revenue at Risk" value={`NGN ${(overview?.potentialRevenueAtRisk ?? 0).toLocaleString()}`} icon={<TrendingUp size={14} />} />
       </div>
 
       <div className={styles.feed}>
         {!actions ? (
-          <div className={styles.empty}>Preparing action feed...</div>
+          <div className={styles.empty}>Preparing your action list…</div>
         ) : actions.length === 0 ? (
-          <div className={styles.empty}>No urgent actions right now.</div>
+          <div className={styles.empty}>No urgent actions right now — you&apos;re all caught up! 🎉</div>
         ) : (
           actions.map((item) => (
             <article className={styles.item} key={item.customerId}>
@@ -72,7 +72,7 @@ export default function InvisibleCrmPanel({ businessId }: InvisibleCrmPanelProps
                   disabled={sendingId === item.customerId}
                 >
                   <Send size={13} />
-                  <span>{sendingId === item.customerId ? "Sending..." : "Send Now"}</span>
+                  <span>{sendingId === item.customerId ? "Sending…" : "Send Message"}</span>
                 </button>
               </div>
             </article>

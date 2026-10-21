@@ -8,33 +8,36 @@ import { usePathname } from "next/navigation";
 import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import {
-  LayoutDashboard,
-  Zap,
-  TrendingUp,
-  GitBranch,
+  Home,
+  UsersRound,
+  Radio,
+  Send,
   Settings,
-  User,
+  UserRound,
   LogOut,
-  ChevronUp,
   Menu,
   X,
-  MessageCircle,
-  ChevronLeft,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
 import styles from "./DashboardNavbar.module.css";
 import { ChatThread } from "@/types";
 
 const MAIN_NAV = [
-  { href: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
-  { href: "/pipeline", icon: GitBranch, label: "Pipeline" },
-  { href: "/status", icon: Zap, label: "Status-to-Cash" },
-  { href: "/revenue", icon: TrendingUp, label: "Revenue Ops" },
+  { href: "/dashboard", icon: Home, label: "Overview" },
+  { href: "/pipeline", icon: UsersRound, label: "My Leads" },
+  { href: "/status", icon: Radio, label: "Viewers" },
+  { href: "/revenue", icon: Send, label: "Send Actions" },
 ];
 
 const ACCOUNT_NAV = [
-  { href: "/profile", icon: User, label: "Profile" },
+  { href: "/profile", icon: UserRound, label: "My Profile" },
   { href: "/settings", icon: Settings, label: "Settings" },
 ];
+
+function isActive(pathname: string, href: string) {
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
 
 export default function DashboardNavbar() {
   const { data: session } = useSession();
@@ -47,7 +50,7 @@ export default function DashboardNavbar() {
   useEffect(() => {
     document.documentElement.style.setProperty(
       "--sidebar-width",
-      isCollapsed ? "64px" : "230px"
+      isCollapsed ? "72px" : "240px"
     );
   }, [isCollapsed]);
 
@@ -73,6 +76,19 @@ export default function DashboardNavbar() {
     return () => document.removeEventListener("mousedown", handleOutsideClick);
   }, []);
 
+  useEffect(() => {
+    if (!isMobileOpen) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, [isMobileOpen]);
+
+  useEffect(() => {
+    setIsMobileOpen(false);
+  }, [pathname]);
+
   const userInitial = (
     session?.user?.name?.[0] ||
     session?.user?.email?.[0] ||
@@ -80,162 +96,230 @@ export default function DashboardNavbar() {
   ).toUpperCase();
 
   const closeMobile = () => setIsMobileOpen(false);
+  const accountActive = ACCOUNT_NAV.some((item) => isActive(pathname, item.href));
+
+  const navLink = (
+    { href, icon: Icon, label }: (typeof MAIN_NAV)[number],
+    badge?: number
+  ) => {
+    const active = isActive(pathname, href);
+    return (
+      <Link
+        key={href}
+        href={href}
+        className={`${styles.navItem} ${active ? styles.navItemActive : ""}`}
+        onClick={closeMobile}
+        aria-current={active ? "page" : undefined}
+        title={isCollapsed ? label : undefined}
+      >
+        <Icon size={17} className={styles.navIcon} strokeWidth={1.9} />
+        <span className={styles.navLabel}>{label}</span>
+        {badge ? (
+          <span className={styles.navBadge}>{badge > 9 ? "9+" : badge}</span>
+        ) : null}
+      </Link>
+    );
+  };
 
   return (
     <>
-      {/* Mobile top bar */}
-      <div className={styles.mobileHeader}>
+      {/* ── Mobile top bar ─────────────────────────────────── */}
+      <header className={styles.mobileHeader}>
         <button
-          className={styles.hamburger}
+          className={styles.iconBtn}
           onClick={() => setIsMobileOpen(true)}
           aria-label="Open menu"
         >
-          <Menu size={18} />
+          <Menu size={19} />
         </button>
-        <Link href="/dashboard" onClick={closeMobile}>
-          <Image
-            src="/logo.png"
-            alt="PIPELIXR"
-            width={30}
-            height={30}
-            style={{ borderRadius: 7, display: "block" }}
-          />
+        <Link href="/dashboard" className={styles.mobileBrand} aria-label="PIPELIXR home">
+          <Image src="/logo.png" alt="" width={26} height={26} className={styles.mobileLogo} />
+          <span>PIPELIXR</span>
         </Link>
-        <div style={{ width: 36 }} />
-      </div>
+        <Link href="/profile" className={styles.mobileAvatar} aria-label="Your profile">
+          {session?.user?.image ? (
+            <Image
+              src={session.user.image}
+              alt=""
+              width={28}
+              height={28}
+              className={styles.avatarImg}
+            />
+          ) : (
+            <span>{userInitial}</span>
+          )}
+        </Link>
+      </header>
 
-      {/* Mobile overlay */}
+      {/* ── Drawer scrim ───────────────────────────────────── */}
       <div
         className={`${styles.mobileOverlay} ${isMobileOpen ? styles.mobileOverlayVisible : ""}`}
         onClick={closeMobile}
         aria-hidden="true"
       />
 
-      {/* Sidebar */}
-      <aside className={`${styles.sidebar} ${isMobileOpen ? styles.sidebarOpen : ""} ${isCollapsed ? styles.sidebarCollapsed : ""}`}>
-        {/* Logo */}
+      {/* ── Sidebar / drawer ───────────────────────────────── */}
+      <aside
+        className={`${styles.sidebar} ${isMobileOpen ? styles.sidebarOpen : ""} ${
+          isCollapsed ? styles.sidebarCollapsed : ""
+        }`}
+      >
         <div className={styles.logoSection}>
           <Link href="/dashboard" className={styles.logoLink} onClick={closeMobile}>
             <Image
               src="/logo.png"
-              alt="PIPELIXR"
-              width={30}
-              height={30}
+              alt=""
+              width={28}
+              height={28}
               className={styles.logoImg}
             />
             <span className={styles.logoText}>PIPELIXR</span>
           </Link>
-          <button className={styles.closeBtn} onClick={closeMobile} aria-label="Close menu">
-            <X size={15} />
+          <button
+            className={styles.closeBtn}
+            onClick={closeMobile}
+            aria-label="Close menu"
+          >
+            <X size={16} />
           </button>
         </div>
 
-        {/* Navigation */}
-        <nav className={styles.nav}>
+        <nav className={styles.nav} aria-label="Main">
           <span className={styles.navSectionLabel}>Workspace</span>
-
-          {MAIN_NAV.map(({ href, icon: Icon, label }) => (
-            <Link
-              key={href}
-              href={href}
-              className={`${styles.navItem} ${pathname === href ? styles.navItemActive : ""}`}
-              onClick={closeMobile}
-            >
-              <Icon size={16} className={styles.navIcon} />
-              <span className={styles.navLabel}>{label}</span>
-            </Link>
-          ))}
-
-          {newChatsCount > 0 && (
-            <Link
-              href="/dashboard"
-              className={styles.navItem}
-              onClick={closeMobile}
-            >
-              <MessageCircle size={16} className={styles.navIcon} />
-              <span className={styles.navLabel}>New Messages</span>
-              <span className={styles.navBadge}>
-                {newChatsCount > 9 ? "9+" : newChatsCount}
-              </span>
-            </Link>
+          {MAIN_NAV.map((item) =>
+            navLink(item, item.href === "/dashboard" ? newChatsCount : undefined)
           )}
 
-          <span className={styles.navSectionLabel} style={{ marginTop: "0.5rem" }}>
+          <span className={`${styles.navSectionLabel} ${styles.navSectionLabelSpaced}`}>
             Account
           </span>
+          {ACCOUNT_NAV.map(({ href, icon: Icon, label }) => {
+            const active = isActive(pathname, href);
+            return (
+              <Link
+                key={href}
+                href={href}
+                className={`${styles.navItem} ${active ? styles.navItemActive : ""}`}
+                onClick={closeMobile}
+                aria-current={active ? "page" : undefined}
+                title={isCollapsed ? label : undefined}
+              >
+                <Icon size={17} className={styles.navIcon} strokeWidth={1.9} />
+                <span className={styles.navLabel}>{label}</span>
+              </Link>
+            );
+          })}
+        </nav>
 
-          {ACCOUNT_NAV.map(({ href, icon: Icon, label }) => (
+        <div className={styles.sidebarFooter}>
+          <button
+            className={styles.collapseBtn}
+            onClick={() => setIsCollapsed(!isCollapsed)}
+            aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            title={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+          >
+            {isCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+            <span className={styles.navLabel}>Collapse</span>
+          </button>
+
+          <div className={styles.userSection} ref={userMenuRef}>
+            {isUserMenuOpen && (
+              <div className={styles.dropdown} role="menu">
+                <Link
+                  href="/profile"
+                  className={styles.dropdownItem}
+                  onClick={() => {
+                    setIsUserMenuOpen(false);
+                    closeMobile();
+                  }}
+                  role="menuitem"
+                >
+                  <UserRound size={14} />
+                  View profile
+                </Link>
+                <Link
+                  href="/settings"
+                  className={styles.dropdownItem}
+                  onClick={() => {
+                    setIsUserMenuOpen(false);
+                    closeMobile();
+                  }}
+                  role="menuitem"
+                >
+                  <Settings size={14} />
+                  Settings
+                </Link>
+                <button
+                  className={`${styles.dropdownItem} ${styles.logoutItem}`}
+                  onClick={() => {
+                    signOut({ callbackUrl: "/login" });
+                    setIsUserMenuOpen(false);
+                  }}
+                  role="menuitem"
+                >
+                  <LogOut size={14} />
+                  Sign out
+                </button>
+              </div>
+            )}
+
+            <button
+              className={styles.userCard}
+              onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
+              aria-expanded={isUserMenuOpen}
+            >
+              <span className={styles.avatar}>
+                {session?.user?.image ? (
+                  <Image
+                    src={session.user.image}
+                    alt=""
+                    width={32}
+                    height={32}
+                    className={styles.avatarImg}
+                  />
+                ) : (
+                  <span>{userInitial}</span>
+                )}
+              </span>
+              <span className={styles.userMeta}>
+                <span className={styles.userName}>
+                  {session?.user?.name || "User"}
+                </span>
+                <span className={styles.userEmail}>
+                  {session?.user?.email || ""}
+                </span>
+              </span>
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      {/* ── Mobile bottom navigation ───────────────────────── */}
+      <nav className={styles.bottomNav} aria-label="Quick navigation">
+        {MAIN_NAV.map(({ href, icon: Icon, label }) => {
+          const active = isActive(pathname, href);
+          return (
             <Link
               key={href}
               href={href}
-              className={`${styles.navItem} ${pathname === href ? styles.navItemActive : ""}`}
-              onClick={closeMobile}
+              className={`${styles.bottomItem} ${active ? styles.bottomItemActive : ""}`}
+              aria-current={active ? "page" : undefined}
             >
-              <Icon size={16} className={styles.navIcon} />
-              <span className={styles.navLabel}>{label}</span>
+              <Icon size={19} strokeWidth={active ? 2.2 : 1.8} />
+              <span>{label}</span>
             </Link>
-          ))}
-
-          <button
-            className={`${styles.navItem} ${styles.collapseNavBtn}`}
-            onClick={() => setIsCollapsed(!isCollapsed)}
-            aria-label="Toggle sidebar"
-          >
-            <ChevronLeft size={16} className={`${styles.collapseIcon} ${isCollapsed ? styles.collapseIconRotated : ""}`} />
-            <span className={styles.navLabel}>Collapse</span>
-          </button>
-        </nav>
-
-        {/* User card */}
-        <div className={styles.userSection} ref={userMenuRef}>
-          {isUserMenuOpen && (
-            <div className={styles.dropdown}>
-              <button
-                className={`${styles.dropdownItem} ${styles.logoutItem}`}
-                onClick={() => {
-                  signOut({ callbackUrl: "/login" });
-                  setIsUserMenuOpen(false);
-                }}
-              >
-                <LogOut size={14} />
-                Sign Out
-              </button>
-            </div>
-          )}
-
-          <button
-            className={styles.userCard}
-            onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
-            aria-expanded={isUserMenuOpen}
-          >
-            <div className={styles.avatar}>
-              {session?.user?.image ? (
-                <Image
-                  src={session.user.image}
-                  alt="Avatar"
-                  width={33}
-                  height={33}
-                  className={styles.avatarImg}
-                />
-              ) : (
-                <span>{userInitial}</span>
-              )}
-            </div>
-            <div className={styles.userMeta}>
-              <span className={styles.userName}>
-                {session?.user?.name || "User"}
-              </span>
-              <span className={styles.userEmail}>
-                {session?.user?.email || ""}
-              </span>
-            </div>
-            <ChevronUp
-              size={13}
-              className={`${styles.chevron} ${isUserMenuOpen ? styles.chevronDown : ""}`}
-            />
-          </button>
-        </div>
-      </aside>
+          );
+        })}
+        <button
+          type="button"
+          className={`${styles.bottomItem} ${accountActive ? styles.bottomItemActive : ""}`}
+          onClick={() => setIsMobileOpen(true)}
+          aria-label="More options"
+        >
+          <Menu size={19} />
+          <span>More</span>
+        </button>
+      </nav>
     </>
   );
 }

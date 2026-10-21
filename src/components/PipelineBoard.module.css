@@ -1,245 +1,323 @@
+/* ══════════════════════════════════════════════════════════
+   PipelineBoard — Redesigned Styles
+   Clean, action-first, non-technical layout
+   ══════════════════════════════════════════════════════════ */
+
 .container {
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: 2rem;
 }
 
-/* ── Funnel Waterfall ── */
-.funnelSection {
-  background: rgba(30, 41, 59, 0.5);
-  border: 1px solid rgba(148, 163, 184, 0.1);
+.loading {
+  padding: 3rem;
+  text-align: center;
+  color: rgba(255,255,255,0.25);
+  font-size: 0.875rem;
+}
+
+/* ── Header ──────────────────────────────────────────────── */
+
+.headerRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+}
+
+.pageTitle {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #e9eef6;
+  letter-spacing: -0.025em;
+  line-height: 1.2;
+}
+
+.pageSubtitle {
+  font-size: 0.85rem;
+  color: rgba(255,255,255,0.3);
+  margin-top: 0.2rem;
+  line-height: 1.4;
+}
+
+/* ── Period toggle ───────────────────────────────────────── */
+
+.periodToggle {
+  display: flex;
+  align-items: center;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.07);
   border-radius: 0.75rem;
+  padding: 3px;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.periodBtn {
+  padding: 0.45rem 0.875rem;
+  border-radius: 0.55rem;
+  border: none;
+  background: none;
+  color: rgba(255,255,255,0.3);
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  font-family: inherit;
+}
+
+.periodBtn:hover {
+  color: rgba(255,255,255,0.65);
+  background: rgba(255,255,255,0.04);
+}
+
+.periodBtnActive {
+  background: rgba(255,255,255,0.09) !important;
+  color: #e9eef6 !important;
+  font-weight: 600;
+}
+
+/* ── Section ─────────────────────────────────────────────── */
+
+.funnelSection {
+  background: #0d1420;
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 1rem;
   padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
 }
 
 .sectionTitle {
-  font-size: 1rem;
-  font-weight: 600;
-  color: #f1f5f9;
-  margin-bottom: 1rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: rgba(255,255,255,0.2);
 }
 
 .sectionSubtitle {
-  font-size: 0.8rem;
-  color: #94a3b8;
-  margin-bottom: 1rem;
+  font-size: 0.82rem;
+  color: rgba(255,255,255,0.3);
+  margin-top: -0.5rem;
 }
+
+/* ── Funnel steps ────────────────────────────────────────── */
 
 .funnelSteps {
   display: flex;
   align-items: center;
   gap: 0.25rem;
   overflow-x: auto;
-  padding-bottom: 0.5rem;
+  padding-bottom: 0.25rem;
+  flex-wrap: nowrap;
 }
 
+.funnelSteps::-webkit-scrollbar { display: none; }
+
 .funnelStep {
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  min-width: 5.5rem;
-  padding: 0.75rem 0.5rem;
-  border-radius: 0.5rem;
-  background: rgba(15, 23, 42, 0.5);
-  border: 1px solid rgba(148, 163, 184, 0.08);
+  gap: 0.35rem;
+  padding: 0.875rem 1.125rem;
+  background: rgba(255,255,255,0.025);
+  border: 1px solid rgba(255,255,255,0.05);
+  border-radius: 0.75rem;
+  min-width: 88px;
+  transition: border-color 0.15s;
+}
+
+.funnelStep:hover {
+  border-color: rgba(255,255,255,0.1);
 }
 
 .funnelValue {
-  font-size: 1.25rem;
+  font-size: 1.35rem;
   font-weight: 700;
-  color: #f1f5f9;
+  color: #e9eef6;
+  letter-spacing: -0.02em;
+  line-height: 1;
 }
 
 .funnelLabel {
   font-size: 0.65rem;
-  color: #94a3b8;
+  font-weight: 600;
+  color: rgba(255,255,255,0.3);
   text-align: center;
-  margin-top: 0.25rem;
+  white-space: nowrap;
 }
 
 .funnelArrow {
-  color: #475569;
-  font-size: 1rem;
+  color: rgba(255,255,255,0.15);
   flex-shrink: 0;
 }
 
 .conversionBadge {
   font-size: 0.6rem;
-  color: #10b981;
-  background: rgba(16, 185, 129, 0.1);
-  padding: 0.15rem 0.4rem;
-  border-radius: 99px;
-  margin-top: 0.25rem;
+  font-weight: 700;
+  color: #34d399;
+  background: rgba(52, 211, 153, 0.08);
+  border: 1px solid rgba(52, 211, 153, 0.15);
+  padding: 0.1rem 0.35rem;
+  border-radius: 9999px;
+  white-space: nowrap;
 }
 
-/* ── Recovery Metrics ── */
+/* ── Recovery / Measure grid ─────────────────────────────── */
+
 .recoveryGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  grid-template-columns: repeat(2, 1fr);
   gap: 0.75rem;
 }
 
 .recoveryCard {
-  background: rgba(15, 23, 42, 0.6);
-  border: 1px solid rgba(148, 163, 184, 0.08);
-  border-radius: 0.5rem;
-  padding: 1rem;
-  text-align: center;
+  padding: 1rem 1.25rem;
+  background: rgba(255,255,255,0.025);
+  border: 1px solid rgba(255,255,255,0.05);
+  border-radius: 0.875rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  transition: border-color 0.15s;
+}
+
+.recoveryCard:hover {
+  border-color: rgba(255,255,255,0.09);
 }
 
 .recoveryValue {
-  font-size: 1.25rem;
+  font-size: 1.4rem;
   font-weight: 700;
-  color: #f1f5f9;
+  color: #e9eef6;
+  letter-spacing: -0.02em;
+  line-height: 1;
 }
 
-.recoveryValueGreen {
-  color: #10b981;
-}
-
-.recoveryValueRed {
-  color: #ef4444;
-}
+.recoveryValueGreen { color: #34d399; }
+.recoveryValueRed   { color: #f87171; }
 
 .recoveryLabel {
-  font-size: 0.7rem;
-  color: #94a3b8;
-  margin-top: 0.25rem;
+  font-size: 0.72rem;
+  color: rgba(255,255,255,0.3);
+  font-weight: 500;
 }
 
-/* ── Priority Board ── */
+/* ── Priority board ──────────────────────────────────────── */
+
 .boardGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  grid-template-columns: repeat(3, 1fr);
   gap: 1rem;
 }
 
 .boardColumn {
-  background: rgba(30, 41, 59, 0.5);
-  border: 1px solid rgba(148, 163, 184, 0.1);
-  border-radius: 0.75rem;
-  padding: 1rem;
-  max-height: 500px;
-  overflow-y: auto;
+  background: rgba(255,255,255,0.025);
+  border: 1px solid rgba(255,255,255,0.05);
+  border-radius: 0.875rem;
+  overflow: hidden;
 }
 
 .boardColumnHeader {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  margin-bottom: 0.75rem;
-  padding-bottom: 0.5rem;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.08);
+  padding: 0.875rem 1rem;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
 }
 
 .boardColumnTitle {
-  font-size: 0.85rem;
+  font-size: 0.78rem;
   font-weight: 600;
-  color: #f1f5f9;
+  color: #e9eef6;
+  flex: 1;
 }
 
 .boardColumnCount {
   font-size: 0.7rem;
-  background: rgba(148, 163, 184, 0.15);
-  color: #94a3b8;
-  padding: 0.1rem 0.4rem;
-  border-radius: 99px;
+  font-weight: 700;
+  color: rgba(255,255,255,0.3);
+  background: rgba(255,255,255,0.05);
+  padding: 0.15rem 0.45rem;
+  border-radius: 9999px;
 }
 
 .leadCard {
-  background: rgba(15, 23, 42, 0.5);
-  border: 1px solid rgba(148, 163, 184, 0.06);
-  border-radius: 0.5rem;
-  padding: 0.75rem;
-  margin-bottom: 0.5rem;
+  padding: 0.875rem 1rem;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  transition: background 0.12s;
+}
+
+.leadCard:last-child {
+  border-bottom: none;
+}
+
+.leadCard:hover {
+  background: rgba(255,255,255,0.02);
 }
 
 .leadName {
-  font-size: 0.8rem;
-  font-weight: 500;
-  color: #e2e8f0;
+  font-size: 0.83rem;
+  font-weight: 600;
+  color: #e9eef6;
 }
 
 .leadPhone {
-  font-size: 0.7rem;
-  color: #64748b;
-}
-
-.leadMeta {
-  font-size: 0.65rem;
-  color: #94a3b8;
-  margin-top: 0.25rem;
+  font-size: 0.72rem;
+  color: rgba(255,255,255,0.3);
 }
 
 .leadReason {
-  font-size: 0.65rem;
-  color: #f59e0b;
-  margin-top: 0.2rem;
+  font-size: 0.75rem;
+  color: rgba(255,255,255,0.45);
+  line-height: 1.4;
+}
+
+.leadMeta {
+  font-size: 0.7rem;
+  color: rgba(255,255,255,0.25);
 }
 
 .leadValue {
-  font-size: 0.7rem;
-  color: #10b981;
-  font-weight: 500;
-  margin-top: 0.2rem;
-}
-
-/* ── Loading / Empty ── */
-.loading {
-  text-align: center;
-  color: #94a3b8;
-  padding: 2rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #34d399;
 }
 
 .empty {
+  padding: 1.5rem 1rem;
   text-align: center;
-  color: #64748b;
-  padding: 1.5rem;
-  font-size: 0.8rem;
+  font-size: 0.78rem;
+  color: rgba(255,255,255,0.2);
 }
 
-/* ── Period toggle ── */
-.periodToggle {
-  display: flex;
-  gap: 0.25rem;
-  background: rgba(15, 23, 42, 0.6);
-  padding: 0.25rem;
-  border-radius: 0.5rem;
-  border: 1px solid rgba(148, 163, 184, 0.08);
+/* ── Responsive ──────────────────────────────────────────── */
+
+@media (max-width: 900px) {
+  .boardGrid {
+    grid-template-columns: 1fr;
+  }
+  
+  .recoveryGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 
-.periodBtn {
-  padding: 0.4rem 0.75rem;
-  font-size: 0.75rem;
-  border: none;
-  background: transparent;
-  color: #94a3b8;
-  border-radius: 0.35rem;
-  cursor: pointer;
-  transition: all 0.15s;
-}
+@media (max-width: 640px) {
+  .headerRow {
+    flex-direction: column;
+    align-items: flex-start;
+  }
 
-.periodBtnActive {
-  background: rgba(59, 130, 246, 0.15);
-  color: #3b82f6;
-}
-
-.headerRow {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 0.75rem;
-  margin-bottom: 1.5rem;
-}
-
-.pageTitle {
-  font-size: 1.25rem;
-  font-weight: 700;
-  color: #f1f5f9;
-}
-
-.pageSubtitle {
-  font-size: 0.8rem;
-  color: #94a3b8;
+  .recoveryGrid {
+    grid-template-columns: 1fr 1fr;
+  }
 }

@@ -9,6 +9,7 @@ import Loader from "@/components/Loader";
 import PipelineBoard from "@/components/PipelineBoard";
 import DashboardNavbar from "@/components/DashboardNavbar";
 import styles from "../dashboard/dashboard.module.css";
+import shellStyles from "@/components/DashboardShell.module.css";
 
 export default function PipelinePage() {
   const { data: session, status: sessionStatus } = useSession();
@@ -33,8 +34,8 @@ export default function PipelinePage() {
   return (
     <>
       <DashboardNavbar />
-      <div className={styles.container}>
-        <div className={styles.wrapper}>
+      <main className={shellStyles.main}>
+        <div className={shellStyles.content}>
           {business ? (
             <PipelineBoard businessId={business._id} />
           ) : (
@@ -48,7 +49,7 @@ export default function PipelinePage() {
             </div>
           )}
         </div>
-      </div>
+      </main>
     </>
   );
 }

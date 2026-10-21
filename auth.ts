@@ -4,7 +4,9 @@ import Credentials from "next-auth/providers/credentials";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "./convex/_generated/api";
 
-const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
+const convex = new ConvexHttpClient(
+  process.env.NEXT_PUBLIC_CONVEX_URL || "https://dummy.convex.cloud"
+);
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   session: { strategy: "jwt" },

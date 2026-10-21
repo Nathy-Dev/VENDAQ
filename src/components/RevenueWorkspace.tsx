@@ -28,23 +28,28 @@ export default function RevenueWorkspace({ businessId }: RevenueWorkspaceProps) 
 
   return (
     <div className={styles.container}>
+      {/* ── Stats strip ── */}
       <div className={styles.metrics}>
-        <MetricCard label="Actions Sent" value={(metrics?.totalSent || 0).toString()} />
-        <MetricCard label="Reply Rate" value={`${Math.round((metrics?.replyRate || 0) * 100)}%`} />
-        <MetricCard label="Win Rate" value={`${Math.round((metrics?.winRate || 0) * 100)}%`} />
-        <MetricCard label="Recovered Revenue" value={`NGN ${(metrics?.recoveredRevenue || 0).toLocaleString()}`} />
+        <MetricCard label="Messages Sent" value={(metrics?.totalSent || 0).toString()} />
+        <MetricCard label="Replied Back" value={`${Math.round((metrics?.replyRate || 0) * 100)}%`} />
+        <MetricCard label="Deals Closed" value={`${Math.round((metrics?.winRate || 0) * 100)}%`} />
+        <MetricCard label="Revenue Recovered" value={`NGN ${(metrics?.recoveredRevenue || 0).toLocaleString()}`} />
       </div>
 
+      {/* ── Who to message ── */}
       <InvisibleCrmPanel businessId={businessId} />
 
+      {/* ── Deal outcomes ── */}
       <section className={styles.outcomes}>
-        <h3 className={styles.heading}>Action Outcomes</h3>
-        <p className={styles.subheading}>Mark outcomes so scoring learns what closes for this business.</p>
+        <div style={{ padding: "1.25rem 1.5rem", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+          <h3 className={styles.heading}>Deal Results</h3>
+          <p className={styles.subheading}>Mark each deal as won or lost so the AI learns what works for your business.</p>
+        </div>
 
         {!outcomes ? (
-          <div className={styles.empty}>Loading outcomes...</div>
+          <div className={styles.empty}>Loading your deals…</div>
         ) : outcomes.length === 0 ? (
-          <div className={styles.empty}>No outcomes yet. Send actions from the feed to start learning.</div>
+          <div className={styles.empty}>No deals to review yet. Send messages from above to get started.</div>
         ) : (
           <div className={styles.list}>
             {outcomes.map((outcome) => (
@@ -53,13 +58,13 @@ export default function RevenueWorkspace({ businessId }: RevenueWorkspaceProps) 
                   <div className={styles.customer}>{outcome.customerName}</div>
                   <div className={styles.message}>{outcome.suggestedMessage}</div>
                   <div className={styles.meta}>
-                    Status: <strong>{outcome.status}</strong> | Est. NGN {outcome.estimatedValue.toLocaleString()}
+                    Status: <strong style={{ color: "#e9eef6" }}>{outcome.status}</strong> · Est. NGN {outcome.estimatedValue.toLocaleString()}
                   </div>
                 </div>
                 {(outcome.status === "sent" || outcome.status === "replied") && (
                   <div className={styles.actions}>
-                    <button className={styles.winBtn} onClick={() => closeOutcome(outcome._id, "won", outcome.estimatedValue)}>Mark Won</button>
-                    <button className={styles.lostBtn} onClick={() => closeOutcome(outcome._id, "lost", outcome.estimatedValue)}>Mark Lost</button>
+                    <button className={styles.winBtn} onClick={() => closeOutcome(outcome._id, "won", outcome.estimatedValue)}>✓ Won</button>
+                    <button className={styles.lostBtn} onClick={() => closeOutcome(outcome._id, "lost", outcome.estimatedValue)}>✗ Lost</button>
                   </div>
                 )}
               </article>

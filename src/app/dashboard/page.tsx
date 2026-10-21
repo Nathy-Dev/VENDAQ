@@ -17,6 +17,7 @@ import {
   WifiOff,
   Loader2,
   RefreshCcw,
+  TrendingUp,
   type LucideIcon,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
@@ -238,13 +239,12 @@ export default function DashboardPage() {
         <header className={styles.header}>
           <div className={styles.headerLeft}>
             <h1 className={styles.welcomeTitle}>
-              Welcome back, {firstName}!
+              Good to see you, {firstName} 👋
             </h1>
-            <p className={styles.subTitle}>Here&apos;s what&apos;s happening with your business today.</p>
+            <p className={styles.subTitle}>Here&apos;s what&apos;s happening with your business right now.</p>
             {business?.lastHistorySyncAt && (
               <p className={styles.syncStatus}>
-                Last sync: {business.lastHistorySyncCount || 0} messages ·{" "}
-                {formatDistanceToNow(business.lastHistorySyncAt, { addSuffix: true })}
+                ● Synced {formatDistanceToNow(business.lastHistorySyncAt, { addSuffix: true })}
               </p>
             )}
           </div>
@@ -273,18 +273,18 @@ export default function DashboardPage() {
               <div className={styles.alertTitle}>
                 <WifiOff
                   size={16}
-                  style={{ color: isReconnecting || isPending ? "#f59e0b" : "#ef4444" }}
+                  style={{ color: isReconnecting || isPending ? "#fbbf24" : "#f87171" }}
                 />
                 {isReconnecting || isPending
-                  ? "Connecting…"
+                  ? "Reconnecting your WhatsApp…"
                   : business.whatsappStatus === "error"
-                  ? "Connection Error"
-                  : "WhatsApp Disconnected"}
+                  ? "Connection issue detected"
+                  : "WhatsApp is disconnected"}
               </div>
               <p className={styles.alertDesc}>
                 {isReconnecting || isPending
-                  ? "Open WhatsApp → Linked Devices → Link a Device, then scan the QR code below."
-                  : "Your WhatsApp session ended. Tap Reconnect to re-link — your data is safe."}
+                  ? "Open WhatsApp on your phone → Linked Devices → Link a Device, then scan the QR code below."
+                  : "Your WhatsApp session ended. Tap Reconnect to re-link — all your data is safe."}
               </p>
               {reconnectError && <p className={styles.alertError}>{reconnectError}</p>}
 
@@ -292,7 +292,7 @@ export default function DashboardPage() {
                 <div className={styles.qrPanel}>
                   {qrData.pairingCode ? (
                     <>
-                      <p className={styles.qrHint}>Enter this pairing code on WhatsApp:</p>
+                      <p className={styles.qrHint}>Enter this code in WhatsApp → Linked Devices:</p>
                       <div className={styles.pairingGrid}>
                         {qrData.pairingCode.split("").map((char, i) => (
                           <span key={i} className={styles.pairingChar}>{char}</span>
@@ -301,7 +301,7 @@ export default function DashboardPage() {
                     </>
                   ) : qrData.qrCode ? (
                     <>
-                      <p className={styles.qrHint}>Scan this QR code with WhatsApp:</p>
+                      <p className={styles.qrHint}>Scan with WhatsApp → Linked Devices → Link a Device:</p>
                       <div style={{ background: "white", padding: "0.5rem", borderRadius: "0.5rem" }}>
                         {qrData.qrCode.startsWith("data:image") || qrData.qrCode.length > 500 ? (
                           <Image
@@ -328,8 +328,8 @@ export default function DashboardPage() {
 
               {isReconnecting && !qrData?.qrCode && !qrData?.pairingCode && (
                 <div className={styles.qrSpinner}>
-                  <Loader2 size={14} className="animate-spin" style={{ color: "#f59e0b" }} />
-                  <span>Generating QR code…</span>
+                  <Loader2 size={14} className="animate-spin" style={{ color: "#fbbf24" }} />
+                  <span>Generating your QR code…</span>
                 </div>
               )}
             </div>
@@ -369,13 +369,13 @@ export default function DashboardPage() {
           <div className={`${styles.alertBanner} ${styles.alertBannerGreen}`}>
             <div className={styles.alertInfo}>
               <div className={styles.alertTitle}>
-                <Wifi size={16} style={{ color: "#10b981" }} />
-                {!business ? "Welcome to PIPELIXR!" : "Connect Your WhatsApp"}
+                <Wifi size={16} style={{ color: "#34d399" }} />
+                {!business ? "Let&apos;s get you set up!" : "Connect your WhatsApp"}
               </div>
               <p className={styles.alertDesc}>
                 {!business
-                  ? "Finalize your setup to start capturing leads and managing your pipeline automatically."
-                  : "Complete setup to connect WhatsApp and start syncing messages."}
+                  ? "Finish setting up to start capturing leads and managing your sales automatically."
+                  : "Connect WhatsApp to start syncing messages and capturing leads."}
               </p>
             </div>
             <div className={styles.alertActions}>
@@ -393,42 +393,46 @@ export default function DashboardPage() {
         <div className={styles.statsGrid}>
           <StatCard
             icon={MessageSquare}
-            label="Total Signals"
+            label="Leads Captured"
             value={mvpMetrics?.totalSignals?.toString() ?? "0"}
-            color="rgba(59, 130, 246, 0.12)"
-            iconColor="#3b82f6"
+            color="rgba(96, 165, 250, 0.12)"
+            iconColor="#60a5fa"
+            hint="People who messaged about your products"
           />
           <StatCard
             icon={Reply}
             label="Replied"
             value={mvpMetrics?.replied?.toString() ?? "0"}
-            color="rgba(16, 185, 129, 0.12)"
-            iconColor="#10b981"
+            color="rgba(52, 211, 153, 0.12)"
+            iconColor="#34d399"
+            hint="Conversations the AI responded to"
           />
           <StatCard
-            icon={Send}
+            icon={TrendingUp}
             label="Followed Up"
             value={mvpMetrics?.followedUp?.toString() ?? "0"}
-            color="rgba(139, 92, 246, 0.12)"
-            iconColor="#8b5cf6"
+            color="rgba(167, 139, 250, 0.12)"
+            iconColor="#a78bfa"
+            hint="Leads the AI followed up with"
           />
           <StatCard
             icon={AlertTriangle}
             label="Missed"
             value={mvpMetrics?.lost?.toString() ?? "0"}
-            color="rgba(245, 158, 11, 0.12)"
-            iconColor="#f59e0b"
+            color="rgba(251, 191, 36, 0.12)"
+            iconColor="#fbbf24"
+            hint="Leads that went cold without a reply"
           />
         </div>
 
-        {/* ── Lost revenue hero ────────────────────────────────── */}
+        {/* ── Missed revenue alert ─────────────────────────────── */}
         <div className={styles.lostRevenueCard}>
           <div className={styles.lostRevenueLeft}>
             <div className={styles.lostRevenueIconBox}>
-              <Banknote size={24} />
+              <Banknote size={22} />
             </div>
             <div className={styles.lostRevenueContent}>
-              <div className={styles.lostRevenueLabel}>Estimated Lost Revenue</div>
+              <div className={styles.lostRevenueLabel}>Money left on the table</div>
               <div className={styles.lostRevenueAmount}>
                 NGN {(mvpMetrics?.estimatedLostRevenue || 0).toLocaleString()}
               </div>
@@ -451,10 +455,10 @@ export default function DashboardPage() {
         {/* ── Lead Pipeline ───────────────────────────────────── */}
         <div>
           <div className={styles.sectionHeader}>
-            <h3 className={styles.sectionTitle}>Lead Pipeline</h3>
+            <h3 className={styles.sectionTitle}>Your Sales Pipeline</h3>
             {business?.whatsappStatus === "connected" ? (
               <span className={`${styles.statusPill} ${styles.statusPillGreen}`}>
-                <Wifi size={10} /> Live Sync Active
+                <Wifi size={10} /> Live
               </span>
             ) : business?.whatsappStatus === "pending" ? (
               <span className={`${styles.statusPill} ${styles.statusPillAmber}`}>
@@ -480,9 +484,10 @@ interface StatCardProps {
   value: string;
   color: string;
   iconColor: string;
+  hint?: string;
 }
 
-function StatCard({ icon: Icon, label, value, color, iconColor }: StatCardProps) {
+function StatCard({ icon: Icon, label, value, color, iconColor, hint }: StatCardProps) {
   return (
     <div
       className={styles.statCard}
@@ -493,7 +498,7 @@ function StatCard({ icon: Icon, label, value, color, iconColor }: StatCardProps)
           className={styles.statIconBadge}
           style={{ background: color, color: iconColor }}
         >
-          <Icon size={16} />
+          <Icon size={15} />
         </div>
         <span className={styles.statLabel}>{label}</span>
       </div>

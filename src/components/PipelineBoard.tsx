@@ -4,7 +4,7 @@ import React, { useState } from "react";
 import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Id } from "../../convex/_generated/dataModel";
-import { Flame, Snowflake, Skull, ChevronRight } from "lucide-react";
+import { Flame, Snowflake, Clock, ChevronRight } from "lucide-react";
 import styles from "./PipelineBoard.module.css";
 
 interface Props {
@@ -22,7 +22,7 @@ export default function PipelineBoard({ businessId }: Props) {
   const board = useQuery(api.pipeline.getPriorityBoard, { businessId });
 
   if (!funnelMetrics || !board) {
-    return <div className={styles.loading}>Loading pipeline data...</div>;
+    return <div className={styles.loading}>Loading your pipeline…</div>;
   }
 
   const { funnel, conversions, recovery } = funnelMetrics;
@@ -32,9 +32,9 @@ export default function PipelineBoard({ businessId }: Props) {
       {/* ── Header + Period Toggle ── */}
       <div className={styles.headerRow}>
         <div>
-          <h2 className={styles.pageTitle}>Revenue Loop</h2>
+          <h2 className={styles.pageTitle}>Your Sales Journey</h2>
           <p className={styles.pageSubtitle}>
-            Capture → Classify → Prioritize → Act → Measure
+            See how people move from seeing your status to paying you money.
           </p>
         </div>
         <div className={styles.periodToggle}>
@@ -50,17 +50,17 @@ export default function PipelineBoard({ businessId }: Props) {
         </div>
       </div>
 
-      {/* ── Funnel Waterfall ── */}
+      {/* ── Sales Funnel ── */}
       <section className={styles.funnelSection}>
-        <h3 className={styles.sectionTitle}>Full Funnel</h3>
+        <h3 className={styles.sectionTitle}>From Viewer to Buyer</h3>
         <div className={styles.funnelSteps}>
-          <FunnelStep label="Statuses" value={funnel.statusesPosted} />
+          <FunnelStep label="Statuses Posted" value={funnel.statusesPosted} />
           <Arrow />
-          <FunnelStep label="Views" value={funnel.totalViews} />
+          <FunnelStep label="People Who Saw It" value={funnel.totalViews} />
           <Arrow conversion={conversions.viewToConversation} />
-          <FunnelStep label="DMs Started" value={funnel.dmsStarted} />
+          <FunnelStep label="Messaged You" value={funnel.dmsStarted} />
           <Arrow conversion={conversions.conversationToOrder} />
-          <FunnelStep label="Orders" value={funnel.ordersCreated} />
+          <FunnelStep label="Placed an Order" value={funnel.ordersCreated} />
           <Arrow conversion={conversions.orderToPayment} />
           <FunnelStep label="Paid" value={funnel.paymentsClosed} />
           <Arrow />
@@ -72,10 +72,10 @@ export default function PipelineBoard({ businessId }: Props) {
         </div>
       </section>
 
-      {/* ── Recovery / Measure ── */}
+      {/* ── What the AI recovered ── */}
       <section className={styles.funnelSection}>
-        <h3 className={styles.sectionTitle}>Measure</h3>
-        <p className={styles.sectionSubtitle}>What the automation recovered for you</p>
+        <h3 className={styles.sectionTitle}>What the AI Did For You</h3>
+        <p className={styles.sectionSubtitle}>Money and leads recovered automatically — no manual work needed.</p>
         <div className={styles.recoveryGrid}>
           <RecoveryCard
             label="Revenue Recovered"
@@ -92,26 +92,26 @@ export default function PipelineBoard({ businessId }: Props) {
             value={recovery.followUpsSent.toString()}
           />
           <RecoveryCard
-            label="Missed Money"
+            label="Still at Risk"
             value={`₦${recovery.missedMoney.toLocaleString()}`}
             variant="red"
           />
         </div>
       </section>
 
-      {/* ── Priority Board ── */}
+      {/* ── Who needs attention ── */}
       <section>
-        <h3 className={styles.sectionTitle}>Priority Board</h3>
+        <h3 className={styles.sectionTitle}>Who Needs Your Attention</h3>
         <div className={styles.boardGrid}>
-          {/* HOT */}
+          {/* HOT — Ready to Buy */}
           <div className={styles.boardColumn}>
             <div className={styles.boardColumnHeader}>
-              <Flame size={16} style={{ color: "#ef4444" }} />
-              <span className={styles.boardColumnTitle}>Hot Leads</span>
+              <Flame size={15} style={{ color: "#f87171" }} />
+              <span className={styles.boardColumnTitle}>Ready to Buy</span>
               <span className={styles.boardColumnCount}>{board.summary.hotCount}</span>
             </div>
             {board.hotLeads.length === 0 ? (
-              <div className={styles.empty}>No hot leads right now</div>
+              <div className={styles.empty}>No one here right now</div>
             ) : (
               board.hotLeads.map((lead) => (
                 <div key={lead.customerId} className={styles.leadCard}>
@@ -119,7 +119,7 @@ export default function PipelineBoard({ businessId }: Props) {
                   <div className={styles.leadPhone}>{lead.phone.split("@")[0]}</div>
                   <div className={styles.leadReason}>{lead.reason}</div>
                   <div className={styles.leadMeta}>
-                    {lead.hoursSilent}h silent · {lead.funnelStage}
+                    Silent for {lead.hoursSilent}h · {lead.funnelStage}
                   </div>
                   <div className={styles.leadValue}>
                     Est. ₦{lead.estimatedValue.toLocaleString()}
@@ -129,44 +129,44 @@ export default function PipelineBoard({ businessId }: Props) {
             )}
           </div>
 
-          {/* COLD */}
+          {/* COLD — Went Quiet */}
           <div className={styles.boardColumn}>
             <div className={styles.boardColumnHeader}>
-              <Snowflake size={16} style={{ color: "#3b82f6" }} />
-              <span className={styles.boardColumnTitle}>Cold Viewers</span>
+              <Snowflake size={15} style={{ color: "#60a5fa" }} />
+              <span className={styles.boardColumnTitle}>Went Quiet</span>
               <span className={styles.boardColumnCount}>{board.summary.coldCount}</span>
             </div>
             {board.coldViewers.length === 0 ? (
-              <div className={styles.empty}>No cold viewers</div>
+              <div className={styles.empty}>No one here right now</div>
             ) : (
               board.coldViewers.map((viewer) => (
                 <div key={viewer.customerId} className={styles.leadCard}>
                   <div className={styles.leadName}>{viewer.name}</div>
                   <div className={styles.leadPhone}>{viewer.phone.split("@")[0]}</div>
                   <div className={styles.leadMeta}>
-                    {viewer.viewCount} views · last {viewer.daysSinceView}d ago
+                    Viewed {viewer.viewCount}x · last seen {viewer.daysSinceView}d ago
                   </div>
                 </div>
               ))
             )}
           </div>
 
-          {/* LOST */}
+          {/* LOST — Slipped Away */}
           <div className={styles.boardColumn}>
             <div className={styles.boardColumnHeader}>
-              <Skull size={16} style={{ color: "#f59e0b" }} />
-              <span className={styles.boardColumnTitle}>Lost Opportunities</span>
+              <Clock size={15} style={{ color: "#fbbf24" }} />
+              <span className={styles.boardColumnTitle}>Slipped Away</span>
               <span className={styles.boardColumnCount}>{board.summary.lostCount}</span>
             </div>
             {board.lostOpportunities.length === 0 ? (
-              <div className={styles.empty}>No lost opportunities</div>
+              <div className={styles.empty}>No one here right now</div>
             ) : (
               board.lostOpportunities.map((lost) => (
                 <div key={lost.customerId} className={styles.leadCard}>
                   <div className={styles.leadName}>{lost.name}</div>
                   <div className={styles.leadPhone}>{lost.phone.split("@")[0]}</div>
                   <div className={styles.leadReason}>{lost.reason}</div>
-                  <div className={styles.leadMeta}>{lost.daysSilent}d silent</div>
+                  <div className={styles.leadMeta}>Silent for {lost.daysSilent} days</div>
                   <div className={styles.leadValue}>
                     Est. ₦{lost.estimatedValue.toLocaleString()}
                   </div>
@@ -201,7 +201,7 @@ function FunnelStep({
 
 function Arrow({ conversion }: { conversion?: number }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.2rem" }}>
       <ChevronRight size={14} className={styles.funnelArrow} />
       {conversion !== undefined && conversion > 0 && (
         <span className={styles.conversionBadge}>{conversion}%</span>

@@ -24,11 +24,11 @@ export default function ProfilePage() {
           {/* Header */}
           <div className={styles.header}>
             <div>
-              <h1 className={styles.pageTitle}>Your Profile</h1>
-              <p className={styles.pageSubtitle}>Manage your personal operator identity and business entity.</p>
+              <h1 className={styles.pageTitle}>My Profile</h1>
+              <p className={styles.pageSubtitle}>Your account details and business info.</p>
             </div>
             <Link href="/settings" className={styles.editBtn}>
-              <Edit3 size={16} className={styles.editBtnIcon} /> Edit Settings
+              <Edit3 size={15} className={styles.editBtnIcon} /> Edit Settings
             </Link>
           </div>
           
@@ -48,7 +48,7 @@ export default function ProfilePage() {
               </div>
               
               <div className={styles.roleBadge}>
-                Role: <span>Admin</span>
+                Admin
               </div>
             </div>
             
@@ -60,25 +60,25 @@ export default function ProfilePage() {
                 <div className={styles.infoPanel}>
                   <div className={styles.panelHeader}>
                     <div className={`${styles.panelIcon} ${styles.panelIconGreen}`}>
-                      <User size={18} />
+                      <User size={17} />
                     </div>
-                    <h2 className={styles.panelTitle}>Personal Identification</h2>
+                    <h2 className={styles.panelTitle}>Your Details</h2>
                   </div>
                   
                   <div className={styles.fieldList}>
                     <div>
-                      <div className={styles.fieldLabel}>Operator Name</div>
+                      <div className={styles.fieldLabel}>Name</div>
                       <p className={styles.fieldValue}>
-                        {session?.user?.name || "Loading..."}
+                        {session?.user?.name || "Loading…"}
                       </p>
                     </div>
                     
                     <div>
                       <div className={styles.fieldLabel}>
-                        <Mail size={12} className={styles.fieldLabelIcon} /> Authorized Email
+                        <Mail size={11} className={styles.fieldLabelIcon} /> Email
                       </div>
                       <p className={styles.fieldValue}>
-                        {session?.user?.email || "Loading..."}
+                        {session?.user?.email || "Loading…"}
                       </p>
                     </div>
                   </div>
@@ -88,31 +88,31 @@ export default function ProfilePage() {
                 <div className={styles.infoPanel}>
                   <div className={styles.panelHeader}>
                     <div className={`${styles.panelIcon} ${styles.panelIconBlue}`}>
-                      <Building size={18} />
+                      <Building size={17} />
                     </div>
-                    <h2 className={styles.panelTitle}>Business Entity</h2>
+                    <h2 className={styles.panelTitle}>Your Business</h2>
                   </div>
                   
                   <div className={styles.fieldList}>
                     <div>
-                      <div className={styles.fieldLabel}>Registered Workspace</div>
+                      <div className={styles.fieldLabel}>Business Name</div>
                       <p className={styles.fieldValue}>
-                        {business ? business.name : "Loading..."}
+                        {business ? business.name : "Loading…"}
                       </p>
                     </div>
                     
                     <div>
                       <div className={styles.fieldLabel}>
-                        <Smartphone size={12} className={styles.fieldLabelIconBlue} /> WhatsApp Cloud API
+                        <Smartphone size={11} className={styles.fieldLabelIconBlue} /> WhatsApp
                       </div>
-                      <div style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', paddingBottom: '0.625rem' }}>
+                      <div style={{ paddingBottom: "0.625rem" }}>
                         {business?.whatsappStatus === "connected" ? (
                           <span className={`${styles.statusBadge} ${styles.statusConnected}`}>
                             <span className={`${styles.statusDot} ${styles.statusDotGreen}`}></span> Connected
                           </span>
                         ) : (
                           <span className={`${styles.statusBadge} ${styles.statusDisconnected}`}>
-                            <span className={`${styles.statusDot} ${styles.statusDotRed}`}></span> Disconnected
+                            <span className={`${styles.statusDot} ${styles.statusDotRed}`}></span> Not connected
                           </span>
                         )}
                       </div>
@@ -128,24 +128,24 @@ export default function ProfilePage() {
           <div className={styles.bottomGrid}>
             <div className={styles.bottomCard}>
               <div className={`${styles.bottomCardIcon} ${styles.bottomCardIconGreen}`}>
-                <Shield size={24} />
+                <Shield size={22} />
               </div>
               <div>
-                <h3 className={styles.bottomCardTitle}>Account Security</h3>
+                <h3 className={styles.bottomCardTitle}>Your account is secure</h3>
                 <p className={styles.bottomCardDesc}>
-                  Your operator identity is secured with enterprise-grade OAuth validation. No password changes required.
+                  You log in with Google, so there&apos;s no password to worry about. Your account is protected by Google&apos;s security.
                 </p>
               </div>
             </div>
             
             <div className={styles.bottomCard}>
               <div className={`${styles.bottomCardIcon} ${styles.bottomCardIconBlue}`}>
-                <Activity size={24} />
+                <Activity size={22} />
               </div>
               <div>
-                <h3 className={styles.bottomCardTitle}>System Status</h3>
+                <h3 className={styles.bottomCardTitle}>Everything is running</h3>
                 <p className={styles.bottomCardDesc}>
-                  All PIPELIXR services are operational. Messaging synchronization runs in real-time.
+                  All systems are online. Your AI is active and messages are syncing in real-time.
                 </p>
               </div>
             </div>

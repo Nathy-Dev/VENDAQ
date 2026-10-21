@@ -72,18 +72,18 @@ export default function StatusViewer({ businessId, onSelectCustomer }: StatusVie
   return (
     <div className={styles.container}>
       <header className={styles.header}>
-        <h2 className={styles.title}>Status-to-Cash Engine</h2>
-        <p className={styles.subtitle}>Track your status viewers and turn them into paying customers.</p>
+        <h2 className={styles.title}>Who Saw Your Status</h2>
+        <p className={styles.subtitle}>See who viewed your WhatsApp status and send them a message to turn them into customers.</p>
         <div className={styles.segmentTools}>
           <select className={styles.segmentSelect} value={segment} onChange={(e) => setSegment(e.target.value)}>
-            <option value="viewed_not_replied">Viewed, not replied</option>
-            <option value="replied_not_ordered">Replied, not ordered</option>
-            <option value="ordered_not_paid">Ordered, not paid</option>
-            <option value="paid_cross_sell_candidate">Paid, cross-sell candidate</option>
+            <option value="viewed_not_replied">Saw it, didn&apos;t message</option>
+            <option value="replied_not_ordered">Messaged, didn&apos;t order</option>
+            <option value="ordered_not_paid">Ordered, hasn&apos;t paid</option>
+            <option value="paid_cross_sell_candidate">Already paid (suggest more)</option>
           </select>
           <button className={styles.retargetBtn} onClick={runSegmentRetarget} disabled={!templates || templates.length === 0 || segmentCount === 0}>
             <Zap size={16} />
-            <span>Run Segment ({segmentCount})</span>
+            <span>Send Message to {segmentCount} {segmentCount === 1 ? "person" : "people"}</span>
           </button>
         </div>
       </header>
@@ -156,7 +156,7 @@ function StatusCard({ status, businessId, onSelectCustomer, segmentPhones }: { s
         </div>
         
         <div className={styles.viewersList}>
-          <h4 className={styles.viewerHeading}>Recent Viewers</h4>
+          <h4 className={styles.viewerHeading}>People Who Saw This</h4>
           {filteredViews && filteredViews.length > 0 ? (
             filteredViews.slice(0, 5).map((view: StatusViewDoc) => (
               <div key={view._id} className={styles.viewerItem}>
@@ -180,7 +180,7 @@ function StatusCard({ status, businessId, onSelectCustomer, segmentPhones }: { s
         
         <button className={styles.retargetBtn} onClick={handleRetarget} disabled={!filteredViews || filteredViews.length === 0 || !templates || templates.length === 0}>
             <Zap size={16} />
-            <span>Retarget All Viewers</span>
+            <span>Message All {filteredViews?.length || 0}</span>
         </button>
       </div>
     </div>

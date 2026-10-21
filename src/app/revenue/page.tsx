@@ -9,6 +9,7 @@ import Loader from "@/components/Loader";
 import RevenueWorkspace from "@/components/RevenueWorkspace";
 import DashboardNavbar from "@/components/DashboardNavbar";
 import styles from "../dashboard/dashboard.module.css";
+import shellStyles from "@/components/DashboardShell.module.css";
 
 export default function RevenuePage() {
   const { data: session, status: sessionStatus } = useSession();
@@ -32,26 +33,26 @@ export default function RevenuePage() {
   return (
     <>
       <DashboardNavbar />
-      <div className={styles.container}>
-      <div className={styles.wrapper}>
-        <header className={styles.header}>
-          <div>
-            <h1 className={styles.welcomeTitle}>Revenue Operations</h1>
-            <p className={styles.subTitle}>Run actions, track outcomes, and improve close-rate logic automatically.</p>
-          </div>
-        </header>
-        {business ? (
-          <RevenueWorkspace businessId={business._id} />
-        ) : (
-          <div className={styles.connectBanner}>
-            <div className={styles.connectInfo}>
-              <h3 className={styles.connectTitle}>Set up your business first</h3>
-              <p className={styles.connectDesc}>Complete onboarding to unlock the revenue workspace.</p>
+      <main className={shellStyles.main}>
+        <div className={shellStyles.content}>
+          <header className={styles.header}>
+            <div>
+              <h1 className={styles.welcomeTitle}>Send Actions</h1>
+              <p className={styles.subTitle}>Message your best leads with one tap. The AI writes it, you approve it.</p>
             </div>
-          </div>
-        )}
-      </div>
-      </div>
+          </header>
+          {business ? (
+            <RevenueWorkspace businessId={business._id} />
+          ) : (
+            <div className={styles.connectBanner}>
+              <div className={styles.connectInfo}>
+                <h3 className={styles.connectTitle}>Set up your business first</h3>
+                <p className={styles.connectDesc}>Complete onboarding to unlock the revenue workspace.</p>
+              </div>
+            </div>
+          )}
+        </div>
+      </main>
     </>
   );
 }

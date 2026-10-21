@@ -1,153 +1,254 @@
+/* ══════════════════════════════════════════════════════════
+   InvisibleCrmPanel — Redesigned Styles
+   Action feed — clean, prioritized, non-technical
+   ══════════════════════════════════════════════════════════ */
+
 .panel {
-  background: rgba(15, 23, 42, 0.72);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  background: #0d1420;
+  border: 1px solid rgba(255,255,255,0.06);
   border-radius: 1rem;
-  padding: 1rem;
+  overflow: hidden;
 }
 
+/* ── Header ──────────────────────────────────────────────── */
+
 .header {
-  margin-bottom: 0.8rem;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
 }
 
 .title {
-  font-size: 1.05rem;
+  font-size: 0.95rem;
   font-weight: 700;
+  color: #e9eef6;
+  margin-bottom: 0.2rem;
 }
 
 .subtitle {
-  color: #94a3b8;
-  font-size: 0.85rem;
+  font-size: 0.78rem;
+  color: rgba(255,255,255,0.28);
+  line-height: 1.4;
+  max-width: 480px;
 }
+
+/* ── KPI strip ───────────────────────────────────────────── */
 
 .kpis {
-  display: grid;
-  grid-template-columns: repeat(1, minmax(0, 1fr));
-  gap: 0.6rem;
-  margin-bottom: 0.9rem;
-}
-
-@media (min-width: 768px) {
-  .kpis {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
 }
 
 .kpi {
-  background: rgba(2, 6, 23, 0.75);
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  border-radius: 0.8rem;
-  padding: 0.7rem;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 1rem 1.25rem;
+  border-right: 1px solid rgba(255,255,255,0.05);
+}
+
+.kpi:last-child {
+  border-right: none;
 }
 
 .kpiLabel {
   display: flex;
   align-items: center;
   gap: 0.35rem;
-  color: #94a3b8;
-  font-size: 0.75rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: rgba(255,255,255,0.25);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
 }
 
 .kpiValue {
-  margin-top: 0.25rem;
-  font-size: 1rem;
+  font-size: 1.35rem;
   font-weight: 700;
+  color: #e9eef6;
+  letter-spacing: -0.02em;
+  line-height: 1;
 }
+
+/* ── Feed ────────────────────────────────────────────────── */
 
 .feed {
-  display: grid;
-  gap: 0.6rem;
+  display: flex;
+  flex-direction: column;
 }
 
+.empty {
+  padding: 2.5rem;
+  text-align: center;
+  color: rgba(255,255,255,0.2);
+  font-size: 0.82rem;
+}
+
+/* ── Action item ─────────────────────────────────────────── */
+
 .item {
-  background: rgba(2, 6, 23, 0.68);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 0.8rem;
-  padding: 0.7rem;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  transition: background 0.12s;
+}
+
+.item:last-child {
+  border-bottom: none;
+}
+
+.item:hover {
+  background: rgba(255,255,255,0.015);
 }
 
 .itemHeader {
   display: flex;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 0.6rem;
+  gap: 0.75rem;
 }
 
 .customer {
-  font-weight: 700;
-  font-size: 0.92rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #e9eef6;
 }
 
 .reason {
-  color: #94a3b8;
-  font-size: 0.76rem;
+  font-size: 0.75rem;
+  color: rgba(255,255,255,0.35);
+  margin-top: 0.1rem;
+  line-height: 1.4;
 }
 
+/* Priority badge */
+
 .priority {
-  text-transform: uppercase;
-  border-radius: 999px;
-  font-size: 0.66rem;
+  font-size: 0.62rem;
   font-weight: 700;
-  padding: 0.12rem 0.48rem;
-  align-self: flex-start;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 0.2rem 0.55rem;
+  border-radius: 9999px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .high {
-  color: #fca5a5;
-  background: rgba(185, 28, 28, 0.2);
+  color: #f87171;
+  background: rgba(248, 113, 113, 0.1);
+  border: 1px solid rgba(248, 113, 113, 0.2);
 }
 
 .medium {
-  color: #fcd34d;
-  background: rgba(161, 98, 7, 0.24);
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.1);
+  border: 1px solid rgba(251, 191, 36, 0.2);
 }
 
 .low {
-  color: #93c5fd;
-  background: rgba(30, 64, 175, 0.24);
+  color: rgba(255,255,255,0.35);
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
 }
 
+/* Message preview */
+
 .message {
-  margin-top: 0.5rem;
   font-size: 0.8rem;
-  color: #e2e8f0;
+  color: rgba(255,255,255,0.45);
+  background: rgba(255,255,255,0.025);
+  border: 1px solid rgba(255,255,255,0.05);
+  border-radius: 0.625rem;
+  padding: 0.75rem 1rem;
+  line-height: 1.55;
+  font-style: italic;
 }
 
 .itemFooter {
-  margin-top: 0.6rem;
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  gap: 0.6rem;
+  justify-content: space-between;
+  gap: 0.75rem;
 }
 
 .value {
-  color: #86efac;
   font-size: 0.75rem;
+  color: #34d399;
   font-weight: 600;
 }
 
+/* Send button */
+
 .sendBtn {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 0.35rem;
+  gap: 0.4rem;
+  padding: 0.5rem 1rem;
   background: #10b981;
-  color: white;
-  border-radius: 0.5rem;
   border: none;
-  font-size: 0.75rem;
-  font-weight: 700;
-  padding: 0.35rem 0.55rem;
+  border-radius: 0.625rem;
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 600;
   cursor: pointer;
+  transition: all 0.18s ease;
+  font-family: inherit;
+  white-space: nowrap;
+}
+
+.sendBtn:hover:not(:disabled) {
+  background: #059669;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.25);
 }
 
 .sendBtn:disabled {
-  opacity: 0.65;
+  opacity: 0.5;
   cursor: not-allowed;
+  transform: none;
 }
 
-.empty {
-  color: #94a3b8;
-  font-size: 0.85rem;
-  border: 1px dashed rgba(148, 163, 184, 0.3);
-  border-radius: 0.8rem;
-  padding: 0.8rem;
+/* ── Responsive ──────────────────────────────────────────── */
+
+@media (max-width: 768px) {
+  .kpis {
+    flex-direction: column;
+  }
+
+  .kpi {
+    border-right: none;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .kpi:last-child {
+    border-bottom: none;
+  }
+
+  .header {
+    flex-direction: column;
+  }
+
+  .itemFooter {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .sendBtn {
+    width: 100%;
+    justify-content: center;
+  }
 }
