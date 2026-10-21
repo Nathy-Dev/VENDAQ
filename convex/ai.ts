@@ -11,6 +11,8 @@
  * Required Convex environment variables:
  *   GROQ_API_KEY     - Groq API key
  *   OPENAI_API_KEY   - OpenAI API key
+ *   GROQ_LLM_MODEL   - Groq text model ID
+ *   OPENAI_VISION_MODEL - OpenAI vision model ID
  */
 
 import { v } from "convex/values";
@@ -21,10 +23,14 @@ import * as cloudinary from "./cloudinary";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const DEFAULT_GROQ_MODEL = "llama-3.3-70b-versatile";
-const DEFAULT_VISION_MODEL = "gpt-4o-mini";
 const AI_TIMEOUT_MS = 8000; // 8s max for any AI call
 const MAX_CONVERSATION_CONTEXT = 10; // Last N messages for context
+
+function requiredModel(envVar: "GROQ_LLM_MODEL" | "OPENAI_VISION_MODEL"): string {
+  const model = process.env[envVar]?.trim();
+  if (!model) throw new Error(`${envVar} not configured`);
+  return model;
+}
 
 // ─── Groq LLM Client ────────────────────────────────────────────────────────
 
@@ -35,7 +41,7 @@ async function callGroq(
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) throw new Error("GROQ_API_KEY not configured");
 
-  const model = options?.model || DEFAULT_GROQ_MODEL;
+  const model = options?.model || requiredModel("GROQ_LLM_MODEL");
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), AI_TIMEOUT_MS);
 
@@ -77,7 +83,7 @@ async function callOpenAIVision(
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error("OPENAI_API_KEY not configured");
 
-  const model = options?.model || DEFAULT_VISION_MODEL;
+  const model = options?.model || requiredModel("OPENAI_VISION_MODEL");
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), AI_TIMEOUT_MS + 4000); // Vision needs more time
 
@@ -332,8 +338,8 @@ export const classifyMessageWithAI = action({
       return { success: false };
     }
 
-    const groqModel = business?.aiLlmModel || DEFAULT_GROQ_MODEL;
-    const visionModel = business?.aiVisionModel || DEFAULT_VISION_MODEL;
+    const groqModel = requiredModel("GROQ_LLM_MODEL");
+    const visionModel = requiredModel("OPENAI_VISION_MODEL");
     const customer = await ctx.runQuery(api.whatsapp.getCustomerLiteById, {
       customerId: args.customerId,
     });
@@ -500,7 +506,7 @@ export const generateSmartFollowUp = action({
       return { message: fallback, isAI: false };
     }
 
-    const groqModel = business?.aiLlmModel || DEFAULT_GROQ_MODEL;
+    const groqModel = requiredModel("GROQ_LLM_MODEL");
 
     // Get conversation context
     const recentMessages = await ctx.runQuery(api.ai.getRecentConversation, {
@@ -589,7 +595,7 @@ export const generateAssistantReply = action({
       return { message: buildFallbackReply(args.customerName, args.lastIntent, args.inboundContent), isAI: false };
     }
 
-    const groqModel = business?.aiLlmModel || DEFAULT_GROQ_MODEL;
+    const groqModel = requiredModel("GROQ_LLM_MODEL");
 
     const recentMessages = await ctx.runQuery(api.ai.getRecentConversation, {
       customerId: args.customerId,
@@ -672,7 +678,7 @@ export const analyzeImage = action({
       return { success: false };
     }
 
-    const visionModel = business?.aiVisionModel || DEFAULT_VISION_MODEL;
+    const visionModel = requiredModel("OPENAI_VISION_MODEL");
     const customer = await ctx.runQuery(api.whatsapp.getCustomerLiteById, {
       customerId: args.customerId,
     });
@@ -871,8 +877,6 @@ export const getBusinessAIConfig = query({
     return {
       name: biz.name,
       aiEnabled: biz.aiEnabled ?? true, // Default enabled
-      aiLlmModel: biz.aiLlmModel,
-      aiVisionModel: biz.aiVisionModel,
       followUpTemplate: biz.followUpTemplate,
       // Business Configuration (owner-facing settings)
       aiTone: biz.aiTone,
@@ -988,9 +992,14 @@ export const getAIMetrics = query({
         ? classifications.reduce((sum, c) => sum + (c.confidence || 0), 0) / classifications.length
         : 0;
 
-    // Check if API keys are configured
-    const groqConfigured = !!process.env.GROQ_API_KEY;
-    const openaiConfigured = !!process.env.OPENAI_API_KEY;
+    // Queries cannot access deployment environment variables. Activity is the
+    // safe, observable signal that a provider has processed a request.
+    const groqConfigured = allActivity.some(
+      (activity) => activity.type === "classification" || activity.type === "smart_reply"
+    );
+    const openaiConfigured = allActivity.some(
+      (activity) => activity.type === "image_analysis"
+    );
 
     return {
       totalClassificationsToday: classifications.length,
@@ -1003,8 +1012,8 @@ export const getAIMetrics = query({
       // Model status
       groqConfigured,
       openaiConfigured,
-      llmModel: DEFAULT_GROQ_MODEL,
-      visionModel: DEFAULT_VISION_MODEL,
+      llmModel: allActivity.find((activity) => activity.type === "classification" || activity.type === "smart_reply")?.model ?? null,
+      visionModel: allActivity.find((activity) => activity.type === "image_analysis")?.model ?? null,
     };
   },
 });
@@ -1123,7 +1132,7 @@ export const processMediaMessage = action({
     const aiConfig = await ctx.runQuery(api.ai.getBusinessAIConfig, {
       businessId: args.businessId,
     });
-    const visionModel = aiConfig?.aiVisionModel || DEFAULT_VISION_MODEL;
+    const visionModel = requiredModel("OPENAI_VISION_MODEL");
 
     // ── Step 1: Download media from Evolution Go ──
     let base64Data: string | null = null;

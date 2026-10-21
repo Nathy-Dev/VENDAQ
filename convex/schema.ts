@@ -30,8 +30,9 @@ export default defineSchema({
     viewedNoDmTemplate: v.optional(v.string()),
     // AI configuration
     aiEnabled: v.optional(v.boolean()), // Default true — toggle AI processing
-    aiLlmModel: v.optional(v.string()), // e.g. "llama-3.3-70b-versatile"
-    aiVisionModel: v.optional(v.string()), // e.g. "gpt-4o-mini"
+    // Deprecated: model selection is now deployment-level via Convex env vars.
+    aiLlmModel: v.optional(v.string()),
+    aiVisionModel: v.optional(v.string()),
 
     // ── AI Behaviour (owner-facing, plain-language settings) ──
     // "How should the assistant sound?"

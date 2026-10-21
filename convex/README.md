@@ -1,3 +1,21 @@
+# Convex configuration
+
+AI providers and model IDs are deployment configuration, never source-code defaults.
+Set these values separately for each Convex deployment:
+
+```powershell
+npx convex env set GROQ_API_KEY <your-groq-key>
+npx convex env set GROQ_LLM_MODEL <your-groq-text-model-id>
+npx convex env set OPENAI_API_KEY <your-openai-key>
+npx convex env set OPENAI_VISION_MODEL <your-openai-vision-model-id>
+```
+
+Verify non-secret variable names with:
+
+```powershell
+npx convex env list
+```
+
 # Welcome to your Convex functions directory!
 
 Write your Convex functions here.

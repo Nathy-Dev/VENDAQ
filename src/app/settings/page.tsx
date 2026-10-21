@@ -479,7 +479,7 @@ export default function SettingsPage() {
                         </span>
                       </div>
                       <div style={{ fontSize: "0.78rem", color: "#94a3b8", lineHeight: 1.5 }}>
-                        <strong style={{ color: "#cbd5e1" }}>Model:</strong> llama-3.3-70b-versatile<br />
+                        <strong style={{ color: "#cbd5e1" }}>Model:</strong> configured in the Convex deployment<br />
                         <strong style={{ color: "#cbd5e1" }}>Purpose:</strong> Classifies customer messages (buying signal vs noise), generates follow-up replies, understands Nigerian pidgin and context
                       </div>
                       <div style={{ marginTop: "0.5rem", display: "flex", alignItems: "center", gap: "0.35rem" }}>
@@ -505,7 +505,7 @@ export default function SettingsPage() {
                         </span>
                       </div>
                       <div style={{ fontSize: "0.78rem", color: "#94a3b8", lineHeight: 1.5 }}>
-                        <strong style={{ color: "#cbd5e1" }}>Model:</strong> gpt-4o-mini<br />
+                        <strong style={{ color: "#cbd5e1" }}>Model:</strong> configured in the Convex deployment<br />
                         <strong style={{ color: "#cbd5e1" }}>Purpose:</strong> Analyzes product photos, payment screenshots, and images customers send — detects buying intent from visuals
                       </div>
                       <div style={{ marginTop: "0.5rem", display: "flex", alignItems: "center", gap: "0.35rem" }}>
