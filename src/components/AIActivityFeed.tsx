@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "convex/react";
+import { useAction, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Id } from "../../convex/_generated/dataModel";
 import { formatDistanceToNow } from "date-fns";
@@ -14,7 +14,7 @@ import {
   XCircle,
   ChevronDown,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 const TYPE_CONFIG = {
   classification: {
@@ -61,7 +61,26 @@ interface AIActivityFeedProps {
 export default function AIActivityFeed({ businessId }: AIActivityFeedProps) {
   const activities = useQuery(api.ai.getAIActivityFeed, { businessId, limit: 20 });
   const metrics = useQuery(api.ai.getAIMetrics, { businessId });
+  const getAIProviderStatus = useAction(api.ai.getAIProviderStatus);
   const [expanded, setExpanded] = useState(false);
+  const [providerStatus, setProviderStatus] = useState<{
+    groqConfigured: boolean;
+    openaiConfigured: boolean;
+  } | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    void getAIProviderStatus().then((status) => {
+      if (active) setProviderStatus(status);
+    }).catch(() => {
+      if (active) {
+        setProviderStatus({ groqConfigured: false, openaiConfigured: false });
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [getAIProviderStatus]);
 
   const cardStyle: React.CSSProperties = {
     background: "#0d1420",
@@ -106,8 +125,8 @@ export default function AIActivityFeed({ businessId }: AIActivityFeedProps) {
 
           {/* Status pills */}
           <div style={{ display: "flex", gap: "0.4rem", marginLeft: "0.15rem" }}>
-            <StatusPill label="Active" active={metrics.groqConfigured} />
-            <StatusPill label="Vision" active={metrics.openaiConfigured} />
+            <StatusPill label="Active" active={providerStatus?.groqConfigured ?? false} />
+            <StatusPill label="Vision" active={providerStatus?.openaiConfigured ?? false} />
           </div>
         </div>
 

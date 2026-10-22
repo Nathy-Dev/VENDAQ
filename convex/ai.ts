@@ -1020,6 +1020,23 @@ export const getAIMetrics = query({
 
 // ─── Fallback reply builder (used when AI is disabled or fails) ──────────────
 
+/**
+ * Returns whether AI providers are fully configured for this deployment.
+ * This is an action—not a query—because only actions may read Convex env vars.
+ * It deliberately returns no API keys or model IDs.
+ */
+export const getAIProviderStatus = action({
+  args: {},
+  returns: v.object({
+    groqConfigured: v.boolean(),
+    openaiConfigured: v.boolean(),
+  }),
+  handler: async () => ({
+    groqConfigured: Boolean(process.env.GROQ_API_KEY?.trim() && process.env.GROQ_LLM_MODEL?.trim()),
+    openaiConfigured: Boolean(process.env.OPENAI_API_KEY?.trim() && process.env.OPENAI_VISION_MODEL?.trim()),
+  }),
+});
+
 function buildFallbackReply(
   customerName: string,
   lastIntent: string | undefined,
