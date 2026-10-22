@@ -563,8 +563,7 @@ export async function downloadMedia(
 
   // Try multiple endpoint paths — Evolution Go versions vary
   const endpoints = [
-    "/chat/downloadMediaMessage",
-    "/message/downloadMedia",
+    "/message/downloadmedia",
     "/message/download",
     "/message/downloadimage",
   ];
@@ -579,7 +578,7 @@ export async function downloadMedia(
           "Content-Type": "application/json",
           apikey: instanceName,
         },
-        body: JSON.stringify(messageData),
+        body: JSON.stringify({ message: messageData.message }),
       });
 
       // 404 or 405 means this endpoint doesn't exist — try next
@@ -697,12 +696,18 @@ export async function markAsRead(
   messages: Array<{ remoteJid: string; fromMe: boolean; id: string }>
 ): Promise<void> {
   try {
-    await evoFetch(
-      "/message/markread",
-      "POST",
-      { readMessages: messages },
-      instanceName
-    );
+    if (messages.length === 0) return;
+
+    // Evolution Go expects a chat number and an array of message IDs, not the
+    // Baileys-style readMessages wrapper.
+    const remoteJid = messages[0].remoteJid;
+    const isGroup = remoteJid.endsWith("@g.us");
+    const number = isGroup ? remoteJid : remoteJid.split("@")[0];
+    await evoFetch("/message/markread", "POST", {
+      number,
+      id: messages.map((message) => message.id),
+      ...(isGroup ? { formatJid: false } : {}),
+    }, instanceName);
   } catch (e) {
     console.warn("[markAsRead] Failed (non-critical):", e instanceof Error ? e.message : String(e));
   }
