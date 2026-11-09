@@ -1,0 +1,8 @@
+[
+  { "text": "How much for this one?", "label": "buying_signal" },
+  { "text": "I wan buy this", "label": "buying_signal" },
+  { "text": "Do you deliver to Abuja?", "label": "inquiry" },
+  { "text": "Payment sent", "label": "payment_related" },
+  { "text": "Good morning", "label": "casual_noise" },
+  { "text": "", "label": "manual_review", "mediaType": "audio", "manualReview": true }
+]

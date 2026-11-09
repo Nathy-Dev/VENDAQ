@@ -9,6 +9,7 @@
  *   - Cold viewer decay + lost opportunity tagging
  */
 
+import { blockLegacyOperation } from "./lib/policy";
 import { v } from "convex/values";
 import { query, mutation, action, internalMutation, internalQuery } from "./_generated/server";
 import { api, internal } from "./_generated/api";
@@ -25,6 +26,7 @@ const LOST_OPPORTUNITY_THRESHOLD_DAYS = 7;
 export const getPriorityBoard = query({
   args: { businessId: v.id("businesses") },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     const now = Date.now();
     const coldThreshold = now - COLD_VIEWER_THRESHOLD_DAYS * 24 * 60 * 60 * 1000;
     const lostThreshold = now - LOST_OPPORTUNITY_THRESHOLD_DAYS * 24 * 60 * 60 * 1000;
@@ -167,6 +169,7 @@ export const getFullFunnelMetrics = query({
     period: v.optional(v.union(v.literal("today"), v.literal("week"), v.literal("month"), v.literal("all"))),
   },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     const now = Date.now();
     const periodStart = args.period === "today"
       ? (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); })()
@@ -280,6 +283,7 @@ export const getFullFunnelMetrics = query({
 export const captureDailySnapshot = internalMutation({
   args: { businessId: v.id("businesses") },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     const now = new Date();
     // Capture yesterday's data
     const yesterday = new Date(now);
@@ -388,6 +392,7 @@ export const getDailySnapshots = query({
     days: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     const limit = Math.min(args.days || 14, 90);
     const snapshots = await ctx.db
       .query("dailySnapshots")
@@ -410,6 +415,7 @@ export const getDailySnapshots = query({
 export const detectAskedNoOrder = internalMutation({
   args: { businessId: v.id("businesses") },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     const now = Date.now();
     const cutoff = now - ASKED_NO_ORDER_DELAY_MS;
 
@@ -471,6 +477,7 @@ export const processAskedNoOrderFollowUp = action({
     taskId: v.id("followUpTasks"),
   },
   handler: async (ctx, args): Promise<{ sent: boolean; reason?: string }> => {
+    blockLegacyOperation();
     const task = await ctx.runQuery(api.whatsapp.getFollowUpTaskById, { taskId: args.taskId });
     if (!task || task.status !== "pending" || task.reason !== "asked_no_order") {
       return { sent: false, reason: "task_not_pending" };
@@ -561,6 +568,7 @@ export const processAskedNoOrderFollowUp = action({
 export const tagLostOpportunities = internalMutation({
   args: { businessId: v.id("businesses") },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     const now = Date.now();
     const lostCutoff = now - LOST_OPPORTUNITY_THRESHOLD_DAYS * 24 * 60 * 60 * 1000;
 
@@ -598,6 +606,7 @@ export const tagLostOpportunities = internalMutation({
 /** Runs all daily maintenance for every active business */
 export const runDailyMaintenance = internalMutation({
   handler: async (ctx) => {
+    blockLegacyOperation();
     const businesses = await ctx.db
       .query("businesses")
       .filter((q) => q.eq(q.field("whatsappStatus"), "connected"))
@@ -619,6 +628,7 @@ export const runDailyMaintenance = internalMutation({
 /** Runs asked-no-order detection for every active business */
 export const runAskedNoOrderScan = internalMutation({
   handler: async (ctx) => {
+    blockLegacyOperation();
     const businesses = await ctx.db
       .query("businesses")
       .filter((q) => q.eq(q.field("whatsappStatus"), "connected"))
@@ -635,6 +645,7 @@ export const runAskedNoOrderScan = internalMutation({
 /** Runs payment follow-ups for every active business */
 export const runPaymentFollowUps = internalMutation({
   handler: async (ctx) => {
+    blockLegacyOperation();
     const businesses = await ctx.db
       .query("businesses")
       .filter((q) => q.eq(q.field("whatsappStatus"), "connected"))
@@ -651,6 +662,7 @@ export const runPaymentFollowUps = internalMutation({
 /** Runs scheduled automation runs for every active business */
 export const runScheduledAutomations = internalMutation({
   handler: async (ctx) => {
+    blockLegacyOperation();
     const businesses = await ctx.db
       .query("businesses")
       .filter((q) => q.eq(q.field("whatsappStatus"), "connected"))

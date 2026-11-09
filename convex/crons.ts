@@ -35,4 +35,7 @@ crons.interval(
   internal.pipeline.runScheduledAutomations
 );
 
-export default crons;
+// Keep the original schedules for later phases without registering them.
+const foundationCrons = cronJobs();
+foundationCrons.interval("foundation-maintenance", { minutes: 1 }, internal.maintenance.sweep, {});
+export default foundationCrons;

@@ -4,6 +4,8 @@ import { api } from "../../../../convex/_generated/api";
 import { Id } from "../../../../convex/_generated/dataModel";
 
 export async function POST(req: Request) {
+  // The no-worker foundation must not expose the old unauthenticated proxy.
+  if (legacyWorkerDisabled()) return NextResponse.json({ error: "LEGACY_WORKER_DISABLED" }, { status: 410 });
   try {
     const body = await req.json();
     const { action, businessId, qrCodeString, status } = body;
@@ -152,3 +154,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
+// Retain the implementation for reference without an environment-based bypass.
+function legacyWorkerDisabled(): boolean { return true; }

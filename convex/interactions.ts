@@ -1,3 +1,4 @@
+import { blockLegacyOperation } from "./lib/policy";
 import { v } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { Doc } from "./_generated/dataModel";
@@ -8,6 +9,7 @@ export const getChatMessages = query({
     customerId: v.id("customers")
   },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     console.log(`[Convex] Fetching messages for customer ${args.customerId} in business ${args.businessId}`);
     return await ctx.db
       .query("interactions")
@@ -21,6 +23,7 @@ export const getChatMessages = query({
 export const getRecentChats = query({
     args: { businessId: v.id("businesses") },
     handler: async (ctx, args) => {
+    blockLegacyOperation();
       const recentWindowHours = Number(process.env.RECENT_CHATS_WINDOW_HOURS || 24);
       const cutoffMs = Date.now() - recentWindowHours * 60 * 60 * 1000;
 
@@ -68,6 +71,7 @@ export const getRecentChats = query({
 export const getMediaUrl = query({
   args: { mediaId: v.string() },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     return await ctx.storage.getUrl(args.mediaId);
   },
 });
@@ -81,6 +85,7 @@ export const updateCustomerName = mutation({
     isGroup: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     const customer = await ctx.db
       .query("customers")
       .withIndex("by_business_phone", (q) =>
@@ -117,6 +122,7 @@ export const getCustomerById = query({
     customerId: v.id("customers")
   },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     const customer = await ctx.db.get(args.customerId);
     if (!customer || customer.businessId !== args.businessId) return null;
     return customer;
@@ -129,6 +135,7 @@ export const getCustomerByPhone = query({
     phone: v.string(),
   },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     return await ctx.db
       .query("customers")
       .withIndex("by_business_phone", (q) =>
@@ -146,6 +153,7 @@ export const cleanupStaleCustomers = mutation({
     dryRun: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     const olderThanHours = Math.max(1, args.olderThanHours || 24 * 30);
     const cutoffMs = Date.now() - olderThanHours * 60 * 60 * 1000;
     const limit = Math.min(Math.max(1, args.limit || 500), 5000);

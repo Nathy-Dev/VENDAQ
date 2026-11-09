@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "PIPELIXR - WhatsApp Business OS",
-  description: "Scale your commerce with WhatsApp-first business operations.",
+  title: { default: "Pipelixr — A clearer way to sell in chat", template: "%s | Pipelixr" },
+  description: "Keep WhatsApp conversations, follow-up drafts, and seller-recorded orders in one calm workspace. You stay in control of every reply.",
 };
 
 export default function RootLayout({

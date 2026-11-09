@@ -36,23 +36,31 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             return user;
           }
           return null;
-        } catch (error) {
-          console.error("Auth error:", error);
+        } catch {
+          // Provider errors may contain request metadata; never log credentials.
+          console.error("Authentication service unavailable");
           return null;
         }
       },
     }),
   ],
   callbacks: {
-    async jwt({ token, user }) {
-      if (user) {
-        token.id = user.id;
+    async jwt({ token, user, account, profile }) {
+      if (user && account) {
+        if (account.provider === "google") {
+          if (!profile?.email_verified || !account.providerAccountId) throw new Error("UNVERIFIED_GOOGLE_IDENTITY");
+          token.id = `google:${account.providerAccountId}`;
+        } else if (account.provider === "credentials" && user.id) {
+          token.id = `credentials:${user.id}`;
+        }
       }
       return token;
     },
     async session({ session, token }) {
-      if (session.user && token.id) {
+      if (session.user && typeof token.id === "string" && /^(google|credentials):.+$/.test(token.id)) {
         session.user.id = token.id as string;
+      } else if (session.user) {
+        session.user.id = "";
       }
       return session;
     },

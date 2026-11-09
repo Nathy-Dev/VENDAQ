@@ -1,3 +1,7 @@
+import foundationHttp from "./foundationHttp";
+import { blockLegacyOperation } from "./lib/policy";
+
+// Preserve the original router for phased migration, but never expose its routes.
 import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
 import { api, internal } from "./_generated/api";
@@ -19,6 +23,8 @@ http.route({
   path: "/api/webhook/evolution",
   method: "POST",
   handler: httpAction(async (ctx, request) => {
+    // Legacy webhook handling lacks the Phase 1 authentication boundary.
+    blockLegacyOperation();
     try {
       const body = await request.json();
 
@@ -681,6 +687,8 @@ http.route({
   path: "/api/worker",
   method: "POST",
   handler: httpAction(async (ctx, request) => {
+    // Legacy webhook handling lacks the Phase 1 authentication boundary.
+    blockLegacyOperation();
     try {
       const body = await request.json();
       const { action, ...args } = body;
@@ -764,6 +772,8 @@ http.route({
   path: "/api/health",
   method: "GET",
   handler: httpAction(async () => {
+    // Legacy webhook handling lacks the Phase 1 authentication boundary.
+    blockLegacyOperation();
     return new Response(JSON.stringify({ status: "ok" }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
@@ -771,4 +781,5 @@ http.route({
   }),
 });
 
-export default http;
+// Convex deploys only the default router; legacy routes above remain inactive.
+export default foundationHttp;

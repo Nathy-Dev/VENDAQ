@@ -15,6 +15,7 @@
  *   OPENAI_VISION_MODEL - OpenAI vision model ID
  */
 
+import { blockLegacyOperation } from "./lib/policy";
 import { v } from "convex/values";
 import { action, mutation, query } from "./_generated/server";
 import { api } from "./_generated/api";
@@ -329,6 +330,7 @@ export const classifyMessageWithAI = action({
     keywordClassification: v.string(), // The keyword-based classification as fallback reference
   },
   handler: async (ctx, args): Promise<{ success: boolean; classification?: string }> => {
+    blockLegacyOperation();
     const business = await ctx.runQuery(api.ai.getBusinessAIConfig, {
       businessId: args.businessId,
     });
@@ -497,6 +499,7 @@ export const generateSmartFollowUp = action({
     fallbackTemplate: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<{ message: string; isAI: boolean }> => {
+    blockLegacyOperation();
     const business = await ctx.runQuery(api.ai.getBusinessAIConfig, {
       businessId: args.businessId,
     });
@@ -586,6 +589,7 @@ export const generateAssistantReply = action({
     lastIntent: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<{ message: string; isAI: boolean }> => {
+    blockLegacyOperation();
     const business = await ctx.runQuery(api.ai.getBusinessAIConfig, {
       businessId: args.businessId,
     });
@@ -670,6 +674,7 @@ export const analyzeImage = action({
     caption: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<{ success: boolean; analysis?: string }> => {
+    blockLegacyOperation();
     const business = await ctx.runQuery(api.ai.getBusinessAIConfig, {
       businessId: args.businessId,
     });
@@ -765,6 +770,7 @@ export const updateInteractionAI = mutation({
     aiProcessedAt: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     const patch: Record<string, unknown> = {};
     if (args.aiClassification !== undefined) patch.aiClassification = args.aiClassification;
     if (args.aiConfidence !== undefined) patch.aiConfidence = args.aiConfidence;
@@ -790,6 +796,7 @@ export const upgradeCustomerIntent = mutation({
     interactionId: v.id("interactions"),
   },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     const customer = await ctx.db.get(args.customerId);
     if (!customer) return;
 
@@ -849,6 +856,7 @@ export const logAIActivity = mutation({
     timestamp: v.number(),
   },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     await ctx.db.insert("aiActivityLog", {
       businessId: args.businessId,
       type: args.type,
@@ -872,6 +880,7 @@ export const logAIActivity = mutation({
 export const getBusinessAIConfig = query({
   args: { businessId: v.id("businesses") },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     const biz = await ctx.db.get(args.businessId);
     if (!biz) return null;
     return {
@@ -931,6 +940,7 @@ export const getRecentConversation = query({
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     const limit = args.limit || MAX_CONVERSATION_CONTEXT;
     const messages = await ctx.db
       .query("interactions")
@@ -956,6 +966,7 @@ export const getAIActivityFeed = query({
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     const limit = Math.min(args.limit || 30, 100);
     return await ctx.db
       .query("aiActivityLog")
@@ -969,6 +980,7 @@ export const getAIActivityFeed = query({
 export const getAIMetrics = query({
   args: { businessId: v.id("businesses") },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
     const since = todayStart.getTime();
@@ -1031,10 +1043,10 @@ export const getAIProviderStatus = action({
     groqConfigured: v.boolean(),
     openaiConfigured: v.boolean(),
   }),
-  handler: async () => ({
+  handler: async () => { blockLegacyOperation(); return ({
     groqConfigured: Boolean(process.env.GROQ_API_KEY?.trim() && process.env.GROQ_LLM_MODEL?.trim()),
     openaiConfigured: Boolean(process.env.OPENAI_API_KEY?.trim() && process.env.OPENAI_VISION_MODEL?.trim()),
-  }),
+  }); },
 });
 
 function buildFallbackReply(
@@ -1066,6 +1078,7 @@ export const updateInteractionMedia = mutation({
     mediaId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     const patch: Record<string, unknown> = {};
     if (args.mediaUrl !== undefined) patch.mediaUrl = args.mediaUrl;
     if (args.mediaId !== undefined) patch.mediaId = args.mediaId;
@@ -1117,6 +1130,7 @@ export const processMediaMessage = action({
     visionAnalysis?: string;
     isPaymentProof?: boolean;
   }> => {
+    blockLegacyOperation();
     // ── Resolve business, customer, interaction ──
     const business = await ctx.runQuery(api.whatsapp.getBusinessForAssistantAuth, {
       businessId: args.businessId,
@@ -1351,6 +1365,7 @@ export const processMediaMessage = action({
 export const getInteractionByWhatsappId = query({
   args: { whatsappMessageId: v.string() },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     return await ctx.db
       .query("interactions")
       .withIndex("by_whatsapp_id", (q) => q.eq("whatsappMessageId", args.whatsappMessageId))

@@ -1,0 +1,4 @@
+.brand { display: inline-flex; align-items: center; gap: 9px; color: #171717; }
+.mark { display: block; width: 30px; height: 32px; overflow: hidden; position: relative; flex: 0 0 30px; }
+.image { position: absolute; width: 58px; height: 58px; max-width: none; left: -14px; top: -13px; }
+.wordmark { font-size: 25px; font-weight: 750; letter-spacing: -1.4px; line-height: 1; }

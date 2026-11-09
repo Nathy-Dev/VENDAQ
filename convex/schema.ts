@@ -1,9 +1,15 @@
 
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
+import { eventFields, sessionFields } from "./lib/validators";
 
 export default defineSchema({
   businesses: defineTable({
+    foundationVersion: v.optional(v.number()),
+    timezone: v.optional(v.string()),
+    killSwitch: v.optional(v.boolean()),
+    messageRetentionDays: v.optional(v.number()),
+    disclosureVersion: v.optional(v.string()),
     name: v.string(),
     ownerId: v.string(), // Clerk user ID or similar
     assistantAdminPhones: v.optional(v.array(v.string())),
@@ -25,6 +31,20 @@ export default defineSchema({
     averageOrderValue: v.optional(v.number()),
     responseWindowMinutes: v.optional(v.number()),
     followUpTemplate: v.optional(v.string()),
+    followUpCooldownMinutes: v.optional(v.number()),
+    dailySuggestionCap: v.optional(v.number()),
+    followUpWorkHoursEnabled: v.optional(v.boolean()),
+    followUpWorkHoursStart: v.optional(v.number()),
+    followUpWorkHoursEnd: v.optional(v.number()),
+    followUpQuietHoursEnabled: v.optional(v.boolean()),
+    followUpQuietHoursStart: v.optional(v.number()),
+    followUpQuietHoursEnd: v.optional(v.number()),
+    followUpAiEnabled: v.optional(v.boolean()),
+    stalledOpportunityMinutes: v.optional(v.number()),
+    paymentReminderMinutes: v.optional(v.number()),
+    attributionWindowDays: v.optional(v.number()),
+    statusViewerListEnabled: v.optional(v.boolean()),
+    automatedSendingRequested: v.optional(v.boolean()),
     // Status-to-Cash: template used when nudging a status viewer who never DMs.
     // Supports the placeholder [Customer Name].
     viewedNoDmTemplate: v.optional(v.string()),
@@ -61,6 +81,10 @@ export default defineSchema({
 
 
   customers: defineTable({
+    identityKey: v.optional(v.string()),
+    firstInboundAt: v.optional(v.number()),
+    deletedAt: v.optional(v.number()),
+    expiresAt: v.optional(v.number()),
     businessId: v.id("businesses"),
     name: v.optional(v.string()),
     phone: v.string(), // International format or Group JID
@@ -93,7 +117,9 @@ export default defineSchema({
     tags: v.array(v.string()),
   }).index("by_business_phone", ["businessId", "phone"])
     .index("by_business_last_interaction", ["businessId", "lastInteraction"])
-    .index("by_business_funnel_stage", ["businessId", "funnelStage"]),
+    .index("by_business_funnel_stage", ["businessId", "funnelStage"])
+    .index("by_expiry", ["expiresAt"])
+    .index("by_business_identity", ["businessId", "identityKey"]),
 
   orders: defineTable({
     businessId: v.id("businesses"),
@@ -117,8 +143,13 @@ export default defineSchema({
     ),
     paymentLink: v.optional(v.string()),
     createdAt: v.number(),
+    updatedAt: v.optional(v.number()),
+    sourceTaskId: v.optional(v.id("followUpTasks")),
+    paidAt: v.optional(v.number()),
+    lostAt: v.optional(v.number()),
   }).index("by_business", ["businessId"])
-    .index("by_customer", ["customerId"]),
+    .index("by_customer", ["customerId"])
+    .index("by_source_task", ["sourceTaskId"]),
 
   inventory: defineTable({
     businessId: v.id("businesses"),
@@ -131,6 +162,17 @@ export default defineSchema({
   }).index("by_business", ["businessId"]),
 
   interactions: defineTable({
+    conversationId: v.optional(v.id("conversations")),
+    sessionId: v.optional(v.id("whatsappSessions")),
+    providerEventKey: v.optional(v.string()),
+    receivedAt: v.optional(v.number()),
+    expiresAt: v.optional(v.number()),
+    manualReviewRequired: v.optional(v.boolean()),
+    classifierLabel: v.optional(v.union(v.literal("buying_signal"), v.literal("inquiry"), v.literal("payment_related"), v.literal("casual_noise"), v.literal("manual_review"))),
+    classifierVersion: v.optional(v.string()),
+    classifierConfidence: v.optional(v.number()),
+    classifierRuleIds: v.optional(v.array(v.string())),
+    classifiedAt: v.optional(v.number()),
     businessId: v.id("businesses"),
     customerId: v.id("customers"),
     role: v.union(v.literal("customer"), v.literal("system"), v.literal("owner")),
@@ -153,7 +195,10 @@ export default defineSchema({
     isEdited: v.optional(v.boolean()),
   }).index("by_business", ["businessId"])
     .index("by_customer", ["customerId"])
-    .index("by_whatsapp_id", ["whatsappMessageId"]),
+    .index("by_whatsapp_id", ["whatsappMessageId"])
+    .index("by_business_event", ["businessId", "providerEventKey"])
+    .index("by_conversation", ["conversationId", "timestamp"])
+    .index("by_expiry", ["expiresAt"]),
 
   statuses: defineTable({
     businessId: v.id("businesses"),
@@ -209,8 +254,55 @@ export default defineSchema({
     status: v.union(v.literal("pending"), v.literal("done"), v.literal("skipped"), v.literal("cancelled")),
     scheduledFunctionId: v.optional(v.string()),
     createdAt: v.number(),
+    opportunityId: v.optional(v.id("missedRevenueOpportunities")),
+    conversationId: v.optional(v.id("conversations")),
+    triggerInteractionId: v.optional(v.id("interactions")),
+    triggerAt: v.optional(v.number()),
+    conversationRevision: v.optional(v.number()),
+    journeyStage: v.optional(v.union(v.literal("viewer"), v.literal("engaged"), v.literal("intent"), v.literal("order_created"), v.literal("awaiting_payment"), v.literal("paid"), v.literal("lost"))),
+    draftText: v.optional(v.string()),
+    draftSource: v.optional(v.union(v.literal("template"), v.literal("ai"))),
+    draftVersion: v.optional(v.string()),
+    draftHash: v.optional(v.string()),
+    aiState: v.optional(v.union(v.literal("disabled"), v.literal("pending"), v.literal("applied"), v.literal("fallback"))),
+    guardrailCode: v.optional(v.string()),
+    availableAt: v.optional(v.number()),
+    expiresAt: v.optional(v.number()),
+    cancelledAt: v.optional(v.number()),
+    cancellationReason: v.optional(v.string()),
+    completedAt: v.optional(v.number()),
+    policySnapshot: v.optional(v.object({
+      timezone: v.string(),
+      cooldownMinutes: v.number(),
+      dailyCap: v.number(),
+      workHoursEnabled: v.boolean(),
+      workHoursStart: v.number(),
+      workHoursEnd: v.number(),
+      quietHoursEnabled: v.boolean(),
+      quietHoursStart: v.number(),
+      quietHoursEnd: v.number(),
+    })),
+    actionKey: v.optional(v.string()),
+    orderId: v.optional(v.id("orders")),
+    manuallySentAt: v.optional(v.number()),
+    sellerApprovedDraftHash: v.optional(v.string()),
+    outcome: v.optional(v.union(v.literal("won"), v.literal("lost"))),
+    outcomeAt: v.optional(v.number()),
+    estimatedValue: v.optional(v.number()),
+    priorityScore: v.optional(v.number()),
+    reasonSnapshot: v.optional(v.string()),
   }).index("by_business_due", ["businessId", "dueAt"])
-    .index("by_customer_reason", ["customerId", "reason"]),
+    .index("by_customer_reason", ["customerId", "reason"])
+    .index("by_customer_status", ["customerId", "status", "createdAt"])
+    .index("by_customer", ["customerId"])
+    .index("by_status", ["status"])
+    .index("by_opportunity", ["opportunityId"])
+    .index("by_trigger_interaction", ["triggerInteractionId"])
+    .index("by_customer_status_trigger", ["customerId", "status", "triggerAt"])
+    .index("by_business_status_available", ["businessId", "status", "availableAt"])
+    .index("by_business_available", ["businessId", "availableAt"])
+    .index("by_business_action_key", ["businessId", "actionKey"])
+    .index("by_expiry", ["expiresAt"]),
 
   messageTemplates: defineTable({
     businessId: v.id("businesses"),
@@ -256,6 +348,40 @@ export default defineSchema({
     outcomeValue: v.optional(v.number()),
   }).index("by_business_sent", ["businessId", "sentAt"])
     .index("by_customer_status", ["customerId", "status"]),
+
+  sellerActionEvents: defineTable({
+    businessId: v.id("businesses"),
+    customerId: v.id("customers"),
+    taskId: v.optional(v.id("followUpTasks")),
+    orderId: v.optional(v.id("orders")),
+    type: v.union(v.literal("manual_send_claim"), v.literal("task_skipped"), v.literal("order_created"), v.literal("order_status_changed"), v.literal("outcome_won"), v.literal("outcome_lost")),
+    idempotencyKey: v.string(),
+    value: v.optional(v.number()),
+    at: v.number(),
+  }).index("by_business_time", ["businessId", "at"])
+    .index("by_idempotency", ["businessId", "idempotencyKey"])
+    .index("by_customer_time", ["customerId", "at"])
+    .index("by_task_time", ["taskId", "at"]),
+
+  revenueAttributions: defineTable({
+    businessId: v.id("businesses"),
+    customerId: v.id("customers"),
+    taskId: v.id("followUpTasks"),
+    orderId: v.id("orders"),
+    opportunityId: v.id("missedRevenueOpportunities"),
+    manualSentAt: v.number(),
+    orderWonAt: v.number(),
+    windowDays: v.number(),
+    claimedValue: v.number(),
+    confirmedValue: v.number(),
+    evidenceLevel: v.literal("seller_recorded"),
+    state: v.union(v.literal("claimed"), v.literal("rejected"), v.literal("reversed")),
+    reason: v.string(),
+    createdAt: v.number(),
+  }).index("by_business_time", ["businessId", "createdAt"])
+    .index("by_order", ["orderId"])
+    .index("by_task", ["taskId"])
+    .index("by_customer", ["customerId"]),
 
 
   aiActivityLog: defineTable({
@@ -368,4 +494,73 @@ export default defineSchema({
     token: v.string(),
     expires: v.number(),
   }).index("by_identifier_and_token", ["identifier", "token"]),
+
+  whatsappSessions: defineTable(sessionFields)
+    .index("by_business", ["businessId"])
+    .index("by_provider", ["providerInstanceId"])
+    .index("by_health_due", ["nextHealthAt"])
+    .index("by_disconnect_due", ["state", "disconnectDueAt"]),
+  inboundEvents: defineTable(eventFields)
+    .index("by_session_key", ["sessionId", "eventKey"])
+    .index("by_business_identity", ["businessId", "identityKey"])
+    .index("by_business_state", ["businessId", "state", "receivedAt"])
+    .index("by_due", ["state", "dueAt"])
+    .index("by_expiry", ["expiresAt"]),
+  conversations: defineTable({
+    businessId: v.id("businesses"), customerId: v.id("customers"), identityKey: v.string(),
+    revision: v.number(), lastEventAt: v.number(), lastInboundAt: v.optional(v.number()),
+    lastOwnerAt: v.optional(v.number()), messageCount: v.number(),
+  }).index("by_business_identity", ["businessId", "identityKey"])
+    .index("by_business_activity", ["businessId", "lastEventAt"])
+    .index("by_customer", ["customerId"]),
+  privacySuppressions: defineTable({
+    businessId: v.id("businesses"), identityKey: v.string(), createdAt: v.number(),
+  }).index("by_business_identity", ["businessId", "identityKey"]),
+  deletionJobs: defineTable({
+    businessId: v.id("businesses"), customerId: v.id("customers"), requestedAt: v.number(),
+    state: v.union(v.literal("pending"), v.literal("done"), v.literal("dead_letter")), completedAt: v.optional(v.number()),
+    attempts: v.number(), dueAt: v.number(), scheduledId: v.optional(v.id("_scheduled_functions")), errorCode: v.optional(v.string()),
+  }).index("by_customer", ["customerId"]).index("by_state", ["state", "dueAt"]).index("by_business", ["businessId"]),
+  deliveryReceipts: defineTable({
+    businessId: v.id("businesses"), sessionId: v.id("whatsappSessions"), messageId: v.string(),
+    identityKey: v.string(),
+    deliveredAt: v.optional(v.number()), readAt: v.optional(v.number()), expiresAt: v.number(),
+  }).index("by_session_message", ["sessionId", "messageId"]).index("by_expiry", ["expiresAt"]).index("by_business_identity", ["businessId", "identityKey"]),
+  statusObservations: defineTable({
+    businessId: v.id("businesses"), sessionId: v.id("whatsappSessions"), statusMessageId: v.string(),
+    viewerIdentityKey: v.string(), observedAt: v.number(), expiresAt: v.number(),
+  }).index("by_session_status_viewer", ["sessionId", "statusMessageId", "viewerIdentityKey"])
+    .index("by_business_identity", ["businessId", "viewerIdentityKey"])
+    .index("by_business_time", ["businessId", "observedAt"])
+    .index("by_expiry", ["expiresAt"]),
+  foundationAudit: defineTable({
+    businessId: v.id("businesses"), kind: v.string(), correlationId: v.string(), at: v.number(),
+    code: v.optional(v.string()), expiresAt: v.number(),
+  }).index("by_business_time", ["businessId", "at"]).index("by_expiry", ["expiresAt"]),
+  authAttempts: defineTable({
+    key: v.string(), windowStart: v.number(), count: v.number(),
+  }).index("by_key", ["key"]).index("by_window", ["windowStart"]),
+  foundationMigrations: defineTable({
+    version: v.number(), state: v.union(v.literal("running"), v.literal("done")),
+    cursor: v.optional(v.string()), processed: v.number(), updatedAt: v.number(),
+  }).index("by_version", ["version"]),
+  missedRevenueOpportunities: defineTable({
+    businessId: v.id("businesses"), customerId: v.id("customers"), conversationId: v.id("conversations"), interactionId: v.id("interactions"),
+    classifierVersion: v.string(), classifierConfidence: v.number(), ruleIds: v.array(v.string()),
+    triggerAt: v.number(), responseWindowMinutes: v.number(), dueAt: v.number(), conversationRevision: v.optional(v.number()),
+    state: v.union(v.literal("pending"), v.literal("missed"), v.literal("answered")),
+    answeredAt: v.optional(v.number()), scheduledId: v.optional(v.id("_scheduled_functions")), expiresAt: v.number(),
+  }).index("by_interaction", ["interactionId"])
+    .index("by_business_state_due", ["businessId", "state", "dueAt"])
+    .index("by_state_due", ["state", "dueAt"])
+    .index("by_conversation_state", ["conversationId", "state", "triggerAt"])
+    .index("by_customer", ["customerId"])
+    .index("by_expiry", ["expiresAt"]),
+  messageLabels: defineTable({
+    businessId: v.id("businesses"), customerId: v.id("customers"), interactionId: v.id("interactions"),
+    label: v.union(v.literal("buying_signal"), v.literal("inquiry"), v.literal("payment_related"), v.literal("casual_noise"), v.literal("manual_review")),
+    labeledBy: v.string(), labeledAt: v.number(),
+  }).index("by_interaction", ["interactionId"])
+    .index("by_business_time", ["businessId", "labeledAt"])
+    .index("by_customer", ["customerId"]),
 });

@@ -1,9 +1,11 @@
+import { blockLegacyOperation } from "./lib/policy";
 import { v } from "convex/values";
 import { query, mutation } from "./_generated/server";
 
 export const getOrdersByBusiness = query({
   args: { businessId: v.id("businesses") },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     const orders = await ctx.db
       .query("orders")
       .withIndex("by_business", (q) => q.eq("businessId", args.businessId))
@@ -54,6 +56,7 @@ export const createOrder = mutation({
     )),
   },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     const orderId = await ctx.db.insert("orders", {
       businessId: args.businessId,
       customerId: args.customerId,
@@ -83,6 +86,7 @@ export const getOrderById = query({
     orderId: v.id("orders"),
   },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     const order = await ctx.db.get(args.orderId);
     if (!order || order.businessId !== args.businessId) return null;
     const customer = await ctx.db.get(order.customerId);
@@ -111,6 +115,7 @@ export const updateOrderStatus = mutation({
     ),
   },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     const order = await ctx.db.get(args.orderId);
     if (!order || order.businessId !== args.businessId) {
       throw new Error("Order not found.");

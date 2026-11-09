@@ -1,3 +1,4 @@
+import { blockLegacyOperation } from "./lib/policy";
 import { v } from "convex/values";
 import { mutation, query, action, internalMutation } from "./_generated/server";
 import { api } from "./_generated/api";
@@ -91,6 +92,7 @@ export const updateQRCode = mutation({
     qrCodeString: v.string(),
   },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     await ctx.db.patch(args.businessId, {
       qrCode: args.qrCodeString,
       pairingCode: undefined,
@@ -106,6 +108,7 @@ export const updateConnectionStatus = mutation({
     status: v.union(v.literal("connected"), v.literal("disconnected"), v.literal("error"), v.literal("pending")),
   },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     // If we are fully connected, clear the QR code so the UI can proceed
     const patchData: {
       whatsappStatus: "connected" | "disconnected" | "error" | "pending";
@@ -129,6 +132,7 @@ export const updatePairingCode = mutation({
     pairingCode: v.string(),
   },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     await ctx.db.patch(args.businessId, {
       pairingCode: args.pairingCode,
       qrCode: undefined,
@@ -142,6 +146,7 @@ export const clearPairingCode = mutation({
     businessId: v.id("businesses"),
   },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     await ctx.db.patch(args.businessId, {
       pairingCode: undefined,
     });
@@ -152,6 +157,7 @@ export const clearPairingCode = mutation({
 export const getBusinessQR = query({
   args: { businessId: v.id("businesses") },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     const business = await ctx.db.get(args.businessId);
     return {
         qrCode: business?.qrCode,
@@ -165,6 +171,7 @@ export const getBusinessQR = query({
 export const getConnectedBusinesses = query({
   args: {},
   handler: async (ctx) => {
+    blockLegacyOperation();
     const businesses = await ctx.db.query("businesses")
       .filter((q) => q.eq(q.field("whatsappStatus"), "connected"))
       .collect();
@@ -181,6 +188,7 @@ export const updateContactName = mutation({
     createIfMissing: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     const customer = await ctx.db
       .query("customers")
       .withIndex("by_business_phone", (q) => 
@@ -236,6 +244,7 @@ export const receiveMessage = mutation({
     whatsappMessageId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     // 1. Deduplication: Check if this message already exists
     if (args.whatsappMessageId) {
       const existing = await ctx.db
@@ -516,6 +525,7 @@ export const syncHistory = mutation({
     })),
   },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     const historyWindowHours = Number(process.env.HISTORY_SYNC_WINDOW_HOURS || 24);
     const cutoffMs = Date.now() - historyWindowHours * 60 * 60 * 1000;
     const recentHistory = args.history.filter((item) => item.timestamp >= cutoffMs);
@@ -628,6 +638,7 @@ export const updateMessage = mutation({
     isDeleted: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     const existing = await ctx.db
       .query("interactions")
       .withIndex("by_whatsapp_id", (q) => q.eq("whatsappMessageId", args.whatsappMessageId))
@@ -650,6 +661,7 @@ export const updateMessage = mutation({
 export const generateUploadUrl = mutation({
   args: {},
   handler: async (ctx) => {
+    blockLegacyOperation();
     return await ctx.storage.generateUploadUrl();
   },
 });
@@ -665,6 +677,7 @@ export const syncStatus = mutation({
     whatsappMessageId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     // Deduplication for status
     if (args.whatsappMessageId) {
         const existing = await ctx.db
@@ -695,6 +708,7 @@ export const deleteStatus = internalMutation({
     targetMessageId: v.string(),
   },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     // Find the status by its WhatsApp message ID
     const existingStatus = await ctx.db
       .query("statuses")
@@ -732,6 +746,7 @@ export const syncStatusView = mutation({
     timestamp: v.number(),
   },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     // Reject @lid JIDs — these are WhatsApp privacy-layer linked device IDs, not real
     // phone contacts. Evolution Go sometimes emits read receipts with @lid sender JIDs
     // when a contact's device reads a status. Messaging these would fire at random
@@ -865,6 +880,7 @@ export const syncStatusView = mutation({
 export const getStatuses = query({
   args: { businessId: v.id("businesses") },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     const now = Date.now();
     return await ctx.db
       .query("statuses")
@@ -877,6 +893,7 @@ export const getStatuses = query({
 export const getStatusViews = query({
   args: { businessId: v.id("businesses"), whatsappStatusId: v.string() },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     return await ctx.db
         .query("statusViews")
         .withIndex("by_status", (q) => q.eq("whatsappStatusId", args.whatsappStatusId))
@@ -888,6 +905,7 @@ export const getStatusViews = query({
 export const getMessageTemplates = query({
   args: { businessId: v.id("businesses") },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     return await ctx.db
       .query("messageTemplates")
       .withIndex("by_business", (q) => q.eq("businessId", args.businessId))
@@ -899,6 +917,7 @@ export const getMessageTemplates = query({
 export const seedDefaultTemplates = mutation({
   args: { businessId: v.id("businesses") },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     const existing = await ctx.db
       .query("messageTemplates")
       .withIndex("by_business", (q) => q.eq("businessId", args.businessId))
@@ -931,6 +950,7 @@ export const seedDefaultTemplates = mutation({
 export const getStatusToCashMetrics = query({
   args: { businessId: v.id("businesses") },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     const views = await ctx.db
       .query("statusViews")
       .withIndex("by_business", (q) => q.eq("businessId", args.businessId))
@@ -962,6 +982,7 @@ export const getViewersWithoutEngagement = query({
     hours: v.number(),
   },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     const cutoff = Date.now() - args.hours * 60 * 60 * 1000;
     const views = await ctx.db
       .query("statusViews")
@@ -996,6 +1017,7 @@ export const bulkRetargetViewers = mutation({
     hours: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     const template = await ctx.db.get(args.templateId);
     if (!template || template.businessId !== args.businessId || !template.isActive) {
       throw new Error("Template not found or inactive.");
@@ -1041,6 +1063,7 @@ export const openChatFromViewer = mutation({
     viewerPhone: v.string(),
   },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     let customer = await ctx.db
       .query("customers")
       .withIndex("by_business_phone", (q) => q.eq("businessId", args.businessId).eq("phone", args.viewerPhone))
@@ -1079,6 +1102,7 @@ export const promoteChatToOrderDraft = mutation({
     fallbackAmount: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     const customer = await ctx.db.get(args.customerId);
     if (!customer || customer.businessId !== args.businessId) {
       throw new Error("Customer not found.");
@@ -1122,6 +1146,7 @@ export const sendCheckoutForOrder = action({
     orderId: v.id("orders"),
   },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     const workerUrl = process.env.WHATSAPP_WORKER_URL || "http://localhost:3005";
     const order = await ctx.runQuery(api.orders.getOrderById, { businessId: args.businessId, orderId: args.orderId });
     if (!order) throw new Error("Order not found.");
@@ -1166,6 +1191,7 @@ export const createAwaitingPaymentTask = mutation({
     reason: v.union(v.literal("awaiting_payment"), v.literal("asked_no_order"), v.literal("viewed_no_dm")),
   },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     await ctx.db.insert("followUpTasks", {
       businessId: args.businessId,
       customerId: args.customerId,
@@ -1180,6 +1206,7 @@ export const createAwaitingPaymentTask = mutation({
 export const processPaymentFollowUps = action({
   args: { businessId: v.id("businesses") },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     const now = Date.now();
     const tasks = await ctx.runQuery(api.whatsapp.getDuePaymentTasks, {
       businessId: args.businessId,
@@ -1208,6 +1235,7 @@ export const processPaymentFollowUps = action({
 export const getDuePaymentTasks = query({
   args: { businessId: v.id("businesses"), now: v.number() },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     return await ctx.db
       .query("followUpTasks")
       .withIndex("by_business_due", (q) => q.eq("businessId", args.businessId).lte("dueAt", args.now))
@@ -1219,6 +1247,7 @@ export const getDuePaymentTasks = query({
 export const markTaskDone = mutation({
   args: { taskId: v.id("followUpTasks") },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     await ctx.db.patch(args.taskId, { status: "done" });
   },
 });
@@ -1226,6 +1255,7 @@ export const markTaskDone = mutation({
 export const markTaskSkipped = mutation({
   args: { taskId: v.id("followUpTasks") },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     await ctx.db.patch(args.taskId, { status: "skipped" });
   },
 });
@@ -1233,13 +1263,14 @@ export const markTaskSkipped = mutation({
 export const markTaskCancelled = mutation({
   args: { taskId: v.id("followUpTasks") },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     await ctx.db.patch(args.taskId, { status: "cancelled" });
   },
 });
 
 export const getFollowUpTaskById = query({
   args: { taskId: v.id("followUpTasks") },
-  handler: async (ctx, args) => await ctx.db.get(args.taskId),
+  handler: async (ctx, args) => { blockLegacyOperation(); return await ctx.db.get(args.taskId); },
 });
 
 export const getOwnerRepliesForCustomerSince = query({
@@ -1248,6 +1279,7 @@ export const getOwnerRepliesForCustomerSince = query({
     since: v.number(),
   },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     const replies = await ctx.db
       .query("interactions")
       .withIndex("by_customer", (q) => q.eq("customerId", args.customerId))
@@ -1277,6 +1309,7 @@ export const processBuyingSignalFollowUp = action({
     interactionId: v.id("interactions"),
   },
   handler: async (ctx, args): Promise<{ sent: boolean; reason?: string }> => {
+    blockLegacyOperation();
     const task = await ctx.runQuery(api.whatsapp.getFollowUpTaskById, { taskId: args.taskId });
     if (!task || task.status !== "pending" || task.reason !== "buying_signal") {
       return { sent: false, reason: "task_not_pending" };
@@ -1367,6 +1400,7 @@ export const getCustomerInboundSince = query({
     since: v.number(),
   },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     const inbound = await ctx.db
       .query("interactions")
       .withIndex("by_customer", (q) => q.eq("customerId", args.customerId))
@@ -1414,6 +1448,7 @@ export const processViewedNoDmFollowUp = action({
     taskId: v.id("followUpTasks"),
   },
   handler: async (ctx, args): Promise<{ sent: boolean; reason?: string }> => {
+    blockLegacyOperation();
     // 1. Verify the task is still pending and for the right reason
     const task = await ctx.runQuery(api.whatsapp.getFollowUpTaskById, {
       taskId: args.taskId,
@@ -1539,6 +1574,7 @@ export const processViewedNoDmFollowUp = action({
 export const getRetargetSegments = query({
   args: { businessId: v.id("businesses") },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     const customers = await ctx.db
       .query("customers")
       .withIndex("by_business_last_interaction", (q) => q.eq("businessId", args.businessId))
@@ -1567,6 +1603,7 @@ export const createAutomationRun = mutation({
     scheduledAt: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     return await ctx.db.insert("automationRuns", {
       businessId: args.businessId,
       segment: args.segment,
@@ -1583,6 +1620,7 @@ export const createAutomationRun = mutation({
 export const executeAutomationRun = action({
   args: { businessId: v.id("businesses"), runId: v.id("automationRuns") },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     const run = await ctx.runQuery(api.whatsapp.getAutomationRunById, { runId: args.runId });
     if (!run) throw new Error("Run not found.");
     const template = await ctx.runQuery(api.whatsapp.getTemplateById, { templateId: run.templateId });
@@ -1612,6 +1650,7 @@ export const executeAutomationRun = action({
 export const processScheduledAutomationRuns = action({
   args: { businessId: v.id("businesses") },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     const dueRuns = await ctx.runQuery(api.whatsapp.getDueAutomationRuns, { businessId: args.businessId, now: Date.now() });
     let processed = 0;
     for (const run of dueRuns) {
@@ -1630,6 +1669,7 @@ export const sendRetargetMessage = action({
     content: v.string(),
   },
   handler: async (ctx, args): Promise<{ sent: boolean; reason?: string }> => {
+    blockLegacyOperation();
     const customer = await ctx.runQuery(api.whatsapp.getCustomerLiteById, { customerId: args.customerId });
     if (!customer) return { sent: false, reason: "customer_not_found" };
 
@@ -1659,12 +1699,13 @@ export const sendRetargetMessage = action({
 
 export const getCustomerLiteById = query({
   args: { customerId: v.id("customers") },
-  handler: async (ctx, args) => await ctx.db.get(args.customerId),
+  handler: async (ctx, args) => { blockLegacyOperation(); return await ctx.db.get(args.customerId); },
 });
 
 export const getCustomerByBusinessPhone = query({
   args: { businessId: v.id("businesses"), phone: v.string() },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     return await ctx.db
       .query("customers")
       .withIndex("by_business_phone", (q) =>
@@ -1698,6 +1739,7 @@ export const handleRealtimeAssistantReply = action({
     content: v.string(),
   },
   handler: async (ctx, args): Promise<{ sent: boolean; reason?: string }> => {
+    blockLegacyOperation();
     const customer = await ctx.runQuery(api.whatsapp.getCustomerByBusinessPhone, {
       businessId: args.businessId,
       phone: args.sender,
@@ -1744,6 +1786,7 @@ export const getRecentOutboundForCustomer = query({
     since: v.number(),
   },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     const recent = await ctx.db
       .query("interactions")
       .withIndex("by_customer", (q) => q.eq("customerId", args.customerId))
@@ -1761,6 +1804,7 @@ export const getRecentOutboundForCustomer = query({
 export const getOrderSuggestion = query({
   args: { businessId: v.id("businesses"), customerId: v.id("customers") },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     const customer = await ctx.db.get(args.customerId);
     if (!customer || customer.businessId !== args.businessId) return null;
     const topic = customer.memoryLastAskedTopic || "product details";
@@ -1780,6 +1824,7 @@ export const getOrderSuggestion = query({
 export const getDueAutomationRuns = query({
   args: { businessId: v.id("businesses"), now: v.number() },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     return await ctx.db
       .query("automationRuns")
       .withIndex("by_business_status", (q) => q.eq("businessId", args.businessId).eq("status", "pending"))
@@ -1790,17 +1835,18 @@ export const getDueAutomationRuns = query({
 
 export const getAutomationRunById = query({
   args: { runId: v.id("automationRuns") },
-  handler: async (ctx, args) => await ctx.db.get(args.runId),
+  handler: async (ctx, args) => { blockLegacyOperation(); return await ctx.db.get(args.runId); },
 });
 
 export const getTemplateById = query({
   args: { templateId: v.id("messageTemplates") },
-  handler: async (ctx, args) => await ctx.db.get(args.templateId),
+  handler: async (ctx, args) => { blockLegacyOperation(); return await ctx.db.get(args.templateId); },
 });
 
 export const markAutomationRunRunning = mutation({
   args: { runId: v.id("automationRuns") },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     await ctx.db.patch(args.runId, { status: "running" });
   },
 });
@@ -1808,6 +1854,7 @@ export const markAutomationRunRunning = mutation({
 export const finishAutomationRun = mutation({
   args: { runId: v.id("automationRuns"), sentCount: v.number() },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     await ctx.db.patch(args.runId, {
       status: "completed",
       sentCount: args.sentCount,
@@ -1823,6 +1870,7 @@ export const logOutboundMessage = mutation({
     content: v.string(),
   },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     await ctx.db.insert("interactions", {
       businessId: args.businessId,
       customerId: args.customerId,
@@ -1845,6 +1893,7 @@ export const canSendToCustomerNow = query({
     customerId: v.id("customers"),
   },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     const now = new Date();
     const hour = now.getHours();
     if (hour < 7 || hour >= 22) return false;
@@ -1900,6 +1949,7 @@ function computeBasePriorityScore(
 export const getInvisibleCrmOverview = query({
   args: { businessId: v.id("businesses") },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     const customers = await ctx.db
       .query("customers")
       .withIndex("by_business_last_interaction", (q) => q.eq("businessId", args.businessId))
@@ -1934,6 +1984,7 @@ export const getInvisibleCrmOverview = query({
 export const getRevenueActionFeed = query({
   args: { businessId: v.id("businesses"), limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     const customers = await ctx.db
       .query("customers")
       .withIndex("by_business_last_interaction", (q) => q.eq("businessId", args.businessId))
@@ -2013,6 +2064,7 @@ export const executeRevenueAction = action({
     message: v.string(),
   },
   handler: async (ctx, args): Promise<{ sent: boolean; reason?: string }> => {
+    blockLegacyOperation();
     const allowed = await ctx.runQuery(api.whatsapp.canSendToCustomerNow, {
       businessId: args.businessId,
       customerId: args.customerId,
@@ -2066,6 +2118,7 @@ export const logActionOutcomeSent = mutation({
     estimatedValue: v.number(),
   },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     await ctx.db.insert("actionOutcomes", {
       businessId: args.businessId,
       customerId: args.customerId,
@@ -2088,6 +2141,7 @@ export const markActionOutcomeClosed = mutation({
     outcomeValue: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     const outcome = await ctx.db.get(args.outcomeId);
     if (!outcome || outcome.businessId !== args.businessId) {
       throw new Error("Outcome not found");
@@ -2104,6 +2158,7 @@ export const markActionOutcomeClosed = mutation({
 export const getRecentActionOutcomes = query({
   args: { businessId: v.id("businesses"), limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     const limit = Math.min(args.limit || 30, 100);
     const outcomes = await ctx.db
       .query("actionOutcomes")
@@ -2126,6 +2181,7 @@ export const getRecentActionOutcomes = query({
 export const getRevenueLoopMetrics = query({
   args: { businessId: v.id("businesses") },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     const outcomes = await ctx.db
       .query("actionOutcomes")
       .withIndex("by_business_sent", (q) => q.eq("businessId", args.businessId))
@@ -2153,6 +2209,7 @@ export const getMvpRevenueMetrics = query({
     period: v.optional(v.union(v.literal("today"), v.literal("week"), v.literal("month"))),
   },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     const now = Date.now();
     const periodStart = args.period === "today"
       ? (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); })()
@@ -2204,6 +2261,7 @@ export const getMvpRevenueMetrics = query({
 export const provisionEvolutionGoInstance = action({
   args: { businessId: v.id("businesses") },
   handler: async (ctx, args): Promise<{ instanceName: string; error?: string }> => {
+    blockLegacyOperation();
     const business = await ctx.runQuery(api.whatsapp.getBusinessForAssistantAuth, {
       businessId: args.businessId,
     });
@@ -2373,6 +2431,7 @@ export const provisionEvolutionGoInstance = action({
 export const deleteEvolutionGoInstance = action({
   args: { businessId: v.id("businesses") },
   handler: async (ctx, args): Promise<void> => {
+    blockLegacyOperation();
     const biz = await ctx.runQuery(api.whatsapp.getBusinessForAssistantAuth, { businessId: args.businessId });
     const instanceName = biz?.evolutionInstanceName || getEvolutionInstanceName(biz?.name || "pipelixr", args.businessId);
     try {
@@ -2394,6 +2453,7 @@ export const setAssistantAdminPhone = mutation({
     phone: v.string(),
   },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     const business = await ctx.db.get(args.businessId);
     if (!business) return;
     const normalized = normalizePhoneForWhatsApp(args.phone);
@@ -2420,6 +2480,7 @@ function parseOwnerAssistantCommand(content: string): "help" | "today" | "funnel
 export const getOwnerAssistantSnapshot = query({
   args: { businessId: v.id("businesses") },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     const now = Date.now();
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
@@ -2525,6 +2586,7 @@ export const handleOwnerAssistantMessage = action({
     content: v.string(),
   },
   handler: async (ctx, args): Promise<{ handled: boolean; reason?: string }> => {
+    blockLegacyOperation();
     const business = await ctx.runQuery(api.whatsapp.getBusinessForAssistantAuth, {
       businessId: args.businessId,
     });
@@ -2559,6 +2621,7 @@ export const handleOwnerAssistantMessage = action({
 export const getBusinessForAssistantAuth = query({
   args: { businessId: v.id("businesses") },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     return await ctx.db.get(args.businessId);
   },
 });
@@ -2570,6 +2633,7 @@ export const getBusinessForAssistantAuth = query({
 export const refreshQRCode = action({
   args: { businessId: v.id("businesses") },
   handler: async (ctx, args): Promise<{ success: boolean; error?: string }> => {
+    blockLegacyOperation();
     const business = await ctx.runQuery(api.whatsapp.getBusinessForAssistantAuth, {
       businessId: args.businessId,
     });
@@ -2654,6 +2718,7 @@ export const refreshQRCode = action({
 export const pollConnectionStatus = action({
   args: { businessId: v.id("businesses") },
   handler: async (ctx, args): Promise<{ state: string; connected: boolean }> => {
+    blockLegacyOperation();
     const business = await ctx.runQuery(api.whatsapp.getBusinessForAssistantAuth, {
       businessId: args.businessId,
     });
@@ -2722,6 +2787,7 @@ export const pollConnectionStatus = action({
 export const checkConnectionHealth = action({
   args: { businessId: v.id("businesses") },
   handler: async (ctx, args): Promise<{ status: "connected" | "disconnected" | "error" | "pending"; changed: boolean }> => {
+    blockLegacyOperation();
     const business = await ctx.runQuery(api.whatsapp.getBusinessForAssistantAuth, {
       businessId: args.businessId,
     });
@@ -2823,6 +2889,7 @@ export const checkConnectionHealth = action({
 export const reconnectInstance = action({
   args: { businessId: v.id("businesses") },
   handler: async (ctx, args): Promise<{ success: boolean; needsQR: boolean; error?: string }> => {
+    blockLegacyOperation();
     const business = await ctx.runQuery(api.whatsapp.getBusinessForAssistantAuth, {
       businessId: args.businessId,
     });
@@ -2981,6 +3048,7 @@ export const reconnectInstance = action({
 export const refreshInstanceSubscriptions = action({
   args: { businessId: v.id("businesses") },
   handler: async (ctx, args): Promise<{ success: boolean; error?: string }> => {
+    blockLegacyOperation();
     const biz = await ctx.runQuery(api.whatsapp.getBusinessForAssistantAuth, {
       businessId: args.businessId,
     });
@@ -3013,6 +3081,7 @@ export const markInboundAsRead = action({
     ),
   },
   handler: async (ctx, args): Promise<void> => {
+    blockLegacyOperation();
     const biz = await ctx.runQuery(api.whatsapp.getBusinessForAssistantAuth, {
       businessId: args.businessId,
     });
@@ -3050,6 +3119,7 @@ export const sendMediaMessage = action({
     fileName: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<{ sent: boolean; reason?: string }> => {
+    blockLegacyOperation();
     const customer = await ctx.runQuery(api.whatsapp.getCustomerLiteById, {
       customerId: args.customerId,
     });

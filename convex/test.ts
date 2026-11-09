@@ -1,9 +1,11 @@
+import { blockLegacyOperation } from "./lib/policy";
 import { action } from "./_generated/server";
 import { createInstance, connectInstance, pairInstance, getEvolutionWebhookUrl, generateEvolutionInstanceId } from "./evolutionGoClient";
 
 export const testEvolution = action({
   args: {},
   handler: async (ctx) => {
+    blockLegacyOperation();
     try {
         const instanceName = "test_" + Date.now();
         const instanceId = generateEvolutionInstanceId();

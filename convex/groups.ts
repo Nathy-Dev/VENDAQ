@@ -16,6 +16,7 @@
  * the UI; users can opt into "Show all groups" for the full list.
  */
 
+import { blockLegacyOperation } from "./lib/policy";
 import { v } from "convex/values";
 import { action, mutation, query } from "./_generated/server";
 import { api } from "./_generated/api";
@@ -33,6 +34,7 @@ import * as evoClient from "./evolutionGoClient";
 export const listGroupsForBusiness = query({
   args: { businessId: v.id("businesses") },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     // 1. Pull the managed-group records the owner has interacted with.
     const managed = await ctx.db
       .query("managedGroups")
@@ -108,6 +110,7 @@ export const listGroupsForBusiness = query({
 export const getManagedGroup = query({
   args: { businessId: v.id("businesses"), groupJid: v.string() },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     return await ctx.db
       .query("managedGroups")
       .withIndex("by_business_group", (q) =>
@@ -135,6 +138,7 @@ export const setGroupEnabled = mutation({
     role: v.optional(v.union(v.literal("owner"), v.literal("admin"), v.literal("member"))),
   },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     if (!args.groupJid.endsWith("@g.us")) {
       throw new Error("Only WhatsApp groups (JIDs ending in @g.us) can be managed.");
     }
@@ -181,6 +185,7 @@ export const setGroupMentionOnly = mutation({
     mentionOnly: v.boolean(),
   },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     const existing = await ctx.db
       .query("managedGroups")
       .withIndex("by_business_group", (q) =>
@@ -221,6 +226,7 @@ export const upsertGroupsFromEvolution = mutation({
     })),
   },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     const now = Date.now();
     for (const g of args.groups) {
       const existing = await ctx.db
@@ -265,6 +271,7 @@ export const upsertGroupsFromEvolution = mutation({
 export const refreshGroups = action({
   args: { businessId: v.id("businesses") },
   handler: async (ctx, args): Promise<{ refreshed: number; source: "evolution" | "cache_only" }> => {
+    blockLegacyOperation();
     const business = await ctx.runQuery(api.businesses.getBusinessById, {
       businessId: args.businessId,
     });

@@ -45,3 +45,4 @@ next-env.d.ts
 /evolution-src
 /Evolution_Go_Status_Webhook_Documentation.md
 /docs
+/.qualification-state.json

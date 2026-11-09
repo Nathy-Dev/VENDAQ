@@ -11,6 +11,8 @@
  *   NEXT_PUBLIC_CONVEX_SITE_URL - fallback for local/dev setups
  */
 
+import { blockLegacyOperation } from "./lib/policy";
+
 type ConnectionArtifacts = {
   qrCode: string | null;
   pairingCode: string | null;
@@ -273,6 +275,8 @@ function buildPairPayload(_instanceName: string, phone: string, options?: { subs
 }
 
 export async function evoFetch(path: string, method: string, body?: unknown, customToken?: string): Promise<unknown> {
+  // Retain the legacy implementation, but prevent bypassing the Phase 1 client.
+  blockLegacyOperation();
   const { url, apiKey } = getEvolutionConfig();
   logEvolutionGoDebug(`request ${method} ${path}`, body);
   const res = await fetch(`${url}${path}`, {

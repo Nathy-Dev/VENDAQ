@@ -1,3 +1,4 @@
+import { blockLegacyOperation } from "./lib/policy";
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 
@@ -15,6 +16,7 @@ export const createDisconnectionAlert = mutation({
     businessId: v.id("businesses"),
   },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     // Don't create duplicates — only one active alert per business
     const existing = await ctx.db
       .query("disconnectionAlerts")
@@ -43,6 +45,7 @@ export const resolveDisconnectionAlerts = mutation({
     businessId: v.id("businesses"),
   },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     const activeAlerts = await ctx.db
       .query("disconnectionAlerts")
       .withIndex("by_business_status", (q) =>
@@ -72,6 +75,7 @@ export const dismissDisconnectionAlert = mutation({
     alertId: v.id("disconnectionAlerts"),
   },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     const alert = await ctx.db.get(args.alertId);
     if (!alert || alert.status !== "active") return;
 
@@ -94,6 +98,7 @@ export const getActiveDisconnectionAlerts = query({
     businessId: v.id("businesses"),
   },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     return await ctx.db
       .query("disconnectionAlerts")
       .withIndex("by_business_status", (q) =>
@@ -112,6 +117,7 @@ export const getRecentDisconnectionAlerts = query({
     businessId: v.id("businesses"),
   },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
     return await ctx.db
       .query("disconnectionAlerts")

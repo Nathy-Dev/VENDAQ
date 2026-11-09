@@ -1,9 +1,11 @@
+import { blockLegacyOperation } from "./lib/policy";
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 
 export const getBusiness = query({
   args: { ownerId: v.string() },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     return await ctx.db
       .query("businesses")
       .withIndex("by_owner", (q) => q.eq("ownerId", args.ownerId))
@@ -13,12 +15,13 @@ export const getBusiness = query({
 
 export const getBusinessById = query({
   args: { businessId: v.id("businesses") },
-  handler: async (ctx, args) => ctx.db.get(args.businessId),
+  handler: async (ctx, args) => { blockLegacyOperation(); return ctx.db.get(args.businessId); },
 });
 
 export const getBusinessByEvolutionInstanceName = query({
   args: { instanceName: v.string() },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     const businesses = await ctx.db.query("businesses").collect();
     return businesses.find((business) => 
       business.evolutionInstanceName === args.instanceName || 
@@ -38,6 +41,7 @@ export const createOrUpdateBusiness = mutation({
     whatsappMode: v.optional(v.union(v.literal("official"), v.literal("unofficial"))),
   },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     const existing = await ctx.db
       .query("businesses")
       .withIndex("by_owner", (q) => q.eq("ownerId", args.ownerId))
@@ -70,6 +74,7 @@ export const updateConnectionStatus = mutation({
     connectionDetails: v.optional(v.any()),
   },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     await ctx.db.patch(args.businessId, {
       whatsappStatus: args.status,
       connectionDetails: args.connectionDetails,
@@ -98,6 +103,7 @@ export const updateBusinessDetails = mutation({
     aiNeverOfferDiscount: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     // PRD: Response window must be between 30 minutes and 1440 minutes (24 hours)
     if (args.responseWindowMinutes !== undefined) {
       if (args.responseWindowMinutes < 30 || args.responseWindowMinutes > 1440) {
@@ -132,6 +138,7 @@ export const setEvolutionInstance = mutation({
     instanceId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    blockLegacyOperation();
     await ctx.db.patch(args.businessId, {
       evolutionInstanceName: args.instanceName,
       ...(args.instanceId ? { evolutionInstanceId: args.instanceId } : {}),
