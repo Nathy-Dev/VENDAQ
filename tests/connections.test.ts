@@ -129,4 +129,17 @@ describe("read-only provider sessions", () => {
     await expect(providerRequest("GET", "/instance/all")).rejects.toThrow("INSECURE_PROVIDER_URL");
     expect(fetch).not.toHaveBeenCalled();
   });
+
+  it("bypasses the ngrok browser warning and rejects non-JSON provider pages", async () => {
+    enableProvider();
+    vi.stubEnv("EVOLUTION_GO_URL", "https://provider.ngrok-free.dev");
+    vi.mocked(fetch).mockResolvedValueOnce(Response.json({ data: [] }));
+    await expect(providerRequest("GET", "/instance/all")).resolves.toEqual({ data: [] });
+    const headers = new Headers(vi.mocked(fetch).mock.calls[0]?.[1]?.headers);
+    expect(headers.get("accept")).toBe("application/json");
+    expect(headers.get("ngrok-skip-browser-warning")).toBe("pipelixr");
+
+    vi.mocked(fetch).mockResolvedValueOnce(new Response("ngrok warning", { status: 200, headers: { "content-type": "text/plain" } }));
+    await expect(providerRequest("GET", "/instance/all")).rejects.toThrow("PROVIDER_REQUEST_FAILED");
+  });
 });

@@ -57,7 +57,7 @@ export default function ConnectionPanel({ workspace }: { workspace: Workspace })
       const result = await connect({ businessId: workspace.businessId, disclosureVersion: "phase-1-2026-10-27", acceptedRisk });
       if (!mounted.current) return;
       setQr(result.state === "pending" ? result.qr : null);
-      setFeedback(result.error ? { text: "Pairing is unavailable. Check the provider setup with your workspace administrator.", error: true } : { text: result.state === "connected" ? "WhatsApp is connected." : "Pairing started. If a code is available, scan it below." });
+      setFeedback(result.error ? { text: connectionErrorMessage(result.error), error: true } : { text: result.state === "connected" ? "WhatsApp is connected." : "Pairing started. If a code is available, scan it below." });
     } catch {
       if (mounted.current) setFeedback({ text: "We couldn't start pairing. Your number has not been connected. Please try again later.", error: true });
     } finally {
@@ -74,7 +74,7 @@ export default function ConnectionPanel({ workspace }: { workspace: Workspace })
       const result = await refresh({ businessId: workspace.businessId });
       if (!mounted.current) return;
       setQr(result.state === "pending" ? result.qr : null);
-      setFeedback(result.error ? { text: "Your connection needs attention. Please check the provider setup.", error: true } : { text: `Connection checked: ${titleCase(result.state)}.` });
+      setFeedback(result.error ? { text: connectionErrorMessage(result.error), error: true } : { text: `Connection checked: ${titleCase(result.state)}.` });
     } catch {
       if (mounted.current) setFeedback({ text: "We couldn't refresh your connection. Please try again.", error: true });
     } finally {
@@ -129,4 +129,12 @@ export default function ConnectionPanel({ workspace }: { workspace: Workspace })
       <ConfirmDialog open={confirmation} onClose={() => setConfirmation(false)} onConfirm={() => void disconnect()} busy={busy} title="Revoke this connection?" description="This disables the session credentials and stops processing through this connection. Your retained records remain subject to the retention policy. Reconnecting requires an administrator to reset the session." confirmLabel="Revoke connection" />
     </section>
   );
+}
+
+function connectionErrorMessage(code: string): string {
+  if (code === "PROVIDER_QUALIFICATION_REQUIRED") return "WhatsApp connection is temporarily unavailable while the provider setup is being verified.";
+  if (code === "PROVIDER_AUTH_FAILED") return "The WhatsApp provider rejected the connection credentials. Please try again after the provider setup is updated.";
+  if (["PROVIDER_REQUEST_FAILED", "PROVIDER_UNAVAILABLE"].includes(code)) return "The WhatsApp provider could not be reached. Please try again shortly.";
+  if (code === "PROVIDER_INSTANCE_UNRESOLVED") return "The earlier connection attempt needs administrator review before it can be retried safely.";
+  return "WhatsApp pairing is unavailable right now. Please try again shortly.";
 }

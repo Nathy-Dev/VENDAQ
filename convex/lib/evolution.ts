@@ -3,6 +3,10 @@ import { object, text } from "./events";
 
 const allowedOperations = new Set(["GET /instance/all", "POST /instance/create", "POST /instance/connect", "GET /instance/status", "GET /instance/qr", "POST /instance/disconnect"]);
 
+function usesNgrokBrowserWarning(hostname: string): boolean {
+  return hostname.endsWith(".ngrok-free.app") || hostname.endsWith(".ngrok-free.dev");
+}
+
 export async function providerRequest(method: string, path: string, options: { token?: string; instanceId?: string; body?: Record<string, unknown> } = {}): Promise<unknown> {
   if (!allowedOperations.has(`${method} ${path}`)) assertNoOutbound(`${method} ${path}`);
   if (process.env.FOUNDATION_PROVIDER_ENABLED !== "true") throw new Error("PROVIDER_DISABLED");
@@ -20,8 +24,10 @@ export async function providerRequest(method: string, path: string, options: { t
   const response = await fetch(`${url.toString().replace(/\/$/, "")}${path}`, {
     method,
     headers: {
+      Accept: "application/json",
       "Content-Type": "application/json",
       apikey: mode === "instance-token" && options.token ? options.token : apiKey,
+      ...(usesNgrokBrowserWarning(url.hostname) ? { "ngrok-skip-browser-warning": "pipelixr" } : {}),
       ...(options.instanceId ? { instanceId: options.instanceId } : {}),
     },
     ...(options.body ? { body: JSON.stringify(options.body) } : {}),
@@ -29,7 +35,12 @@ export async function providerRequest(method: string, path: string, options: { t
     redirect: "error",
   });
   if (!response.ok) throw new Error(response.status === 401 || response.status === 403 ? "PROVIDER_AUTH_FAILED" : "PROVIDER_REQUEST_FAILED");
-  return await response.json();
+  if (!response.headers.get("content-type")?.toLowerCase().includes("application/json")) throw new Error("PROVIDER_REQUEST_FAILED");
+  try {
+    return await response.json();
+  } catch {
+    throw new Error("PROVIDER_REQUEST_FAILED");
+  }
 }
 
 export function providerInstanceId(result: unknown): string {
