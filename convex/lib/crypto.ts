@@ -7,10 +7,23 @@ function base64ToBytes(value: string): Uint8Array<ArrayBuffer> {
 }
 
 function encryptionKey(version: string): Uint8Array<ArrayBuffer> {
-  const keys: Record<string, string> = JSON.parse(process.env.SESSION_ENCRYPTION_KEYS ?? "{}");
-  const encoded = keys[version];
-  if (!encoded) throw new Error("ENCRYPTION_NOT_CONFIGURED");
-  const key = base64ToBytes(encoded);
+  const configured = process.env.SESSION_ENCRYPTION_KEYS;
+  if (!configured) throw new Error("ENCRYPTION_NOT_CONFIGURED");
+  let keys: unknown;
+  try {
+    keys = JSON.parse(configured);
+  } catch {
+    throw new Error("INVALID_ENCRYPTION_CONFIGURATION");
+  }
+  if (!keys || typeof keys !== "object" || Array.isArray(keys)) throw new Error("INVALID_ENCRYPTION_CONFIGURATION");
+  const encoded = (keys as Record<string, unknown>)[version];
+  if (typeof encoded !== "string" || !encoded) throw new Error("ENCRYPTION_NOT_CONFIGURED");
+  let key: Uint8Array<ArrayBuffer>;
+  try {
+    key = base64ToBytes(encoded);
+  } catch {
+    throw new Error("INVALID_ENCRYPTION_KEY");
+  }
   if (key.length !== 32) throw new Error("INVALID_ENCRYPTION_KEY");
   return key;
 }

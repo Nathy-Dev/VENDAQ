@@ -133,6 +133,7 @@ export default function ConnectionPanel({ workspace }: { workspace: Workspace })
 
 function connectionErrorMessage(code: string): string {
   if (code === "PROVIDER_QUALIFICATION_REQUIRED") return "WhatsApp connection is temporarily unavailable while the provider setup is being verified.";
+  if (code === "CONNECTION_SECURITY_UNAVAILABLE") return "Secure WhatsApp connection setup needs administrator attention. Your number has not been connected.";
   if (code === "PROVIDER_AUTH_FAILED") return "The WhatsApp provider rejected the connection credentials. Please try again after the provider setup is updated.";
   if (["PROVIDER_REQUEST_FAILED", "PROVIDER_UNAVAILABLE"].includes(code)) return "The WhatsApp provider could not be reached. Please try again shortly.";
   if (code === "PROVIDER_INSTANCE_UNRESOLVED") return "The earlier connection attempt needs administrator review before it can be retried safely.";

@@ -23,6 +23,19 @@ describe("read-only provider sessions", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it("returns a safe error when connection encryption is misconfigured", async () => {
+    enableProvider();
+    vi.stubEnv("SESSION_ENCRYPTION_KEYS", "{v1:invalid}");
+    vi.stubEnv("SESSION_ENCRYPTION_KEY_VERSION", "v1");
+    const harness = createHarness();
+    const owner = harness.withIdentity({ subject: "google:config-error", issuer: "https://auth.example.test" });
+    const businessId = await owner.mutation(api.foundation.createBusiness, { name: "Config error seller" });
+
+    await expect(owner.action(api.connections.connect, { businessId, disclosureVersion: "phase-1-2026-10-27", acceptedRisk: true })).resolves.toEqual({ state: "disconnected", qr: null, error: "CONNECTION_SECURITY_UNAVAILABLE" });
+    expect(await harness.run((ctx) => ctx.db.query("whatsappSessions").collect())).toHaveLength(0);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it("serializes concurrent connects, encrypts credentials, and uses the documented Go QR shape", async () => {
     enableProvider();
     const harness = createHarness();

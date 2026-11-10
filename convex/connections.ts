@@ -10,15 +10,27 @@ import { providerRequest, providerInstanceId, providerConnectionState, providerE
 const connectionResult = v.object({ state: connectionState, qr: v.union(v.string(), v.null()), error: v.union(v.string(), v.null()) });
 type ConnectionResult = Infer<typeof connectionResult>;
 
+function connectionErrorCode(error: unknown): string {
+  if (error instanceof Error && ["ENCRYPTION_NOT_CONFIGURED", "INVALID_ENCRYPTION_CONFIGURATION", "INVALID_ENCRYPTION_KEY", "INVALID_CIPHERTEXT"].includes(error.message)) return "CONNECTION_SECURITY_UNAVAILABLE";
+  return providerErrorCode(error);
+}
+
 export const connect = action({
   args: { businessId: v.id("businesses"), disclosureVersion: v.string(), acceptedRisk: v.boolean() }, returns: connectionResult,
   handler: async (ctx, args): Promise<ConnectionResult> => {
     await ctx.runQuery(internal.foundation.ownedSession, { businessId: args.businessId });
     if (!args.acceptedRisk) throw new ConvexError({ code: "DISCLOSURE_REQUIRED" });
     if (process.env.FOUNDATION_PROVIDER_ENABLED !== "true" || process.env.FOUNDATION_PROVIDER_CONTRACT_VERIFIED !== "true") return { state: "disconnected", qr: null, error: "PROVIDER_QUALIFICATION_REQUIRED" };
-    const token = randomToken();
-    const tokenCiphertext = await encryptSecret(token, `business:${args.businessId}:session-token`);
-    const prepared = await ctx.runMutation(internal.foundation.prepareSession, { businessId: args.businessId, disclosureVersion: args.disclosureVersion, tokenCiphertext, tokenHash: await sha256(token) });
+    let tokenCiphertext: string;
+    let tokenHash: string;
+    try {
+      const token = randomToken();
+      tokenCiphertext = await encryptSecret(token, `business:${args.businessId}:session-token`);
+      tokenHash = await sha256(token);
+    } catch (error) {
+      return { state: "disconnected", qr: null, error: connectionErrorCode(error) };
+    }
+    const prepared = await ctx.runMutation(internal.foundation.prepareSession, { businessId: args.businessId, disclosureVersion: args.disclosureVersion, tokenCiphertext, tokenHash });
     const session = await ctx.runQuery(internal.foundation.sessionById, { sessionId: prepared.sessionId });
     if (!session) throw new Error("SESSION_NOT_FOUND");
     if (!prepared.claimed) return { state: session.state, qr: null, error: session.state === "connected" ? null : "CONNECTION_IN_PROGRESS" };
@@ -53,7 +65,7 @@ export const connect = action({
       await ctx.runMutation(internal.foundation.updateSession, { sessionId: session._id, generation: session.generation, operationVersion: session.operationVersion ?? 0, state: "pending", completeOperation: true });
       return { state: "pending", qr: null, error: null };
     } catch (error) {
-      const code = providerErrorCode(error);
+      const code = connectionErrorCode(error);
       await ctx.runMutation(internal.foundation.updateSession, { sessionId: session._id, generation: session.generation, operationVersion: session.operationVersion ?? 0, state: "error", code, completeOperation: true });
       logEvent("connection_failed", { correlationId: session._id, businessId: session.businessId, code });
       return { state: "error", qr: null, error: code };
@@ -95,7 +107,7 @@ export const checkHealth = internalAction({
       await ctx.runMutation(internal.foundation.updateSession, { sessionId: session._id, generation: session.generation, state: qrCiphertext ? "pending" : state, health: true, ...(qrCiphertext ? { qrCiphertext } : {}) });
       logEvent("connection_checked", { correlationId: session._id, businessId: session.businessId, code: state.toUpperCase() });
     } catch (error) {
-      const code = providerErrorCode(error);
+      const code = connectionErrorCode(error);
       await ctx.runMutation(internal.foundation.updateSession, { sessionId: session._id, generation: session.generation, state: "error", code, health: true });
       logEvent("connection_failed", { correlationId: session._id, businessId: session.businessId, code });
     }
