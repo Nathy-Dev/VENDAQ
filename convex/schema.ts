@@ -45,6 +45,14 @@ export default defineSchema({
     attributionWindowDays: v.optional(v.number()),
     statusViewerListEnabled: v.optional(v.boolean()),
     automatedSendingRequested: v.optional(v.boolean()),
+    // First-launch assistant controls. These are separate from the legacy
+    // automation fields so consent is explicit and can be revoked instantly.
+    customerAutoReplyEnabled: v.optional(v.boolean()),
+    groupAutoReplyEnabled: v.optional(v.boolean()),
+    assistantConsentAt: v.optional(v.number()),
+    businessSystemPrompt: v.optional(v.string()),
+    businessSystemPromptUpdatedAt: v.optional(v.number()),
+    businessSystemPromptGeneratedAt: v.optional(v.number()),
     // Status-to-Cash: template used when nudging a status viewer who never DMs.
     // Supports the placeholder [Customer Name].
     viewedNoDmTemplate: v.optional(v.string()),
@@ -168,6 +176,8 @@ export default defineSchema({
     receivedAt: v.optional(v.number()),
     expiresAt: v.optional(v.number()),
     manualReviewRequired: v.optional(v.boolean()),
+    isGroup: v.optional(v.boolean()),
+    wasMentioned: v.optional(v.boolean()),
     classifierLabel: v.optional(v.union(v.literal("buying_signal"), v.literal("inquiry"), v.literal("payment_related"), v.literal("casual_noise"), v.literal("manual_review"))),
     classifierVersion: v.optional(v.string()),
     classifierConfidence: v.optional(v.number()),
@@ -425,9 +435,39 @@ export default defineSchema({
     mentionOnly: v.optional(v.boolean()),
     // Metadata refresh
     lastRefreshedAt: v.optional(v.number()),
+    enabledAt: v.optional(v.number()),
+    updatedAt: v.optional(v.number()),
     addedAt: v.number(),
   }).index("by_business_group", ["businessId", "groupJid"])
     .index("by_business_enabled", ["businessId", "isEnabled"]),
+
+  // Durable at-most-once assistant dispatch ledger. A dispatch that reaches
+  // `submitting` is never automatically retried: provider timeouts are kept as
+  // `unknown` so uncertainty cannot create duplicate WhatsApp replies.
+  assistantDispatches: defineTable({
+    businessId: v.id("businesses"),
+    interactionId: v.id("interactions"),
+    customerId: v.id("customers"),
+    sessionId: v.id("whatsappSessions"),
+    target: v.string(),
+    isGroup: v.boolean(),
+    content: v.string(),
+    state: v.union(
+      v.literal("reserved"),
+      v.literal("submitting"),
+      v.literal("accepted"),
+      v.literal("failed"),
+      v.literal("unknown"),
+      v.literal("cancelled"),
+    ),
+    attempts: v.number(),
+    providerMessageId: v.optional(v.string()),
+    errorCode: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_interaction", ["interactionId"])
+    .index("by_business_time", ["businessId", "createdAt"])
+    .index("by_business_target_time", ["businessId", "target", "createdAt"]),
 
   dailySnapshots: defineTable({
     businessId: v.id("businesses"),

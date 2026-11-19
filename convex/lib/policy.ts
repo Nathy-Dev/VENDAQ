@@ -42,6 +42,8 @@ export function foundationPolicy() {
     dashboardRecordLimit: setting("PHASE5_DASHBOARD_RECORD_LIMIT", 1000, 100, 5000),
     riskWindowHours: setting("PHASE6_RISK_WINDOW_HOURS", 24, 1, 168),
     riskWarningCount: setting("PHASE6_RISK_WARNING_COUNT", 5, 1, 1000),
+    assistantDailySendCap: setting("ASSISTANT_DAILY_SEND_CAP", 500, 1, 5000),
+    assistantTargetCooldownSeconds: setting("ASSISTANT_TARGET_COOLDOWN_SECONDS", 2, 0, 300),
   };
 }
 

@@ -13,11 +13,12 @@ import AuthScreen from "../src/components/AuthScreen";
 import LandingPage from "../src/components/LandingPage";
 
 describe("public UI", () => {
-  it("describes the manual-first product without automation claims", () => {
+  it("describes the consent-gated Launch 1 assistant accurately", () => {
     const html = renderToStaticMarkup(<LandingPage />);
-    expect(html).toContain("You stay in control of every reply");
-    expect(html).toContain("Draft first. Send yourself.");
-    expect(html).toContain("Automated sending remains disabled");
+    expect(html).toContain("You control customer authorization and every enabled group");
+    expect(html).toContain("save a detailed business system prompt");
+    expect(html).toContain("Groups stay silent until enabled individually");
+    expect(html).toContain("feature remains in the product code but is blocked for Launch 1");
     expect(html).toContain("an unofficial provider");
   });
 

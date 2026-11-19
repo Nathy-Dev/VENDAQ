@@ -9,13 +9,13 @@ import styles from "./LandingPage.module.css";
 const navigation = [{ href: "#product", label: "The workspace" }, { href: "#workflow", label: "How it works" }, { href: "#questions", label: "Questions" }];
 const features = [
   { icon: MessageCircle, title: "The context, not the clutter.", text: "A quiet inbox keeps eligible conversations and customer details together. Find the chat without losing the thread." },
-  { icon: ListTodo, title: "A next step you can actually take.", text: "Review prioritized buying signals and follow-up drafts. Copy the message, open WhatsApp, and send it yourself." },
+  { icon: ListTodo, title: "Accurate replies when ads get busy.", text: "Teach Pipelixr about your business once, then authorize it to answer eligible WhatsApp customers with that context." },
   { icon: Check, title: "An honest picture of your work.", text: "Record orders and outcomes without confusing seller-entered claims with independently confirmed payments." },
 ];
 const questions = [
-  { question: "Does Pipelixr send messages for me?", answer: "No. Follow-ups are drafts for you to review, copy, and send in WhatsApp. Opening your workspace does not send replies, mark messages as read, react, or publish presence. Automated sending remains disabled." },
+  { question: "Does Pipelixr send messages for me?", answer: "Only after explicit setup. You must save a detailed business system prompt and separately authorize one-to-one or group replies. Groups stay silent until enabled individually." },
   { question: "How does the WhatsApp connection work?", answer: "You can pair an authorized number using a QR code. The connection uses Evolution Go, an unofficial provider—not the official WhatsApp Business API. WhatsApp may restrict or ban the number. You must review and accept those risks before pairing." },
-  { question: "Are Status viewers turned into leads?", answer: "No. Optional Status observations use private, hashed identity keys. They do not reveal phone numbers, prove unique people, create leads, or trigger outreach." },
+  { question: "Is Status-to-Cash available at launch?", answer: "No. That feature remains in the product code but is blocked for Launch 1 while the focus is accurate replies to customer messages and explicitly enabled groups." },
   { question: "What does recovered revenue mean here?", answer: "Claimed recovered revenue is based on seller-recorded outcomes and attribution rules. It is kept separate from independently confirmed recovered revenue. Recording an order as paid is not independent payment verification." },
   { question: "Can I control the data in my workspace?", answer: "Your workspace shows its message-retention period and privacy controls. You can request deletion of a contact and related workspace records from the Inbox, then track the background deletion job in Settings. This does not delete messages from WhatsApp." },
 ];
@@ -46,9 +46,9 @@ export default function LandingPage() {
           <div className={styles.heroText}>
             <span className={styles.eyebrow}><span aria-hidden="true" />For the business in your chats</span>
             <h1 id="hero-title">Your chats.<br />A clearer<br />next step.</h1>
-            <p>Keep conversations, follow-ups, and orders in one calm workspace. Less chasing details. More following through.</p>
+            <p>Connect WhatsApp, teach Pipelixr how your business works, and keep up when ads bring more customer messages than your team can answer manually.</p>
             <div className={styles.heroActions}><Link href="/signup" className={styles.primaryButton}>Create your workspace<ArrowRight size={15} aria-hidden="true" /></Link><a href="#product" className={styles.textButton}>Take a look<ArrowRight size={15} aria-hidden="true" /></a></div>
-            <p className={styles.heroNote}><ShieldCheck size={14} aria-hidden="true" />You stay in control of every reply.</p>
+            <p className={styles.heroNote}><ShieldCheck size={14} aria-hidden="true" />You control customer authorization and every enabled group.</p>
           </div>
           <figure className={styles.previewFigure}>
             <WorkspacePreview />
@@ -61,7 +61,7 @@ export default function LandingPage() {
         </section>
         <section id="workflow" className={styles.workflow} aria-labelledby="workflow-title">
           <div className={styles.workflowIntro}><span className={styles.eyebrow}>Fits into your day</span><h2 id="workflow-title">The way you sell.<br />Just more organized.</h2><Link href="/signup" className={styles.textButton}>Start with your business<ArrowRight size={15} aria-hidden="true" /></Link></div>
-          <ol className={styles.steps}><li><span>01</span><div><h3>Create a space for your business.</h3><p>Sign in, add your business name, and review the optional WhatsApp connection before pairing.</p></div></li><li><span>02</span><div><h3>Find the next conversation.</h3><p>Check your inbox and action queue. Review a draft and send the right reply yourself.</p></div></li><li><span>03</span><div><h3>Close the loop.</h3><p>Record the order or outcome. Keep seller-entered revenue claims separate from payment verification.</p></div></li></ol>
+          <ol className={styles.steps}><li><span>01</span><div><h3>Connect your authorized WhatsApp.</h3><p>Review the provider risk and pair the number you use for customer conversations.</p></div></li><li><span>02</span><div><h3>Teach Pipelixr your business.</h3><p>Write what you know or use AI to turn your notes into a comprehensive, reviewable system prompt.</p></div></li><li><span>03</span><div><h3>Choose exactly where it may reply.</h3><p>Authorize one-to-one chats, then enable groups and communities individually with separate filters for groups you manage and groups you only belong to.</p></div></li></ol>
         </section>
         <section id="questions" className={styles.faq} aria-labelledby="faq-title">
           <div><span className={styles.eyebrow}>Before you start</span><h2 id="faq-title">A few things,<br />made clear.</h2><p>No hidden sending. No inflated promises.</p></div>

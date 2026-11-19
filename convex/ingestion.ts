@@ -6,6 +6,7 @@ import { foundationPolicy, logEvent } from "./lib/policy";
 import { keywordClassifier } from "./lib/classifier";
 import { journeyAfterInbound, type JourneyStage } from "./lib/journey";
 import { createStalledInquiryTask } from "./sellerActions";
+import { BUSINESS_SYSTEM_PROMPT_MIN_LENGTH, STATUS_TO_CASH_ENABLED } from "./lib/launch";
 
 export const enqueue = internalMutation({
   args: { sessionId: v.id("whatsappSessions"), generation: v.number(), tokenHash: v.string(), eventKey: v.string(), correlationId: v.string(), payload: normalizedEvent, quarantineCode: v.optional(v.string()) },
@@ -75,7 +76,7 @@ export const applyEvent = internalMutation({
       if (!existingMessage) {
         let customer = await ctx.db.query("customers").withIndex("by_business_identity", (builder) => builder.eq("businessId", business._id).eq("identityKey", payload.identityKey)).unique();
         if (!customer) {
-          const customerId = await ctx.db.insert("customers", { businessId: business._id, phone: payload.chat, ...(payload.name && !payload.fromMe ? { name: payload.name } : {}), identityKey: payload.identityKey, totalValue: 0, lastInteraction: payload.eventAt, ...(payload.fromMe ? { lastOutboundAt: payload.eventAt } : { firstInboundAt: payload.eventAt, lastInboundAt: payload.eventAt }), leadSource: payload.fromMe ? "imported" : "dm", funnelStage: payload.fromMe ? "viewer" : "engaged", tags: ["captured"] });
+          const customerId = await ctx.db.insert("customers", { businessId: business._id, phone: payload.chat, ...(payload.name && !payload.fromMe ? { name: payload.name } : {}), identityKey: payload.identityKey, totalValue: 0, lastInteraction: payload.eventAt, isGroup: payload.isGroup, ...(payload.fromMe ? { lastOutboundAt: payload.eventAt } : { firstInboundAt: payload.eventAt, lastInboundAt: payload.eventAt }), leadSource: payload.fromMe ? "imported" : "dm", funnelStage: payload.fromMe ? "viewer" : "engaged", tags: ["captured", ...(payload.isGroup ? ["group"] : [])] });
           customer = await ctx.db.get(customerId);
         }
         if (!customer || customer.deletedAt !== undefined) throw new Error("INVALID_CUSTOMER_STATE");
@@ -98,7 +99,16 @@ export const applyEvent = internalMutation({
           if (nextStage !== currentStage) await ctx.db.patch(customer._id, { funnelStage: nextStage });
         }
         const expiresAt = payload.eventAt + (business.messageRetentionDays ?? foundationPolicy().messageRetentionDays) * 86400000;
-        const interactionId = await ctx.db.insert("interactions", { businessId: business._id, customerId: customer._id, conversationId: conversation._id, sessionId: session._id, role: payload.fromMe ? "owner" : "customer", content: payload.text, timestamp: payload.eventAt, receivedAt: event.receivedAt, providerEventKey: messageKey, whatsappMessageId: payload.messageId, ...(payload.mediaType !== "unsupported" ? { messageType: payload.mediaType } : {}), manualReviewRequired: payload.manualReview, ...(classification ? { classifierLabel: classification.label, classifierVersion: classification.version, classifierConfidence: classification.confidence, classifierRuleIds: classification.ruleIds, classifiedAt: Date.now() } : {}), expiresAt });
+        const interactionId = await ctx.db.insert("interactions", { businessId: business._id, customerId: customer._id, conversationId: conversation._id, sessionId: session._id, role: payload.fromMe ? "owner" : "customer", content: payload.text, timestamp: payload.eventAt, receivedAt: event.receivedAt, providerEventKey: messageKey, whatsappMessageId: payload.messageId, ...(payload.mediaType !== "unsupported" ? { messageType: payload.mediaType } : {}), manualReviewRequired: payload.manualReview, isGroup: payload.isGroup, wasMentioned: payload.mentioned, ...(classification ? { classifierLabel: classification.label, classifierVersion: classification.version, classifierConfidence: classification.confidence, classifierRuleIds: classification.ruleIds, classifiedAt: Date.now() } : {}), expiresAt });
+        if (payload.isGroup) await ctx.scheduler.runAfter(0, internal.groups.upsertDiscovered, { businessId: business._id, groupJid: payload.chat, ...(payload.name ? { groupName: payload.name } : {}) });
+        if (!payload.fromMe && !payload.manualReview && payload.mediaType === "text" && payload.text.trim() && !(business.killSwitch ?? true) && (business.businessSystemPrompt?.trim().length ?? 0) >= BUSINESS_SYSTEM_PROMPT_MIN_LENGTH) {
+          let assistantAuthorized = business.customerAutoReplyEnabled ?? false;
+          if (payload.isGroup) {
+            const group = await ctx.db.query("managedGroups").withIndex("by_business_group", (builder) => builder.eq("businessId", business._id).eq("groupJid", payload.chat)).unique();
+            assistantAuthorized = (business.groupAutoReplyEnabled ?? false) && !!group?.isEnabled && (!(group.mentionOnly ?? true) || payload.mentioned);
+          }
+          if (assistantAuthorized) await ctx.scheduler.runAfter(0, internal.assistantReply.prepareForInteraction, { interactionId });
+        }
         if (payload.fromMe) {
           // A seller reply closes both pending and already-missed evidence. Query
           // each state separately so every database read remains index-backed.
@@ -113,7 +123,7 @@ export const applyEvent = internalMutation({
             }
             if (opportunities.length === foundationPolicy().batchSize) await ctx.scheduler.runAfter(0, internal.maintenance.answerConversationOpportunities, { conversationId: conversation._id, ownerAt: payload.eventAt, state });
           }
-        } else if (classification?.label === "buying_signal") {
+        } else if (!payload.isGroup && classification?.label === "buying_signal") {
           const responseWindowMinutes = business.responseWindowMinutes ?? foundationPolicy().responseWindowMinutes;
           const dueAt = payload.eventAt + responseWindowMinutes * 60000;
           // Out-of-order delivery must not create a missed opportunity after a
@@ -136,7 +146,7 @@ export const applyEvent = internalMutation({
           await ctx.db.patch(task._id, { status: "cancelled", cancelledAt: Date.now(), cancellationReason: payload.fromMe ? "SELLER_REPLIED" : "CUSTOMER_REPLIED" });
         }
         if (phase3Pending.length === foundationPolicy().batchSize || legacyPending.length === foundationPolicy().batchSize) await ctx.scheduler.runAfter(0, internal.maintenance.cancelCustomerTasks, { customerId: customer._id, since: payload.eventAt });
-        if (!payload.fromMe && classification?.label === "inquiry") await createStalledInquiryTask(ctx, { businessId: business._id, customerId: customer._id, conversationId: conversation._id, interactionId });
+        if (!payload.fromMe && !payload.isGroup && classification?.label === "inquiry") await createStalledInquiryTask(ctx, { businessId: business._id, customerId: customer._id, conversationId: conversation._id, interactionId });
       }
     } else if (payload.kind === "receipt") {
       const suppression = await ctx.db.query("privacySuppressions").withIndex("by_business_identity", (builder) => builder.eq("businessId", business._id).eq("identityKey", payload.identityKey)).unique();
@@ -147,6 +157,7 @@ export const applyEvent = internalMutation({
       }
       for (const messageId of payload.messageIds) {
         if (payload.chat === "status@broadcast") {
+          if (!STATUS_TO_CASH_ENABLED) continue;
           if (payload.state !== "read" || !payload.identityKey) continue;
           const existing = await ctx.db.query("statusObservations").withIndex("by_session_status_viewer", (builder) => builder.eq("sessionId", session._id).eq("statusMessageId", messageId).eq("viewerIdentityKey", payload.identityKey)).unique();
           if (!existing) await ctx.db.insert("statusObservations", { businessId: business._id, sessionId: session._id, statusMessageId: messageId, viewerIdentityKey: payload.identityKey, observedAt: payload.eventAt, expiresAt: event.expiresAt });

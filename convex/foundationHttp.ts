@@ -49,6 +49,6 @@ http.route({
 });
 
 http.route({ path: "/api/worker", method: "POST", handler: httpAction(async () => Response.json({ error: "LEGACY_WORKER_DISABLED" }, { status: 410 })) });
-http.route({ path: "/api/health", method: "GET", handler: httpAction(async () => Response.json({ status: "ok", phase: 1, outboundEnabled: false })) });
+http.route({ path: "/api/health", method: "GET", handler: httpAction(async () => Response.json({ status: "ok", phase: 1, assistantRepliesAvailable: true, statusToCashEnabled: false })) });
 
 export default http;

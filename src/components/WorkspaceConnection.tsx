@@ -104,12 +104,12 @@ export default function ConnectionPanel({ workspace }: { workspace: Workspace })
     <section className={styles.card}>
       <div className={styles.connectionTop}>
         <span className={styles.connectionIcon}><Link2 size={19} aria-hidden="true" /></span>
-        <div><h2>WhatsApp connection</h2><p>Pair your number. Stay in control of every reply.</p></div>
+        <div><h2>WhatsApp connection</h2><p>Pair a number you are authorized to manage. Reply permissions are configured separately.</p></div>
         <Pill dot tone={state === "connected" ? "positive" : state === "error" ? "danger" : "neutral"}>{titleCase(state)}</Pill>
       </div>
       <div className={styles.riskDisclosure}>
         <p><strong>An unofficial connection, with real risks.</strong> Pipelixr uses Evolution Go, not the official WhatsApp Business API. WhatsApp may restrict or ban a connected number.</p>
-        <p>Only connect a number you are authorized to manage. Eligible incoming messages are processed for this workspace and retained for {workspace.retentionDays} days. Opening the app does not send replies, mark messages as read, react, or publish presence.</p>
+        <p>Only connect a number you are authorized to manage. Eligible incoming messages are processed for this workspace and retained for {workspace.retentionDays} days. Pairing alone does not authorize Pipelixr to reply; that requires a saved business prompt and separate customer/group consent.</p>
       </div>
       {state === "revoked" ? <div className={styles.infoBanner}><ShieldCheck size={17} aria-hidden="true" /><p>This connection was revoked. An administrator must reset the session before you can pair again.</p></div> : (
         <>

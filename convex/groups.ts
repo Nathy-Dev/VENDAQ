@@ -1,301 +1,123 @@
-/**
- * Groups & Communities — owner-controlled AI scope.
- *
- * By default the Pipelixr assistant stays silent in ALL WhatsApp groups. The
- * owner explicitly opts specific groups in from Settings → Groups & Communities,
- * and only those opted-in groups get AI classification and auto-replies.
- *
- * Discovery strategy (see refreshGroups):
- *   1. Ask Evolution Go for the full group list (fetchAllGroups).
- *      → Preferred: gives us name, member count, and the user's role.
- *   2. Fall back to groups we've already seen in inbound webhooks
- *      (customers.isGroup=true), so we still show *something* if Evolution Go's
- *      group endpoint isn't exposed on this build.
- *
- * By default only groups where the connected number is owner/admin surface in
- * the UI; users can opt into "Show all groups" for the full list.
- */
+import { ConvexError, v } from "convex/values";
+import { action, internalMutation, internalQuery, mutation, query } from "./_generated/server";
+import { internal } from "./_generated/api";
+import { requireBusiness, requireIdentity } from "./lib/authorization";
+import { decryptSecret } from "./lib/crypto";
+import { providerGroups, providerRequest } from "./lib/evolution";
+import { BUSINESS_SYSTEM_PROMPT_MIN_LENGTH } from "./lib/launch";
 
-import { blockLegacyOperation } from "./lib/policy";
-import { v } from "convex/values";
-import { action, mutation, query } from "./_generated/server";
-import { api } from "./_generated/api";
-import * as evoClient from "./evolutionGoClient";
+const groupRole = v.union(v.literal("owner"), v.literal("admin"), v.literal("member"));
+const groupItem = v.object({
+  groupJid: v.string(),
+  groupName: v.string(),
+  memberCount: v.number(),
+  role: groupRole,
+  isEnabled: v.boolean(),
+  mentionOnly: v.boolean(),
+  lastRefreshedAt: v.union(v.number(), v.null()),
+});
 
-// ─── Queries ────────────────────────────────────────────────────────────────
-
-/**
- * Lists every group the assistant knows about for this business, along with
- * whether the owner has opted the assistant in.
- *
- * The UI filters this on the client into "Groups you manage" (owner/admin) and
- * "All other groups" (member-only), so we return the whole list here.
- */
-export const listGroupsForBusiness = query({
+export const list = query({
   args: { businessId: v.id("businesses") },
+  returns: v.array(groupItem),
   handler: async (ctx, args) => {
-    blockLegacyOperation();
-    // 1. Pull the managed-group records the owner has interacted with.
-    const managed = await ctx.db
-      .query("managedGroups")
-      .withIndex("by_business_group", (q) => q.eq("businessId", args.businessId))
-      .collect();
-
-    // 2. Also pull group customers (groups we've received messages in). This
-    //    covers the "we've never fetched from Evolution Go" case — the group
-    //    still shows up because someone messaged in it.
-    const groupCustomers = await ctx.db
-      .query("customers")
-      .withIndex("by_business_phone", (q) => q.eq("businessId", args.businessId))
-      .filter((q) => q.eq(q.field("isGroup"), true))
-      .collect();
-
-    // Merge by JID. `managedGroups` is the source of truth for the toggle,
-    // `customers` is the source of truth for last-seen activity.
-    const byJid = new Map<string, {
-      groupJid: string;
-      groupName: string;
-      memberCount: number;
-      role: "owner" | "admin" | "member" | "unknown";
-      isEnabled: boolean;
-      mentionOnly: boolean;
-      lastActivityAt: number | null;
-      managedGroupId: string | null;
-    }>();
-
-    for (const c of groupCustomers) {
-      byJid.set(c.phone, {
-        groupJid: c.phone,
-        groupName: c.name || c.phone.split("@")[0],
-        memberCount: c.groupMetadata?.participants?.length ?? 0,
-        role: "unknown",
-        isEnabled: false,
-        mentionOnly: true,
-        lastActivityAt: c.lastInteraction ?? null,
-        managedGroupId: null,
-      });
-    }
-
-    for (const m of managed) {
-      const prev = byJid.get(m.groupJid);
-      byJid.set(m.groupJid, {
-        groupJid: m.groupJid,
-        groupName: m.groupName || prev?.groupName || m.groupJid.split("@")[0],
-        memberCount: m.memberCount ?? prev?.memberCount ?? 0,
-        role: (m.role as "owner" | "admin" | "member") || prev?.role || "unknown",
-        isEnabled: m.isEnabled,
-        mentionOnly: m.mentionOnly ?? true,
-        lastActivityAt: prev?.lastActivityAt ?? null,
-        managedGroupId: m._id,
-      });
-    }
-
-    return Array.from(byJid.values()).sort((a, b) => {
-      // Sort: enabled first, then owned/admin, then by last activity desc.
-      if (a.isEnabled !== b.isEnabled) return a.isEnabled ? -1 : 1;
-      const rolePriority = { owner: 0, admin: 1, member: 2, unknown: 3 };
-      if (rolePriority[a.role] !== rolePriority[b.role]) {
-        return rolePriority[a.role] - rolePriority[b.role];
-      }
-      return (b.lastActivityAt ?? 0) - (a.lastActivityAt ?? 0);
-    });
+    await requireBusiness(ctx, args.businessId);
+    const groups = await ctx.db.query("managedGroups").withIndex("by_business_group", (builder) => builder.eq("businessId", args.businessId)).take(500);
+    return groups.map((group) => ({
+      groupJid: group.groupJid,
+      groupName: group.groupName ?? group.groupJid.split("@")[0],
+      memberCount: group.memberCount ?? 0,
+      role: group.role ?? "member",
+      isEnabled: group.isEnabled,
+      mentionOnly: group.mentionOnly ?? true,
+      lastRefreshedAt: group.lastRefreshedAt ?? null,
+    })).sort((a, b) => Number(b.isEnabled) - Number(a.isEnabled) || ({ owner: 0, admin: 1, member: 2 }[a.role] - { owner: 0, admin: 1, member: 2 }[b.role]) || a.groupName.localeCompare(b.groupName));
   },
 });
 
-/**
- * Fast check used by the AI pipeline: is this specific group opted in?
- * Returns `null` if not opted in (assistant should stay silent), otherwise
- * returns the ManagedGroup record with the reply rules.
- */
-export const getManagedGroup = query({
-  args: { businessId: v.id("businesses"), groupJid: v.string() },
+export const setEnabled = mutation({
+  args: { businessId: v.id("businesses"), groupJid: v.string(), isEnabled: v.boolean(), groupName: v.optional(v.string()), memberCount: v.optional(v.number()), role: v.optional(groupRole) },
+  returns: v.null(),
   handler: async (ctx, args) => {
-    blockLegacyOperation();
-    return await ctx.db
-      .query("managedGroups")
-      .withIndex("by_business_group", (q) =>
-        q.eq("businessId", args.businessId).eq("groupJid", args.groupJid)
-      )
-      .unique();
+    const business = await requireBusiness(ctx, args.businessId);
+    if (!args.groupJid.endsWith("@g.us")) throw new ConvexError({ code: "INVALID_GROUP" });
+    if (args.isEnabled && (!(business.groupAutoReplyEnabled ?? false) || (business.businessSystemPrompt?.trim().length ?? 0) < BUSINESS_SYSTEM_PROMPT_MIN_LENGTH)) {
+      throw new ConvexError({ code: "GROUP_ASSISTANT_NOT_READY" });
+    }
+    const group = await ctx.db.query("managedGroups").withIndex("by_business_group", (builder) => builder.eq("businessId", args.businessId).eq("groupJid", args.groupJid)).unique();
+    if (!group) throw new ConvexError({ code: "GROUP_NOT_FOUND" });
+    await ctx.db.patch(group._id, { isEnabled: args.isEnabled, enabledAt: args.isEnabled ? Date.now() : undefined, updatedAt: Date.now() });
+    return null;
   },
 });
 
-// ─── Mutations ──────────────────────────────────────────────────────────────
-
-/**
- * Turns AI on/off for a single group. Called from the settings UI when the
- * owner flips a toggle. Creates the ManagedGroup row if it doesn't exist yet
- * (e.g. first time the owner enables a group discovered from inbound traffic).
- */
-export const setGroupEnabled = mutation({
-  args: {
-    businessId: v.id("businesses"),
-    groupJid: v.string(),
-    isEnabled: v.boolean(),
-    // Optional metadata to seed the row on first-enable.
-    groupName: v.optional(v.string()),
-    memberCount: v.optional(v.number()),
-    role: v.optional(v.union(v.literal("owner"), v.literal("admin"), v.literal("member"))),
-  },
+export const setMentionOnly = mutation({
+  args: { businessId: v.id("businesses"), groupJid: v.string(), mentionOnly: v.boolean() },
+  returns: v.null(),
   handler: async (ctx, args) => {
-    blockLegacyOperation();
-    if (!args.groupJid.endsWith("@g.us")) {
-      throw new Error("Only WhatsApp groups (JIDs ending in @g.us) can be managed.");
-    }
-
-    const existing = await ctx.db
-      .query("managedGroups")
-      .withIndex("by_business_group", (q) =>
-        q.eq("businessId", args.businessId).eq("groupJid", args.groupJid)
-      )
-      .unique();
-
-    if (existing) {
-      await ctx.db.patch(existing._id, {
-        isEnabled: args.isEnabled,
-        ...(args.groupName !== undefined ? { groupName: args.groupName } : {}),
-        ...(args.memberCount !== undefined ? { memberCount: args.memberCount } : {}),
-        ...(args.role !== undefined ? { role: args.role } : {}),
-      });
-      return existing._id;
-    }
-
-    return await ctx.db.insert("managedGroups", {
-      businessId: args.businessId,
-      groupJid: args.groupJid,
-      groupName: args.groupName,
-      memberCount: args.memberCount,
-      role: args.role,
-      isEnabled: args.isEnabled,
-      mentionOnly: true, // safe default — user can toggle per group
-      addedAt: Date.now(),
-    });
+    await requireBusiness(ctx, args.businessId);
+    const group = await ctx.db.query("managedGroups").withIndex("by_business_group", (builder) => builder.eq("businessId", args.businessId).eq("groupJid", args.groupJid)).unique();
+    if (!group) throw new ConvexError({ code: "GROUP_NOT_FOUND" });
+    await ctx.db.patch(group._id, { mentionOnly: args.mentionOnly, updatedAt: Date.now() });
+    return null;
   },
 });
 
-/**
- * Owner picks whether the assistant only replies when tagged, or on any buying
- * signal in the group. Community groups → mention-only. Personal storefront
- * groups → often "reply to any buying signal".
- */
-export const setGroupMentionOnly = mutation({
-  args: {
-    businessId: v.id("businesses"),
-    groupJid: v.string(),
-    mentionOnly: v.boolean(),
-  },
+export const authorizeRefresh = internalQuery({
+  args: { businessId: v.id("businesses"), ownerId: v.string() },
+  returns: v.object({ sessionId: v.id("whatsappSessions"), tokenCiphertext: v.string(), providerInstanceId: v.string() }),
   handler: async (ctx, args) => {
-    blockLegacyOperation();
-    const existing = await ctx.db
-      .query("managedGroups")
-      .withIndex("by_business_group", (q) =>
-        q.eq("businessId", args.businessId).eq("groupJid", args.groupJid)
-      )
-      .unique();
-
-    if (!existing) {
-      // The user is trying to configure a group they haven't opted in yet.
-      // Create it as disabled so the setting is preserved for when they enable.
-      await ctx.db.insert("managedGroups", {
-        businessId: args.businessId,
-        groupJid: args.groupJid,
-        isEnabled: false,
-        mentionOnly: args.mentionOnly,
-        addedAt: Date.now(),
-      });
-      return;
-    }
-
-    await ctx.db.patch(existing._id, { mentionOnly: args.mentionOnly });
+    const business = await ctx.db.get(args.businessId);
+    if (!business || business.ownerId !== args.ownerId || business.foundationVersion !== 1) throw new ConvexError({ code: "NOT_FOUND" });
+    const session = await ctx.db.query("whatsappSessions").withIndex("by_business", (builder) => builder.eq("businessId", args.businessId)).unique();
+    if (!session || session.state !== "connected" || !session.providerInstanceId) throw new ConvexError({ code: "WHATSAPP_NOT_CONNECTED" });
+    return { sessionId: session._id, tokenCiphertext: session.tokenCiphertext, providerInstanceId: session.providerInstanceId };
   },
 });
 
-/**
- * Internal — used by refreshGroups action to bulk-upsert Evolution Go's
- * group list. Preserves existing owner toggles (never flips isEnabled back
- * to false on refresh).
- */
-export const upsertGroupsFromEvolution = mutation({
-  args: {
-    businessId: v.id("businesses"),
-    groups: v.array(v.object({
-      jid: v.string(),
-      name: v.string(),
-      memberCount: v.number(),
-      role: v.union(v.literal("owner"), v.literal("admin"), v.literal("member")),
-    })),
-  },
+export const upsertFromProvider = internalMutation({
+  args: { businessId: v.id("businesses"), groups: v.array(v.object({ jid: v.string(), name: v.string(), memberCount: v.number(), role: groupRole })) },
+  returns: v.number(),
   handler: async (ctx, args) => {
-    blockLegacyOperation();
     const now = Date.now();
-    for (const g of args.groups) {
-      const existing = await ctx.db
-        .query("managedGroups")
-        .withIndex("by_business_group", (q) =>
-          q.eq("businessId", args.businessId).eq("groupJid", g.jid)
-        )
-        .unique();
-
+    for (const group of args.groups.slice(0, 500)) {
+      const existing = await ctx.db.query("managedGroups").withIndex("by_business_group", (builder) => builder.eq("businessId", args.businessId).eq("groupJid", group.jid)).unique();
       if (existing) {
-        await ctx.db.patch(existing._id, {
-          groupName: g.name,
-          memberCount: g.memberCount,
-          role: g.role,
-          lastRefreshedAt: now,
-        });
+        await ctx.db.patch(existing._id, { groupName: group.name, memberCount: group.memberCount, role: group.role, lastRefreshedAt: now, updatedAt: now });
       } else {
-        await ctx.db.insert("managedGroups", {
-          businessId: args.businessId,
-          groupJid: g.jid,
-          groupName: g.name,
-          memberCount: g.memberCount,
-          role: g.role,
-          isEnabled: false, // safe default — owner must explicitly opt in
-          mentionOnly: true,
-          lastRefreshedAt: now,
-          addedAt: now,
-        });
+        await ctx.db.insert("managedGroups", { businessId: args.businessId, groupJid: group.jid, groupName: group.name, memberCount: group.memberCount, role: group.role, isEnabled: false, mentionOnly: true, lastRefreshedAt: now, addedAt: now, updatedAt: now });
       }
     }
-    return { upserted: args.groups.length };
+    return args.groups.length;
   },
 });
 
-// ─── Actions ────────────────────────────────────────────────────────────────
+export const upsertDiscovered = internalMutation({
+  args: { businessId: v.id("businesses"), groupJid: v.string(), groupName: v.optional(v.string()) },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const existing = await ctx.db.query("managedGroups").withIndex("by_business_group", (builder) => builder.eq("businessId", args.businessId).eq("groupJid", args.groupJid)).unique();
+    if (!existing) await ctx.db.insert("managedGroups", { businessId: args.businessId, groupJid: args.groupJid, groupName: args.groupName, role: "member", isEnabled: false, mentionOnly: true, addedAt: Date.now(), updatedAt: Date.now() });
+    return null;
+  },
+});
 
-/**
- * Calls Evolution Go to refresh the group list. Called from the settings UI
- * when the owner clicks "Refresh groups". Falls back gracefully if the
- * Evolution Go build doesn't support /group/fetchAllGroups.
- */
-export const refreshGroups = action({
+export const refresh = action({
   args: { businessId: v.id("businesses") },
-  handler: async (ctx, args): Promise<{ refreshed: number; source: "evolution" | "cache_only" }> => {
-    blockLegacyOperation();
-    const business = await ctx.runQuery(api.businesses.getBusinessById, {
-      businessId: args.businessId,
-    });
-    if (!business?.evolutionInstanceName) {
-      return { refreshed: 0, source: "cache_only" };
-    }
-
-    const groups = await evoClient.fetchAllGroups(business.evolutionInstanceName);
-    if (groups.length === 0) {
-      // Endpoint not available or genuinely no groups. UI still shows any
-      // groups we've seen in inbound traffic (listGroupsForBusiness merges both).
-      return { refreshed: 0, source: "cache_only" };
-    }
-
-    await ctx.runMutation(api.groups.upsertGroupsFromEvolution, {
-      businessId: args.businessId,
-      groups: groups.map((g) => ({
-        jid: g.jid,
-        name: g.name,
-        memberCount: g.memberCount,
-        role: g.role,
-      })),
-    });
-
-    return { refreshed: groups.length, source: "evolution" };
+  returns: v.object({ refreshed: v.number() }),
+  handler: async (ctx, args) => {
+    const identity = await requireIdentity(ctx);
+    const session = await ctx.runQuery(internal.groups.authorizeRefresh, { businessId: args.businessId, ownerId: identity.subject });
+    const token = await decryptSecret(session.tokenCiphertext, `business:${args.businessId}:session-token`);
+    const result = await providerRequest("GET", "/group/list", { token, instanceId: session.providerInstanceId });
+    const groups = providerGroups(result);
+    await ctx.runMutation(internal.groups.upsertFromProvider, { businessId: args.businessId, groups });
+    return { refreshed: groups.length };
   },
 });
+
+// Legacy names stay exported so the dormant pre-foundation UI keeps compiling.
+export const listGroupsForBusiness = list;
+export const setGroupEnabled = setEnabled;
+export const setGroupMentionOnly = setMentionOnly;
+export const refreshGroups = refresh;

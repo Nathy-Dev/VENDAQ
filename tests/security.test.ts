@@ -58,7 +58,7 @@ describe("foundation security invariants", () => {
   });
 
   it("blocks all legacy registered functions before database or network access", async () => {
-    const modules = import.meta.glob("../convex/{ai,businesses,groups,interactions,orders,pipeline,safeguards,whatsapp,test,temp_test}.ts");
+    const modules = import.meta.glob("../convex/{ai,businesses,interactions,orders,pipeline,safeguards,whatsapp,test,temp_test}.ts");
     let checked = 0;
     for (const load of Object.values(modules)) {
       const exports = await load() as Record<string, { isQuery?: boolean; isMutation?: boolean; isAction?: boolean; _handler?: (ctx: unknown, args: unknown) => unknown }>;

@@ -8,13 +8,16 @@ import type { Id } from "./_generated/dataModel";
 
 export const workspace = query({
   args: {},
-  returns: v.union(v.null(), v.object({ businessId: v.id("businesses"), name: v.string(), timezone: v.string(), retentionDays: v.number(), responseWindowMinutes: v.number(), state: connectionState, lastError: v.union(v.string(), v.null()), lastHealthAt: v.union(v.number(), v.null()) })),
+  returns: v.union(v.null(), v.object({ businessId: v.id("businesses"), name: v.string(), timezone: v.string(), retentionDays: v.number(), responseWindowMinutes: v.number(), state: connectionState, lastError: v.union(v.string(), v.null()), lastHealthAt: v.union(v.number(), v.null()), customerAutoReplyEnabled: v.boolean(), groupAutoReplyEnabled: v.boolean(), hasBusinessSystemPrompt: v.boolean(), launchReady: v.boolean() })),
   handler: async (ctx) => {
     const identity = await requireIdentity(ctx);
     const business = await ctx.db.query("businesses").withIndex("by_owner", (builder) => builder.eq("ownerId", identity.subject)).unique();
     if (!business || business.foundationVersion !== 1) return null;
     const session = await ctx.db.query("whatsappSessions").withIndex("by_business", (builder) => builder.eq("businessId", business._id)).unique();
-    return { businessId: business._id, name: business.name, timezone: business.timezone ?? "Africa/Lagos", retentionDays: business.messageRetentionDays ?? foundationPolicy().messageRetentionDays, responseWindowMinutes: business.responseWindowMinutes ?? foundationPolicy().responseWindowMinutes, state: session?.state ?? "disconnected", lastError: session?.lastError ?? null, lastHealthAt: session?.lastHealthAt ?? null };
+    const hasBusinessSystemPrompt = (business.businessSystemPrompt?.trim().length ?? 0) >= 120;
+    const customerAutoReplyEnabled = business.customerAutoReplyEnabled ?? false;
+    const groupAutoReplyEnabled = business.groupAutoReplyEnabled ?? false;
+    return { businessId: business._id, name: business.name, timezone: business.timezone ?? "Africa/Lagos", retentionDays: business.messageRetentionDays ?? foundationPolicy().messageRetentionDays, responseWindowMinutes: business.responseWindowMinutes ?? foundationPolicy().responseWindowMinutes, state: session?.state ?? "disconnected", lastError: session?.lastError ?? null, lastHealthAt: session?.lastHealthAt ?? null, customerAutoReplyEnabled, groupAutoReplyEnabled, hasBusinessSystemPrompt, launchReady: session?.state === "connected" && hasBusinessSystemPrompt && (customerAutoReplyEnabled || groupAutoReplyEnabled) };
   },
 });
 
@@ -29,7 +32,7 @@ export const createBusiness = mutation({
       if (existing.foundationVersion !== 1) throw new ConvexError({ code: "OWNER_MIGRATION_REQUIRED" });
       return existing._id;
     }
-    return await ctx.db.insert("businesses", { name, ownerId: identity.subject, whatsappStatus: "disconnected", whatsappMode: "unofficial", onboardingStep: 1, foundationVersion: 1, timezone: "Africa/Lagos", messageRetentionDays: foundationPolicy().messageRetentionDays, killSwitch: true, aiEnabled: false });
+    return await ctx.db.insert("businesses", { name, ownerId: identity.subject, whatsappStatus: "disconnected", whatsappMode: "unofficial", onboardingStep: 1, foundationVersion: 1, timezone: "Africa/Lagos", messageRetentionDays: foundationPolicy().messageRetentionDays, killSwitch: true, aiEnabled: false, customerAutoReplyEnabled: false, groupAutoReplyEnabled: false, statusViewerListEnabled: false });
   },
 });
 

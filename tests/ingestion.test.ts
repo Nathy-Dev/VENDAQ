@@ -75,7 +75,7 @@ describe("authenticated WhatsApp ingestion", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it("does not merge opaque LIDs with phone identities or create tasks from groups/Status views", async () => {
+  it("keeps group identities separate while blocking group tasks and Status-to-Cash observations", async () => {
     const harness = createHarness();
     const source = await tenant(harness);
     await webhook(harness, message(source, { chat: "12345@lid" }));
@@ -83,13 +83,16 @@ describe("authenticated WhatsApp ingestion", () => {
     await webhook(harness, message(source, { chat: "12345@g.us" }));
     await webhook(harness, { event: "Receipt", instanceId: source.instanceId, instanceToken: source.token, state: "Read", data: { Chat: "status@broadcast", Sender: "56789@lid", MessageIDs: ["status-1", "status-2"], Timestamp: new Date().toISOString() } });
     await drain(harness);
-    expect(await harness.run((ctx) => ctx.db.query("customers").collect())).toHaveLength(2);
+    expect(await harness.run((ctx) => ctx.db.query("customers").collect())).toHaveLength(3);
     const observations = await harness.run((ctx) => ctx.db.query("statusObservations").collect());
-    expect(observations).toHaveLength(2);
-    expect(JSON.stringify(observations)).not.toContain("56789@lid");
+    expect(observations).toHaveLength(0);
+    const groups = await harness.run((ctx) => ctx.db.query("managedGroups").collect());
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toMatchObject({ groupJid: "12345@g.us", isEnabled: false, mentionOnly: true });
     const tasks = await harness.run((ctx) => ctx.db.query("followUpTasks").collect());
     expect(tasks).toHaveLength(2);
     expect(tasks.every((task) => task.reason === "buying_signal" && task.triggerInteractionId !== undefined)).toBe(true);
+    expect(await harness.run((ctx) => ctx.db.query("assistantDispatches").collect())).toHaveLength(0);
     expect(fetch).not.toHaveBeenCalled();
   });
 

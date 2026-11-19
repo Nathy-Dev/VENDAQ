@@ -73,6 +73,7 @@
 .input:disabled { background: #f7f7f7; color: #737373; }
 .inlineForm .input { width: 180px; }
 .textarea { min-height: 110px; resize: vertical; }
+.promptTextarea { min-height: 280px; font-family: var(--font-geist-mono), ui-monospace, SFMono-Regular, Consolas, monospace; line-height: 1.65; }
 .form { display: grid; gap: 18px; }
 .fieldset { display: grid; gap: 16px; border: 0; padding: 18px 0 0; margin: 0; min-width: 0; border-top: 1px solid var(--dash-border); }
 .fieldset legend { float: left; width: 100%; font-size: 12px; font-weight: 600; margin-bottom: 2px; }
@@ -228,5 +229,19 @@
   .inlineForm label { flex: 1 1 100%; }
   .formFooter { flex-wrap: wrap; }
   .formFooter > button { width: 100%; }
-  .toolbar { align-items: flex-start; }
+.toolbar { align-items: flex-start; }
+}
+
+.groupList { display: grid; gap: 10px; margin-top: 16px; }
+.groupRow { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 15px 16px; border: 1px solid var(--dash-border); border-radius: 8px; background: #fff; }
+.groupInfo { min-width: 0; }
+.groupTitleRow { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.groupTitleRow strong { overflow-wrap: anywhere; font-size: 13px; }
+.groupInfo p { margin-top: 5px; color: var(--dash-text-muted); font-size: 11px; line-height: 1.6; }
+.groupControls { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 10px; flex-shrink: 0; }
+.compactCheck { display: inline-flex; align-items: center; gap: 6px; color: var(--dash-text-muted); font-size: 11px; }
+.compactCheck input { width: 15px; height: 15px; }
+@media (max-width: 700px) {
+  .groupRow { align-items: stretch; flex-direction: column; }
+  .groupControls { justify-content: space-between; }
 }

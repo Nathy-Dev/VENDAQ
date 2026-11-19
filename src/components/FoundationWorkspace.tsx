@@ -12,9 +12,11 @@ import DashboardShell from "./DashboardShell";
 import WorkspaceOverview from "./WorkspaceOverview";
 import WorkspaceInbox from "./WorkspaceInbox";
 import SellerWorkspacePanels from "./SellerWorkspacePanels";
-import WorkspaceSettings, { ConnectionPanel, ViewersPanel, ProfilePanel } from "./WorkspaceSettings";
+import WorkspaceSettings, { ConnectionPanel, ProfilePanel } from "./WorkspaceSettings";
 import { buttonClass, PageHeader } from "./dashboard-ui";
 import { Notice, type Feedback } from "./WorkspaceFeedback";
+import BusinessAssistantSettings from "./BusinessAssistantSettings";
+import WorkspaceGroups from "./WorkspaceGroups";
 import styles from "./FoundationWorkspace.module.css";
 
 export default function FoundationWorkspace() {
@@ -31,15 +33,17 @@ export default function FoundationWorkspace() {
         {screen === "overview" && <WorkspaceOverview workspace={workspace} />}
         {screen === "inbox" && <WorkspaceInbox workspace={workspace} />}
         {screen === "actions" && <SellerWorkspacePanels workspace={workspace} />}
-        {screen === "viewers" && <><PageHeader title="Status viewers" description="Private observation records, separate from your conversations and leads." /><ViewersPanel workspace={workspace} /></>}
+        {screen === "viewers" && <><PageHeader title="Coming in a later phase" description="Status-to-Cash is preserved in the codebase but blocked for the first launch." /><section className={styles.card}><h2>Status-to-Cash is not part of Launch 1</h2><p className={styles.helper}>This route cannot collect viewers, create leads, or trigger outreach. It will be reintroduced behind a deliberate rollout later.</p></section></>}
         {screen === "settings" && <WorkspaceSettings workspace={workspace} />}
         {screen === "profile" && <ProfilePanel workspace={workspace} />}
         {(screen === "setup" || screen === "connect") && (
           <div className={styles.stack}>
-            <PageHeader title="Connect your WhatsApp" description="One last step. Review the connection details before pairing your number." />
-            <div className={styles.steps}><span><b><Check size={12} /></b>Business created</span><span className={styles.current}><b>2</b>Connect WhatsApp</span></div>
+            <PageHeader title="Launch your WhatsApp assistant" description="Connect WhatsApp, teach Pipelixr about your business, then choose where it may reply." />
+            <div className={styles.steps}><span><b><Check size={12} /></b>Business created</span><span className={workspace.state === "connected" ? undefined : styles.current}><b>2</b>Connect WhatsApp</span><span className={workspace.hasBusinessSystemPrompt ? undefined : styles.current}><b>3</b>Business AI</span><span><b>4</b>Groups</span></div>
             <ConnectionPanel workspace={workspace} />
-            <div><Link href="/dashboard" className={buttonClass.secondary}>Go to workspace<ArrowRight size={14} /></Link><p className={styles.helper}>You can connect later from Settings. No messages are sent by Pipelixr.</p></div>
+            <BusinessAssistantSettings workspace={workspace} compact />
+            <WorkspaceGroups workspace={workspace} />
+            <div><Link href="/dashboard" className={buttonClass.secondary}>Go to workspace<ArrowRight size={14} /></Link><p className={styles.helper}>Pipelixr only replies after you save a complete system prompt and explicitly authorize customer or group replies.</p></div>
           </div>
         )}
       </div>
@@ -58,8 +62,8 @@ function BusinessSetup() {
     <section className={`${styles.card} ${styles.setupCard}`}>
       <Brand />
       <h1>A space for your business.</h1>
-      <p>Keep conversations, follow-ups, and orders together. Let’s start with your business name.</p>
-      <div className={styles.steps}><span className={styles.current}><b>1</b>Your business</span><span><b>2</b>Connect WhatsApp</span></div>
+      <p>Start with your business name. Next you will connect WhatsApp and teach Pipelixr how to represent you.</p>
+      <div className={styles.steps}><span className={styles.current}><b>1</b>Your business</span><span><b>2</b>Connect WhatsApp</span><span><b>3</b>Business AI</span></div>
       <form className={styles.form} onSubmit={async (event) => {
         event.preventDefault();
         if (busy) return;
@@ -73,7 +77,7 @@ function BusinessSetup() {
         <button className={buttonClass.primary} disabled={busy || name.trim().length < 2}>{busy ? "Creating workspace…" : "Continue"}{!busy && <ArrowRight size={14} />}</button>
       </form>
       <div className={styles.infoBanner} style={{ marginTop: 24 }}><ShieldCheck size={17} /><span>Your workspace is private to your account. Existing businesses are never linked automatically by email.</span></div>
-      <p className={styles.finePrint} style={{ marginTop: 16 }}><Link2 size={12} style={{ verticalAlign: "middle", marginRight: 5 }} />WhatsApp pairing is optional and requires your explicit consent.</p>
+      <p className={styles.finePrint} style={{ marginTop: 16 }}><Link2 size={12} style={{ verticalAlign: "middle", marginRight: 5 }} />WhatsApp pairing and automated replies each require separate explicit consent.</p>
     </section>
   );
 }

@@ -9,12 +9,13 @@ import { api } from "../../convex/_generated/api";
 import { initials } from "@/lib/workspace-ui";
 import Brand from "./Brand";
 import styles from "./DashboardNavbar.module.css";
+import { STATUS_TO_CASH_ENABLED } from "@/lib/launch-flags";
 
 const mainNavigation = [
   { href: "/dashboard", icon: Home, label: "Home" },
   { href: "/pipeline", icon: MessageCircle, label: "Inbox" },
   { href: "/revenue", icon: ListTodo, label: "Actions" },
-  { href: "/status", icon: Radio, label: "Viewers" },
+  ...(STATUS_TO_CASH_ENABLED ? [{ href: "/status", icon: Radio, label: "Viewers" }] : []),
 ];
 const accountNavigation = [
   { href: "/profile", icon: UserRound, label: "Profile" },

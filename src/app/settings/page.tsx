@@ -908,7 +908,7 @@ export default function SettingsPage() {
                             onClick={() => handleToggleGroup(g.groupJid, !g.isEnabled, {
                               groupName: g.groupName,
                               memberCount: g.memberCount,
-                              role: g.role === "unknown" ? undefined : g.role,
+                              role: g.role,
                             })}
                             className={`${styles.toggle} ${g.isEnabled ? styles.toggleOn : styles.toggleOff}`}
                             style={{ border: "none", cursor: "pointer", flexShrink: 0 }}

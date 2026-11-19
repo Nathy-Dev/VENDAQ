@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useQuery } from "convex/react";
 import { useSession } from "next-auth/react";
-import { ArrowRight, CheckCheck, ChevronRight, Clock3, ListTodo, MessageCircle, Settings, ShoppingBag, UsersRound } from "lucide-react";
+import { ArrowRight, CheckCheck, ChevronRight, Clock3, ListTodo, MessageCircle, Settings, ShoppingBag, UsersRound, Sparkles } from "lucide-react";
 import { api } from "../../convex/_generated/api";
 import { formatDate, formatMoney, initials } from "@/lib/workspace-ui";
 import type { Workspace } from "@/types/workspace";
@@ -32,6 +32,7 @@ export default function WorkspaceOverview({ workspace }: { workspace: Workspace 
       <div className={styles.overviewGrid}>
         <div className={styles.stack}>
           {!connected && <div className={styles.infoBanner}><MessageCircle size={18} /><div><strong>Your inbox is ready when you are.</strong><br />Connect WhatsApp to start capturing new conversations. <Link href="/onboarding/connect" style={{ textDecoration: "underline", textUnderlineOffset: 3 }}>Review connection</Link></div></div>}
+          {connected && !workspace.launchReady && <div className={styles.infoBanner}><Sparkles size={18} /><div><strong>Finish setting up Pipelixr replies.</strong><br />Add your business system prompt and authorize customer or group replies. <Link href="/settings" style={{ textDecoration: "underline", textUnderlineOffset: 3 }}>Open Business AI settings</Link></div></div>}
           <Panel title="Your next steps" description="Payment reminders first, then buying signals and quiet inquiries." flush action={<Link href="/revenue" className={buttonClass.ghost}>View all<ArrowRight size={13} /></Link>}>
             {actions === undefined ? <div style={{ padding: 20 }}><LoadingRows label="Loading your actions" /></div> : actions.length === 0 ?
               <EmptyState icon={CheckCheck} title="You're all caught up" description="When a conversation needs attention, your next step appears here." action={<Link href="/pipeline" className={buttonClass.secondary}>Browse your inbox</Link>} /> :
@@ -59,7 +60,7 @@ export default function WorkspaceOverview({ workspace }: { workspace: Workspace 
             <p className={styles.railHeading}>A simpler daily routine</p>
             <ol className={styles.workflow}><li><span>1</span><div><strong>Catch up</strong><p>Check your recent customer conversations.</p></div></li><li><span>2</span><div><strong>Follow through</strong><p>Review a draft and reply yourself in WhatsApp.</p></div></li><li><span>3</span><div><strong>Keep track</strong><p>Record the outcome. See what’s moving.</p></div></li></ol>
           </div>
-          <p className={styles.finePrint}><Clock3 size={12} style={{ verticalAlign: "middle", marginRight: 4 }} />Your time zone: {workspace.timezone}.<br />Pipelixr never sends customer messages. Revenue is seller-recorded unless independently verified.</p>
+          <p className={styles.finePrint}><Clock3 size={12} style={{ verticalAlign: "middle", marginRight: 4 }} />Your time zone: {workspace.timezone}.<br />Pipelixr replies only where you explicitly authorize it and only after a complete business prompt is saved. Revenue is seller-recorded unless independently verified.</p>
         </aside>
       </div>
     </>

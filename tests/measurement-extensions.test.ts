@@ -25,7 +25,7 @@ describe("Phase 5 measurement and Phase 6 extensions", () => {
     await expect(other.owner.query(api.measurement.dashboard, { businessId: source.businessId })).rejects.toThrow("NOT_FOUND");
   });
 
-  it("keeps Status viewers opaque, opt-in, manual-only, and tenant-isolated", async () => {
+  it("keeps Status-to-Cash blocked and tenant-isolated during Launch 1", async () => {
     const harness = createHarness();
     const source = await tenant(harness);
     const other = await tenant(harness, "other-seller");
@@ -33,10 +33,10 @@ describe("Phase 5 measurement and Phase 6 extensions", () => {
     expect(await source.owner.query(api.extensions.statusViewers, { businessId: source.businessId })).toEqual([]);
     await source.owner.mutation(api.extensions.updateSettings, { businessId: source.businessId, statusViewerListEnabled: true, automatedSendingRequested: true });
     const viewers = await source.owner.query(api.extensions.statusViewers, { businessId: source.businessId });
-    expect(viewers[0]).toMatchObject({ opaqueViewerKey: "opaque-hash-only", statusMessageId: "status-1" });
+    expect(viewers).toEqual([]);
     expect(await harness.run((ctx) => ctx.db.query("customers").collect())).toHaveLength(0);
     expect(await harness.run((ctx) => ctx.db.query("followUpTasks").collect())).toHaveLength(0);
-    expect((await source.owner.query(api.extensions.settings, { businessId: source.businessId }))).toMatchObject({ automatedSendingRequested: true, automatedSendingAvailable: false });
+    expect((await source.owner.query(api.extensions.settings, { businessId: source.businessId }))).toMatchObject({ statusViewerListEnabled: false, automatedSendingRequested: true, automatedSendingAvailable: false, unavailableReason: "Status-to-Cash is held for a later rollout." });
     await expect(other.owner.query(api.extensions.statusViewers, { businessId: source.businessId })).rejects.toThrow("NOT_FOUND");
     expect(fetch).not.toHaveBeenCalled();
   });

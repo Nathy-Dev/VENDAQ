@@ -2,13 +2,14 @@ import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { requireBusiness } from "./lib/authorization";
 import { foundationPolicy } from "./lib/policy";
+import { STATUS_TO_CASH_ENABLED } from "./lib/launch";
 
 export const settings = query({
   args: { businessId: v.id("businesses") },
   returns: v.object({ statusViewerListEnabled: v.boolean(), automatedSendingRequested: v.boolean(), automatedSendingAvailable: v.boolean(), unavailableReason: v.string() }),
   handler: async (ctx, args) => {
     const business = await requireBusiness(ctx, args.businessId);
-    return { statusViewerListEnabled: business.statusViewerListEnabled ?? false, automatedSendingRequested: business.automatedSendingRequested ?? false, automatedSendingAvailable: false, unavailableReason: "Evolution Go send idempotency and timeout reconciliation are not qualified, so automated sending remains blocked." };
+    return { statusViewerListEnabled: STATUS_TO_CASH_ENABLED && (business.statusViewerListEnabled ?? false), automatedSendingRequested: business.automatedSendingRequested ?? false, automatedSendingAvailable: business.customerAutoReplyEnabled ?? false, unavailableReason: STATUS_TO_CASH_ENABLED ? "" : "Status-to-Cash is held for a later rollout." };
   },
 });
 
@@ -18,7 +19,7 @@ export const updateSettings = mutation({
   handler: async (ctx, args) => {
     await requireBusiness(ctx, args.businessId);
     // The request records product interest only. It never enables dispatch.
-    await ctx.db.patch(args.businessId, { statusViewerListEnabled: args.statusViewerListEnabled, automatedSendingRequested: args.automatedSendingRequested });
+    await ctx.db.patch(args.businessId, { statusViewerListEnabled: STATUS_TO_CASH_ENABLED && args.statusViewerListEnabled, automatedSendingRequested: args.automatedSendingRequested });
     return null;
   },
 });
@@ -28,7 +29,7 @@ export const statusViewers = query({
   returns: v.array(v.object({ observationId: v.id("statusObservations"), statusMessageId: v.string(), opaqueViewerKey: v.string(), observedAt: v.number() })),
   handler: async (ctx, args) => {
     const business = await requireBusiness(ctx, args.businessId);
-    if (!business.statusViewerListEnabled) return [];
+    if (!STATUS_TO_CASH_ENABLED || !business.statusViewerListEnabled) return [];
     const observations = await ctx.db.query("statusObservations").withIndex("by_business_time", (builder) => builder.eq("businessId", args.businessId)).order("desc").take(100);
     // Identity keys are deployment-keyed hashes. Never expose or infer a phone.
     return observations.map((entry) => ({ observationId: entry._id, statusMessageId: entry.statusMessageId, opaqueViewerKey: entry.viewerIdentityKey, observedAt: entry.observedAt }));

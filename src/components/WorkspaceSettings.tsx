@@ -11,6 +11,8 @@ import ConnectionPanel from "./WorkspaceConnection";
 import { ExtensionPreferences } from "./WorkspaceAccount";
 import FollowUpRules from "./WorkspaceFollowUpRules";
 import WorkspaceHealth from "./WorkspaceHealth";
+import BusinessAssistantSettings from "./BusinessAssistantSettings";
+import WorkspaceGroups from "./WorkspaceGroups";
 import styles from "./FoundationWorkspace.module.css";
 
 export { default as ConnectionPanel } from "./WorkspaceConnection";
@@ -19,6 +21,8 @@ export { ViewersPanel, ProfilePanel } from "./WorkspaceAccount";
 const sections = [
   { value: "general", label: "General" },
   { value: "connection", label: "Connection" },
+  { value: "assistant", label: "Business AI" },
+  { value: "groups", label: "Groups & communities" },
   { value: "rules", label: "Follow-up rules" },
   { value: "privacy", label: "Privacy & health" },
   { value: "preferences", label: "Preferences" },
@@ -34,6 +38,8 @@ export default function WorkspaceSettings({ workspace }: { workspace: Workspace 
         <div className={styles.stack}>
           {section === "general" && <GeneralSettings workspace={workspace} />}
           {section === "connection" && <ConnectionPanel workspace={workspace} />}
+          {section === "assistant" && <BusinessAssistantSettings workspace={workspace} />}
+          {section === "groups" && <WorkspaceGroups workspace={workspace} />}
           {section === "rules" && <FollowUpRules workspace={workspace} />}
           {section === "privacy" && <WorkspaceHealth workspace={workspace} />}
           {section === "preferences" && <ExtensionPreferences workspace={workspace} />}
@@ -51,7 +57,7 @@ function GeneralSettings({ workspace }: { workspace: Workspace }) {
   return <>
     <section className={styles.card}>
       <div className={styles.sectionHeading}><div><h2>Business details</h2><p>The essentials behind this workspace.</p></div></div>
-      <dl className={styles.profileDetails}><div><dt>Business name</dt><dd>{workspace.name}</dd></div><div><dt>Timezone</dt><dd>{workspace.timezone.replaceAll("_", " ")}</dd></div><div><dt>Message retention</dt><dd>{workspace.retentionDays} days</dd></div><div><dt>Sending mode</dt><dd>Manual, in WhatsApp</dd></div></dl>
+      <dl className={styles.profileDetails}><div><dt>Business name</dt><dd>{workspace.name}</dd></div><div><dt>Timezone</dt><dd>{workspace.timezone.replaceAll("_", " ")}</dd></div><div><dt>Message retention</dt><dd>{workspace.retentionDays} days</dd></div><div><dt>Reply mode</dt><dd>{workspace.customerAutoReplyEnabled || workspace.groupAutoReplyEnabled ? "Authorized scopes only" : "Off"}</dd></div></dl>
     </section>
     <section className={styles.card}>
       <div className={styles.sectionHeading}><div><h2>Response window</h2><p>When an unanswered buying signal should be considered overdue.</p></div></div>
@@ -69,6 +75,6 @@ function GeneralSettings({ workspace }: { workspace: Workspace }) {
         <Notice feedback={feedback} /><div className={styles.formFooter}><button type="submit" className={buttonClass.primary} disabled={busy || Number(windowMinutes) === workspace.responseWindowMinutes}>{busy ? "Saving…" : "Save changes"}</button></div>
       </form>
     </section>
-    <div className={styles.infoBanner}><ShieldCheck size={17} aria-hidden="true" /><p>Opening a conversation here never sends a reply or marks it read in WhatsApp. Follow-up drafts need your review and a manual send.</p></div>
+    <div className={styles.infoBanner}><ShieldCheck size={17} aria-hidden="true" /><p>Opening a conversation never marks it read. Automated replies are controlled separately by the saved business prompt, one-to-one authorization, and per-group opt-in.</p></div>
   </>;
 }

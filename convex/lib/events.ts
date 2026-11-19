@@ -29,15 +29,18 @@ export function normalizeEvent(body: Record<string, unknown>, now: number): Norm
     const info = object(data.Info);
     const message = object(data.Message);
     const chat = normalizeIdentity(info.Chat);
-    if (info.IsGroup === true || chat.endsWith("@g.us")) return { kind: "ignored", reason: "GROUP_DISABLED" };
+    const isGroup = info.IsGroup === true || chat.endsWith("@g.us");
     if (chat === "status@broadcast") return { kind: "ignored", reason: "STATUS_CONTENT_DEFERRED" };
     const messageId = text(info.ID);
     if (!messageId || (info.ID as string).length > 256 || typeof info.IsFromMe !== "boolean") throw new Error("INVALID_MESSAGE_METADATA");
     const plain = text(message.conversation, foundationPolicy().maxTextLength) || text(object(message.extendedTextMessage).text, foundationPolicy().maxTextLength);
     const type = plain ? "text" : message.imageMessage ? "image" : message.videoMessage ? "video" : message.audioMessage ? "audio" : message.documentMessage ? "document" : message.locationMessage ? "location" : "unsupported";
     const caption = text(object(message.imageMessage ?? message.videoMessage ?? message.documentMessage).caption, foundationPolicy().maxTextLength);
+    // Only trust an explicit provider signal that the connected account was
+    // mentioned. A generic `mentionedJid` list could refer to somebody else.
+    const mentioned = isGroup && (info.IsMention === true || info.IsBotMentioned === true || data.IsMentioned === true);
     return {
-      kind: "message", messageId, chat, identityKey: "", fromMe: event === "SendMessage" || info.IsFromMe,
+      kind: "message", messageId, chat, identityKey: "", fromMe: event === "SendMessage" || info.IsFromMe, isGroup, mentioned,
       ...(text(info.PushName, 120) ? { name: text(info.PushName, 120) } : {}),
       // Large text is minimized, with an explicit manual-review signal rather
       // than presenting a truncated message as complete buyer context.
