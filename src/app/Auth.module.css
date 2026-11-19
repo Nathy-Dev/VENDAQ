@@ -1,12 +1,12 @@
-.authPage { min-height: 100dvh; display: flex; flex-direction: column; background: #fff; overflow-x: clip; }
+.authPage { min-height: 100dvh; display: flex; flex-direction: column; background: radial-gradient(circle at 10% 30%, rgb(15 159 112 / 8%), transparent 28rem), #fbfdfc; overflow-x: clip; }
 .topbar { width: min(100%, 1200px); margin-inline: auto; min-height: 92px; padding: 24px 40px; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 .backLink { display: inline-flex; align-items: center; gap: 7px; min-height: 36px; color: #737373; font-size: 12px; }
-.backLink:hover { color: #171717; }
+.backLink:hover { color: var(--accent-strong); }
 .authLayout { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) minmax(340px, 420px); align-items: center; gap: clamp(48px, 9vw, 140px); width: min(100%, 1070px); margin: 20px auto 44px; padding: 30px 40px; }
-.eyebrow { color: #737373; font-size: 11px; font-weight: 500; }
+.eyebrow { color: var(--accent-strong); font-size: 11px; font-weight: 600; }
 .story h2 { font-size: clamp(40px, 4vw, 54px); line-height: 1.1; font-weight: 600; letter-spacing: -2.4px; margin-top: 20px; }
 .story > p { color: #737373; font-size: 14px; line-height: 1.9; max-width: 380px; margin-top: 20px; }
-.storyPreview { border: 1px solid #e8e8e8; border-radius: 10px; padding: 22px; max-width: 370px; margin-top: 34px; }
+.storyPreview { border: 1px solid var(--accent-border); border-radius: 10px; padding: 22px; max-width: 370px; margin-top: 34px; background: rgb(255 255 255 / 72%); }
 .previewHeading { display: flex; align-items: center; gap: 10px; font-size: 12px; padding-bottom: 20px; border-bottom: 1px solid #eee; }
 .previewHeading strong { font-weight: 600; }
 .previewRow { display: flex; align-items: center; gap: 14px; padding-top: 21px; }
@@ -25,7 +25,7 @@
 .inputGroup label { font-size: 12px; font-weight: 500; }
 .input { width: 100%; min-height: 44px; border: 1px solid #d4d4d4; border-radius: 7px; padding: 11px 12px; font-size: 13px; background: #fff; }
 .input:hover:not(:disabled) { border-color: #a3a3a3; }
-.input:focus { border-color: #171717; }
+.input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring); outline: none; }
 .input:disabled { background: #fafafa; color: #737373; }
 .passwordWrapper { position: relative; }
 .passwordWrapper .input { padding-right: 45px; }
@@ -33,8 +33,8 @@
 .passwordToggle:hover { color: #171717; background: #f5f5f5; }
 .fieldHint { color: #737373; font-size: 10px; line-height: 1.6; }
 .submitBtn, .googleBtn { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; min-height: 43px; border-radius: 7px; font-size: 12px; font-weight: 600; border: 1px solid #171717; transition: background 150ms; }
-.submitBtn { background: #171717; color: #fff; margin-top: 3px; }
-.submitBtn:hover:not(:disabled) { background: #333; }
+.submitBtn { background: var(--accent-strong); color: #fff; margin-top: 3px; border-color: var(--accent-strong); box-shadow: 0 9px 22px rgb(8 122 87 / 17%); }
+.submitBtn:hover:not(:disabled) { background: var(--primary-dark); }
 .submitBtn:disabled, .googleBtn:disabled, .passwordToggle:disabled { opacity: .5; }
 .googleBtn { background: #fff; border-color: #d4d4d4; }
 .googleBtn:hover:not(:disabled) { background: #fafafa; }

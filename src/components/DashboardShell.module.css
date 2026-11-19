@@ -1,5 +1,5 @@
 .shell { min-height: 100dvh; background: var(--dash-bg); color: var(--dash-text); }
-.main { margin-left: var(--sidebar-width); min-height: 100dvh; padding: 38px clamp(24px, 4vw, 64px) 40px; }
+.main { margin-left: var(--sidebar-width); min-height: 100dvh; padding: 38px clamp(24px, 4vw, 64px) 40px; background: radial-gradient(circle at 100% 0%, rgb(15 159 112 / 5%), transparent 26rem); }
 .main:focus { outline: none; }
 .content { width: 100%; max-width: 1096px; margin-inline: auto; min-width: 0; }
 @media (max-width: 767px) {
