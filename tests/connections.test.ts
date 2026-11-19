@@ -247,7 +247,7 @@ describe("read-only provider sessions", () => {
     expect(() => providerInstances({ message: "unexpected" })).toThrow("PROVIDER_INSTANCE_UNRESOLVED");
     expect(() => providerConnectionState({ unexpected: true })).toThrow("UNKNOWN_PROVIDER_STATE");
     expect(providerDisplayName("  Ada's   Studio  ", "business-id")).toBe("Ada's Studio");
-    expect(providerDisplayName(" ", "business-id")).toBe("Pipelixr ness-id");
+    expect(providerDisplayName(" ", "business-id")).toBe("Pipelixr iness-id");
     enableProvider();
     vi.stubEnv("EVOLUTION_GO_URL", "http://public.example.test");
     await expect(providerRequest("GET", "/instance/all")).rejects.toThrow("INSECURE_PROVIDER_URL");
