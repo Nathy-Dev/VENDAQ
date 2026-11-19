@@ -117,6 +117,15 @@ export const ownedSession = internalQuery({
   },
 });
 
+export const ownedBusiness = internalQuery({
+  args: { businessId: v.id("businesses") },
+  returns: v.object({ _id: v.id("businesses"), name: v.string() }),
+  handler: async (ctx, args) => {
+    const business = await requireBusiness(ctx, args.businessId);
+    return { _id: business._id, name: business.name };
+  },
+});
+
 export const sessionById = internalQuery({
   args: { sessionId: v.id("whatsappSessions") }, returns: v.union(v.null(), sessionDocument),
   handler: async (ctx, args) => ctx.db.get(args.sessionId),

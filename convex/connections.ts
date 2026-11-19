@@ -5,7 +5,7 @@ import { connectionState, sessionDocument } from "./lib/validators";
 import { decryptSecret, encryptSecret, randomToken, sha256 } from "./lib/crypto";
 import { logEvent } from "./lib/policy";
 import { object } from "./lib/events";
-import { providerRequest, providerInstanceId, providerInstances, providerConnectionState, providerErrorCode, providerQr } from "./lib/evolution";
+import { providerRequest, providerDisplayName, providerInstanceId, providerInstances, providerConnectionState, providerErrorCode, providerQr } from "./lib/evolution";
 
 const connectionResult = v.object({ state: connectionState, qr: v.union(v.string(), v.null()), error: v.union(v.string(), v.null()) });
 type ConnectionResult = Infer<typeof connectionResult>;
@@ -20,8 +20,13 @@ async function resetRevokedSession(ctx: ActionCtx, session: SessionDocument): Pr
   if (session.state !== "revoked") return { state: session.state, qr: null, error: "SESSION_RESET_NOT_ALLOWED" };
   try {
     const instances = providerInstances(await providerRequest("GET", "/instance/all"));
+    const existingCredential = session.tokenCiphertext
+      ? await decryptSecret(session.tokenCiphertext, `business:${session.businessId}:session-token`)
+      : "";
     const remoteStillExists = instances.some((instance) =>
-      (session.providerInstanceId !== undefined && instance.id === session.providerInstanceId) || instance.name === session.instanceName
+      (session.providerInstanceId !== undefined && instance.id === session.providerInstanceId) ||
+      instance.name === session.instanceName ||
+      (existingCredential !== "" && instance.token === existingCredential)
     );
     if (remoteStillExists) return { state: "revoked", qr: null, error: "PROVIDER_INSTANCE_STILL_EXISTS" };
     const token = randomToken();
@@ -45,7 +50,7 @@ async function resetRevokedSession(ctx: ActionCtx, session: SessionDocument): Pr
 export const connect = action({
   args: { businessId: v.id("businesses"), disclosureVersion: v.string(), acceptedRisk: v.boolean() }, returns: connectionResult,
   handler: async (ctx, args): Promise<ConnectionResult> => {
-    await ctx.runQuery(internal.foundation.ownedSession, { businessId: args.businessId });
+    const business = await ctx.runQuery(internal.foundation.ownedBusiness, { businessId: args.businessId });
     if (!args.acceptedRisk) throw new ConvexError({ code: "DISCLOSURE_REQUIRED" });
     if (process.env.FOUNDATION_PROVIDER_ENABLED !== "true" || process.env.FOUNDATION_PROVIDER_CONTRACT_VERIFIED !== "true") return { state: "disconnected", qr: null, error: "PROVIDER_QUALIFICATION_REQUIRED" };
     let tokenCiphertext: string;
@@ -66,7 +71,10 @@ export const connect = action({
       let instanceId = session.providerInstanceId;
       if (!instanceId) {
         const listing = await providerRequest("GET", "/instance/all");
-        const matches = providerInstances(listing).filter((instance) => instance.name === session.instanceName);
+        const displayName = providerDisplayName(business.name, business._id);
+        const matches = providerInstances(listing).filter((instance) =>
+          instance.name === session.instanceName || (instance.token !== "" && instance.token === credential)
+        );
         if (matches.length > 1) throw new Error("PROVIDER_INSTANCE_UNRESOLVED");
         // Display-name equality is not proof that a remotely found instance is
         // ours. Adopt it only when its returned token matches our encrypted key.
@@ -75,7 +83,10 @@ export const connect = action({
         if (!matches.length) {
           const permitted = await ctx.runMutation(internal.foundation.markCreateAttempt, { sessionId: session._id, generation: session.generation });
           if (!permitted) throw new Error("PROVIDER_INSTANCE_UNRESOLVED");
-          const created = await providerRequest("POST", "/instance/create", { body: { name: session.instanceName, token: credential } });
+          // The dashboard-facing name is the business name the owner entered
+          // during onboarding. Authentication and webhook routing continue to
+          // use the separate random credential and provider UUID.
+          const created = await providerRequest("POST", "/instance/create", { body: { name: displayName, token: credential } });
           instanceId = providerInstanceId(created);
         }
         if (!instanceId) throw new Error("PROVIDER_INSTANCE_UNRESOLVED");

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { api, internal } from "../convex/_generated/api";
 import { decryptSecret } from "../convex/lib/crypto";
-import { providerConnectionState, providerInstances, providerQr, providerRequest } from "../convex/lib/evolution";
+import { providerConnectionState, providerDisplayName, providerInstances, providerQr, providerRequest } from "../convex/lib/evolution";
 import { createHarness, drain, message, tenant, webhook } from "./harness";
 
 function enableProvider() {
@@ -59,7 +59,9 @@ describe("read-only provider sessions", () => {
     const [session] = await harness.run((ctx) => ctx.db.query("whatsappSessions").collect());
     const plaintext = await decryptSecret(session.tokenCiphertext, `business:${businessId}:session-token`);
     const connectCall = calls.find((call) => call.path === "/instance/connect")!;
+    const createCall = calls.find((call) => call.path === "/instance/create")!;
     expect(new Headers(connectCall.init?.headers).get("apikey")).toBe(plaintext);
+    expect(JSON.parse(String(createCall.init?.body))).toEqual({ name: "New seller", token: plaintext });
     const body = JSON.parse(String(connectCall.init?.body));
     expect(body.subscribe).toEqual(["MESSAGE", "SEND_MESSAGE", "READ_RECEIPT", "CONNECTION", "QRCODE"]);
     expect(body.webhookUrl).toBe("https://convex.example.test/api/webhook/evolution");
@@ -89,6 +91,28 @@ describe("read-only provider sessions", () => {
     expect((await owner.action(api.connections.connect, args)).error).toBe("PROVIDER_INSTANCE_UNRESOLVED");
     expect(vi.mocked(fetch).mock.calls.filter(([input]) => String(input).endsWith("/instance/create"))).toHaveLength(1);
     expect(JSON.stringify(await owner.query(api.foundation.workspace, {}))).not.toContain("private provider");
+  });
+
+  it("does not confuse another business with the same provider display name", async () => {
+    enableProvider();
+    const harness = createHarness();
+    const owner = harness.withIdentity({ subject: "google:same-name", issuer: "https://auth.example.test" });
+    const businessId = await owner.mutation(api.foundation.createBusiness, { name: "Shared Store" });
+    const calls: { path: string; init?: RequestInit }[] = [];
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const path = new URL(String(input)).pathname;
+      calls.push({ path, init });
+      if (path === "/instance/all") return Response.json({ data: [{ id: "other-instance", name: "Shared Store", token: "other-token" }] });
+      if (path === "/instance/create") return Response.json({ data: { id: "own-instance" } });
+      if (path === "/instance/connect") return Response.json({ message: "success" });
+      if (path === "/instance/status") return Response.json({ data: { Connected: false, LoggedIn: false } });
+      if (path === "/instance/qr") return Response.json({ data: {} });
+      throw new Error(`Unexpected provider operation: ${path}`);
+    });
+
+    await expect(owner.action(api.connections.connect, { businessId, disclosureVersion: "phase-1-2026-10-27", acceptedRisk: true })).resolves.toMatchObject({ state: "pending", error: null });
+    const create = calls.find((call) => call.path === "/instance/create")!;
+    expect(JSON.parse(String(create.init?.body)).name).toBe("Shared Store");
   });
 
   it("revokes capture immediately, rejects old jobs, and exhausts disconnect retries visibly", async () => {
@@ -156,6 +180,7 @@ describe("read-only provider sessions", () => {
     const connect = calls.find((call) => call.path === "/instance/connect")!;
     expect(JSON.parse(String(create.init?.body)).token).toBe(credential);
     expect(new Headers(connect.init?.headers).get("apikey")).toBe(credential);
+    expect(JSON.parse(String(create.init?.body)).name).toBe("seller-one");
   });
 
   it("keeps a new connection pending while QR generation is transient", async () => {
@@ -221,6 +246,8 @@ describe("read-only provider sessions", () => {
     expect(providerInstances({ data: [{ instance: { id: "nested-id", name: "nested-name", token: "nested-token" } }] })).toEqual([{ id: "nested-id", name: "nested-name", token: "nested-token" }]);
     expect(() => providerInstances({ message: "unexpected" })).toThrow("PROVIDER_INSTANCE_UNRESOLVED");
     expect(() => providerConnectionState({ unexpected: true })).toThrow("UNKNOWN_PROVIDER_STATE");
+    expect(providerDisplayName("  Ada's   Studio  ", "business-id")).toBe("Ada's Studio");
+    expect(providerDisplayName(" ", "business-id")).toBe("Pipelixr ness-id");
     enableProvider();
     vi.stubEnv("EVOLUTION_GO_URL", "http://public.example.test");
     await expect(providerRequest("GET", "/instance/all")).rejects.toThrow("INSECURE_PROVIDER_URL");

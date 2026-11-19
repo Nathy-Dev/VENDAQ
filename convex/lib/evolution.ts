@@ -78,6 +78,11 @@ export function providerInstanceId(result: unknown): string {
 
 export type ProviderInstance = { id: string; name: string; token: string };
 
+export function providerDisplayName(businessName: string, businessId: string): string {
+  const normalized = businessName.trim().replace(/\s+/g, " ").slice(0, 80);
+  return normalized || `Pipelixr ${businessId.slice(-8)}`;
+}
+
 export function providerInstances(result: unknown): ProviderInstance[] {
   const root = object(result);
   const records = Array.isArray(result)
