@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { api, internal } from "../convex/_generated/api";
 import { decryptSecret } from "../convex/lib/crypto";
-import { providerConnectionState, providerQr, providerRequest } from "../convex/lib/evolution";
+import { providerConnectionState, providerInstances, providerQr, providerRequest } from "../convex/lib/evolution";
 import { createHarness, drain, message, tenant, webhook } from "./harness";
 
 function enableProvider() {
@@ -53,7 +53,7 @@ describe("read-only provider sessions", () => {
       if (path === "/instance/qr") return Response.json({ data: { Qrcode: "synthetic-qr-value" } });
       throw new Error(`Unexpected provider operation: ${path}`);
     });
-    await Promise.all(Array.from({ length: 10 }, () => owner.action(api.connections.connect, { businessId, disclosureVersion: "phase-1-2026-10-27", acceptedRisk: true })));
+    const connectionResults = await Promise.all(Array.from({ length: 10 }, () => owner.action(api.connections.connect, { businessId, disclosureVersion: "phase-1-2026-10-27", acceptedRisk: true })));
     expect(calls.filter((call) => call.path === "/instance/create")).toHaveLength(1);
     expect(calls.filter((call) => call.path === "/instance/connect")).toHaveLength(1);
     const [session] = await harness.run((ctx) => ctx.db.query("whatsappSessions").collect());
@@ -63,6 +63,7 @@ describe("read-only provider sessions", () => {
     const body = JSON.parse(String(connectCall.init?.body));
     expect(body.subscribe).toEqual(["MESSAGE", "SEND_MESSAGE", "READ_RECEIPT", "CONNECTION", "QRCODE"]);
     expect(body.webhookUrl).toBe("https://convex.example.test/api/webhook/evolution");
+    expect(connectionResults.some((result) => result.qr === "synthetic-qr-value")).toBe(true);
     const refreshed = await owner.action(api.connections.refresh, { businessId });
     expect(refreshed.qr).toBe("synthetic-qr-value");
     const pending = await harness.run((ctx) => ctx.db.get(session._id));
@@ -122,6 +123,85 @@ describe("read-only provider sessions", () => {
     expect(disconnectCalls).toHaveLength(1);
   });
 
+  it("resets a revoked session only after confirming its provider instance is absent", async () => {
+    enableProvider();
+    const harness = createHarness();
+    const source = await tenant(harness);
+    await harness.run((ctx) => ctx.db.patch(source.sessionId, { state: "revoked", lastError: "PROVIDER_DISCONNECT_DEAD_LETTER", disconnectAttempts: 5 }));
+    const calls: { path: string; init?: RequestInit }[] = [];
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const path = new URL(String(input)).pathname;
+      calls.push({ path, init });
+      if (path === "/instance/all") return Response.json({ data: [] });
+      if (path === "/instance/create") return Response.json({ data: { id: "replacement-instance" } });
+      if (path === "/instance/connect") return Response.json({ message: "success" });
+      if (path === "/instance/status") return Response.json({ data: { Connected: false, LoggedIn: false } });
+      if (path === "/instance/qr") return Response.json({ data: {} });
+      throw new Error(`Unexpected provider operation: ${path}`);
+    });
+
+    await expect(source.owner.action(api.connections.resetRevoked, { businessId: source.businessId })).resolves.toEqual({ state: "disconnected", qr: null, error: null });
+    const reset = await harness.run((ctx) => ctx.db.get(source.sessionId));
+    expect(reset?.state).toBe("disconnected");
+    expect(reset?.generation).toBe(2);
+    expect(reset?.providerInstanceId).toBeUndefined();
+    expect(reset?.lastError).toBeUndefined();
+    expect(reset?.tokenCiphertext).not.toBe(source.tokenCiphertext);
+    expect(reset?.tokenHash).not.toBe(source.tokenHash);
+    expect(new Headers(calls[0]?.init?.headers).get("apikey")).toBe("synthetic-global-key");
+
+    await expect(source.owner.action(api.connections.connect, { businessId: source.businessId, disclosureVersion: "phase-1-2026-10-27", acceptedRisk: true })).resolves.toEqual({ state: "pending", qr: null, error: null });
+    const credential = await decryptSecret(reset!.tokenCiphertext, `business:${source.businessId}:session-token`);
+    const create = calls.find((call) => call.path === "/instance/create")!;
+    const connect = calls.find((call) => call.path === "/instance/connect")!;
+    expect(JSON.parse(String(create.init?.body)).token).toBe(credential);
+    expect(new Headers(connect.init?.headers).get("apikey")).toBe(credential);
+  });
+
+  it("keeps a new connection pending while QR generation is transient", async () => {
+    enableProvider();
+    const harness = createHarness();
+    const owner = harness.withIdentity({ subject: "google:transient-qr", issuer: "https://auth.example.test" });
+    const businessId = await owner.mutation(api.foundation.createBusiness, { name: "Transient QR seller" });
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const path = new URL(String(input)).pathname;
+      if (path === "/instance/all") return Response.json({ data: [] });
+      if (path === "/instance/create") return Response.json({ data: { id: "transient-instance" } });
+      if (path === "/instance/connect") return Response.json({ message: "success" });
+      if (path === "/instance/status") return Response.json({ data: { Connected: false, LoggedIn: false } });
+      if (path === "/instance/qr") return Response.json({ message: "no QR code available" }, { status: 400 });
+      throw new Error(`Unexpected provider operation: ${path}`);
+    });
+
+    await expect(owner.action(api.connections.connect, { businessId, disclosureVersion: "phase-1-2026-10-27", acceptedRisk: true })).resolves.toEqual({ state: "pending", qr: null, error: null });
+    expect((await owner.query(api.foundation.workspace, {}))?.state).toBe("pending");
+  });
+
+  it("allows the internal operator path to apply the same guarded reset", async () => {
+    enableProvider();
+    const harness = createHarness();
+    const source = await tenant(harness);
+    await harness.run((ctx) => ctx.db.patch(source.sessionId, { state: "revoked", lastError: "PROVIDER_DISCONNECT_DEAD_LETTER" }));
+    vi.mocked(fetch).mockResolvedValue(Response.json({ data: [] }));
+
+    await expect(harness.action(internal.connections.resetRevokedForOperator, { businessId: source.businessId })).resolves.toEqual({ state: "disconnected", qr: null, error: null });
+    expect((await harness.run((ctx) => ctx.db.get(source.sessionId)))?.state).toBe("disconnected");
+  });
+
+  it("keeps a revoked session blocked when the remote instance still exists", async () => {
+    enableProvider();
+    const harness = createHarness();
+    const source = await tenant(harness);
+    await harness.run((ctx) => ctx.db.patch(source.sessionId, { state: "revoked", lastError: "PROVIDER_DISCONNECT_DEAD_LETTER" }));
+    vi.mocked(fetch).mockResolvedValue(Response.json({ data: [{ instance: { id: "different-id", name: `pipelixr-${source.businessId}` } }] }));
+
+    await expect(source.owner.action(api.connections.resetRevoked, { businessId: source.businessId })).resolves.toEqual({ state: "revoked", qr: null, error: "PROVIDER_INSTANCE_STILL_EXISTS" });
+    const unchanged = await harness.run((ctx) => ctx.db.get(source.sessionId));
+    expect(unchanged?.state).toBe("revoked");
+    expect(unchanged?.tokenCiphertext).toBe(source.tokenCiphertext);
+    expect(unchanged?.providerInstanceId).toBe(source.instanceId);
+  });
+
   it("fences stale session operations and refuses duplicate provider bindings", async () => {
     const harness = createHarness();
     const source = await tenant(harness);
@@ -136,6 +216,10 @@ describe("read-only provider sessions", () => {
     expect(providerConnectionState({ data: { Connected: true, LoggedIn: false } })).toBe("pending");
     expect(providerConnectionState({ data: { Connected: false, LoggedIn: true } })).toBe("disconnected");
     expect(providerQr({ data: { Qrcode: "synthetic-qr" } })).toBe("synthetic-qr");
+    expect(providerQr({ data: { qrcode: { base64: "nested-base64" } } })).toBe("nested-base64");
+    expect(providerQr({ data: { Code: "raw-qr-code" } })).toBe("raw-qr-code");
+    expect(providerInstances({ data: [{ instance: { id: "nested-id", name: "nested-name", token: "nested-token" } }] })).toEqual([{ id: "nested-id", name: "nested-name", token: "nested-token" }]);
+    expect(() => providerInstances({ message: "unexpected" })).toThrow("PROVIDER_INSTANCE_UNRESOLVED");
     expect(() => providerConnectionState({ unexpected: true })).toThrow("UNKNOWN_PROVIDER_STATE");
     enableProvider();
     vi.stubEnv("EVOLUTION_GO_URL", "http://public.example.test");

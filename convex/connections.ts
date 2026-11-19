@@ -1,18 +1,45 @@
 import { v, type Infer, ConvexError } from "convex/values";
-import { action, internalAction } from "./_generated/server";
+import { action, internalAction, type ActionCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
-import { connectionState } from "./lib/validators";
+import { connectionState, sessionDocument } from "./lib/validators";
 import { decryptSecret, encryptSecret, randomToken, sha256 } from "./lib/crypto";
 import { logEvent } from "./lib/policy";
 import { object } from "./lib/events";
-import { providerRequest, providerInstanceId, providerConnectionState, providerErrorCode, providerQr } from "./lib/evolution";
+import { providerRequest, providerInstanceId, providerInstances, providerConnectionState, providerErrorCode, providerQr } from "./lib/evolution";
 
 const connectionResult = v.object({ state: connectionState, qr: v.union(v.string(), v.null()), error: v.union(v.string(), v.null()) });
 type ConnectionResult = Infer<typeof connectionResult>;
+type SessionDocument = Infer<typeof sessionDocument>;
 
 function connectionErrorCode(error: unknown): string {
   if (error instanceof Error && ["ENCRYPTION_NOT_CONFIGURED", "INVALID_ENCRYPTION_CONFIGURATION", "INVALID_ENCRYPTION_KEY", "INVALID_CIPHERTEXT"].includes(error.message)) return "CONNECTION_SECURITY_UNAVAILABLE";
   return providerErrorCode(error);
+}
+
+async function resetRevokedSession(ctx: ActionCtx, session: SessionDocument): Promise<ConnectionResult> {
+  if (session.state !== "revoked") return { state: session.state, qr: null, error: "SESSION_RESET_NOT_ALLOWED" };
+  try {
+    const instances = providerInstances(await providerRequest("GET", "/instance/all"));
+    const remoteStillExists = instances.some((instance) =>
+      (session.providerInstanceId !== undefined && instance.id === session.providerInstanceId) || instance.name === session.instanceName
+    );
+    if (remoteStillExists) return { state: "revoked", qr: null, error: "PROVIDER_INSTANCE_STILL_EXISTS" };
+    const token = randomToken();
+    const tokenCiphertext = await encryptSecret(token, `business:${session.businessId}:session-token`);
+    const tokenHash = await sha256(token);
+    const reset = await ctx.runMutation(internal.foundation.resetRevokedSession, {
+      sessionId: session._id,
+      generation: session.generation,
+      operationVersion: session.operationVersion ?? 0,
+      tokenCiphertext,
+      tokenHash,
+    });
+    if (!reset) return { state: "revoked", qr: null, error: "SESSION_RESET_CONFLICT" };
+    logEvent("connection_reset", { correlationId: session._id, businessId: session.businessId, code: "REMOTE_INSTANCE_ABSENT" });
+    return { state: "disconnected", qr: null, error: null };
+  } catch (error) {
+    return { state: "revoked", qr: null, error: connectionErrorCode(error) };
+  }
 }
 
 export const connect = action({
@@ -39,15 +66,12 @@ export const connect = action({
       let instanceId = session.providerInstanceId;
       if (!instanceId) {
         const listing = await providerRequest("GET", "/instance/all");
-        const root = object(listing);
-        const candidates = Array.isArray(listing) ? listing : Array.isArray(root.data) ? root.data : Array.isArray(root.instances) ? root.instances : null;
-        if (!candidates) throw new Error("PROVIDER_INSTANCE_UNRESOLVED");
-        const matches = candidates.map(object).filter((instance) => instance.name === session.instanceName);
+        const matches = providerInstances(listing).filter((instance) => instance.name === session.instanceName);
         if (matches.length > 1) throw new Error("PROVIDER_INSTANCE_UNRESOLVED");
         // Display-name equality is not proof that a remotely found instance is
         // ours. Adopt it only when its returned token matches our encrypted key.
         if (matches.length && matches[0].token !== credential) throw new Error("PROVIDER_INSTANCE_UNRESOLVED");
-        instanceId = matches.length ? providerInstanceId(matches[0]) : "";
+        instanceId = matches.length ? matches[0].id : "";
         if (!matches.length) {
           const permitted = await ctx.runMutation(internal.foundation.markCreateAttempt, { sessionId: session._id, generation: session.generation });
           if (!permitted) throw new Error("PROVIDER_INSTANCE_UNRESOLVED");
@@ -63,13 +87,38 @@ export const connect = action({
       if (!current || current.generation !== session.generation || current.operationVersion !== session.operationVersion || current.state === "revoked") return { state: "revoked", qr: null, error: "SESSION_REVOKED" };
       await providerRequest("POST", "/instance/connect", { instanceId, token: credential, body: { webhookUrl: `${siteUrl.replace(/\/$/, "")}/api/webhook/evolution`, subscribe: ["MESSAGE", "SEND_MESSAGE", "READ_RECEIPT", "CONNECTION", "QRCODE"], immediate: true } });
       await ctx.runMutation(internal.foundation.updateSession, { sessionId: session._id, generation: session.generation, operationVersion: session.operationVersion ?? 0, state: "pending", completeOperation: true });
-      return { state: "pending", qr: null, error: null };
+      // Ask for the first artifact immediately. QR generation can still be
+      // transient, so checkHealth keeps the session pending and the UI polls.
+      await ctx.runAction(internal.connections.checkHealth, { sessionId: session._id, generation: session.generation });
+      const started = await ctx.runQuery(internal.foundation.sessionById, { sessionId: session._id });
+      const qr = started?.qrCiphertext && (started.qrExpiresAt ?? 0) > Date.now()
+        ? await decryptSecret(started.qrCiphertext, `session:${session._id}:qr`)
+        : null;
+      return { state: started?.state ?? "pending", qr, error: started?.lastError ?? null };
     } catch (error) {
       const code = connectionErrorCode(error);
       await ctx.runMutation(internal.foundation.updateSession, { sessionId: session._id, generation: session.generation, operationVersion: session.operationVersion ?? 0, state: "error", code, completeOperation: true });
       logEvent("connection_failed", { correlationId: session._id, businessId: session.businessId, code });
       return { state: "error", qr: null, error: code };
     }
+  },
+});
+
+export const resetRevoked = action({
+  args: { businessId: v.id("businesses") }, returns: connectionResult,
+  handler: async (ctx, args): Promise<ConnectionResult> => {
+    const session = await ctx.runQuery(internal.foundation.ownedSession, { businessId: args.businessId });
+    if (!session) return { state: "disconnected", qr: null, error: null };
+    return await resetRevokedSession(ctx, session);
+  },
+});
+
+export const resetRevokedForOperator = internalAction({
+  args: { businessId: v.id("businesses") }, returns: connectionResult,
+  handler: async (ctx, args): Promise<ConnectionResult> => {
+    const session = await ctx.runQuery(internal.foundation.sessionByBusiness, { businessId: args.businessId });
+    if (!session) return { state: "disconnected", qr: null, error: null };
+    return await resetRevokedSession(ctx, session);
   },
 });
 
@@ -100,11 +149,20 @@ export const checkHealth = internalAction({
       const state = providerConnectionState(status);
       let qrCiphertext: string | undefined;
       if (state === "pending" || (state !== "connected" && session.state === "pending")) {
-        const result = object(await providerRequest("GET", "/instance/qr", { token, instanceId: session.providerInstanceId }));
-        const qr = providerQr(result);
-        if (qr) qrCiphertext = await encryptSecret(qr, `session:${session._id}:qr`);
+        try {
+          const result = object(await providerRequest("GET", "/instance/qr", { token, instanceId: session.providerInstanceId }));
+          const qr = providerQr(result);
+          if (qr) qrCiphertext = await encryptSecret(qr, `session:${session._id}:qr`);
+        } catch (error) {
+          // Evolution Go can return a transient non-2xx response while the QR
+          // is being generated. Authentication/configuration failures are not
+          // transient and must still surface immediately.
+          const code = connectionErrorCode(error);
+          if (code !== "PROVIDER_REQUEST_FAILED" && code !== "PROVIDER_UNAVAILABLE") throw error;
+        }
       }
-      await ctx.runMutation(internal.foundation.updateSession, { sessionId: session._id, generation: session.generation, state: qrCiphertext ? "pending" : state, health: true, ...(qrCiphertext ? { qrCiphertext } : {}) });
+      const effectiveState = state === "connected" ? "connected" : session.state === "pending" || qrCiphertext ? "pending" : state;
+      await ctx.runMutation(internal.foundation.updateSession, { sessionId: session._id, generation: session.generation, state: effectiveState, health: true, ...(qrCiphertext ? { qrCiphertext } : {}) });
       logEvent("connection_checked", { correlationId: session._id, businessId: session.businessId, code: state.toUpperCase() });
     } catch (error) {
       const code = connectionErrorCode(error);

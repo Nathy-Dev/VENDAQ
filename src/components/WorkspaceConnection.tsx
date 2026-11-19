@@ -15,6 +15,7 @@ import styles from "./FoundationWorkspace.module.css";
 export default function ConnectionPanel({ workspace }: { workspace: Workspace }) {
   const connect = useAction(api.connections.connect);
   const refresh = useAction(api.connections.refresh);
+  const resetRevoked = useAction(api.connections.resetRevoked);
   const revoke = useMutation(api.foundation.revokeSession);
   const [acceptedRisk, setAcceptedRisk] = useState(false);
   const [qr, setQr] = useState<string | null>(null);
@@ -100,6 +101,24 @@ export default function ConnectionPanel({ workspace }: { workspace: Workspace })
     }
   }
 
+  async function resetConnection() {
+    if (requestPending.current) return;
+    requestPending.current = true;
+    setBusy(true); setFeedback(null); setQr(null);
+    try {
+      const result = await resetRevoked({ businessId: workspace.businessId });
+      if (!mounted.current) return;
+      setFeedback(result.error
+        ? { text: connectionErrorMessage(result.error), error: true }
+        : { text: "The old connection was cleared safely. Accept the risk notice and connect WhatsApp again." });
+    } catch {
+      if (mounted.current) setFeedback({ text: "We couldn't reset this connection safely. Please try again later.", error: true });
+    } finally {
+      requestPending.current = false;
+      if (mounted.current) setBusy(false);
+    }
+  }
+
   return (
     <section className={styles.card}>
       <div className={styles.connectionTop}>
@@ -111,7 +130,7 @@ export default function ConnectionPanel({ workspace }: { workspace: Workspace })
         <p><strong>An unofficial connection, with real risks.</strong> Pipelixr uses Evolution Go, not the official WhatsApp Business API. WhatsApp may restrict or ban a connected number.</p>
         <p>Only connect a number you are authorized to manage. Eligible incoming messages are processed for this workspace and retained for {workspace.retentionDays} days. Pairing alone does not authorize Pipelixr to reply; that requires a saved business prompt and separate customer/group consent.</p>
       </div>
-      {state === "revoked" ? <div className={styles.infoBanner}><ShieldCheck size={17} aria-hidden="true" /><p>This connection was revoked. An administrator must reset the session before you can pair again.</p></div> : (
+      {state === "revoked" ? <><div className={styles.infoBanner}><ShieldCheck size={17} aria-hidden="true" /><p>This connection was revoked. Reset it to create fresh credentials and pair again. The reset stays blocked if the old provider instance still exists.</p></div><div className={styles.actions}><button type="button" className={buttonClass.primary} disabled={busy} onClick={() => void resetConnection()}>{busy ? "Resetting…" : "Reset connection"}</button></div></> : (
         <>
           {!["connected", "pending", "provisioning"].includes(state) && <label className={styles.checkLabel}><input type="checkbox" checked={acceptedRisk} disabled={busy} onChange={(event) => setAcceptedRisk(event.target.checked)} /><span>I understand the number-ban and retention risks, and authorize processing for this business.</span></label>}
           <div className={styles.actions}>
@@ -137,5 +156,7 @@ function connectionErrorMessage(code: string): string {
   if (code === "PROVIDER_AUTH_FAILED") return "The WhatsApp provider rejected the connection credentials. Please try again after the provider setup is updated.";
   if (["PROVIDER_REQUEST_FAILED", "PROVIDER_UNAVAILABLE"].includes(code)) return "The WhatsApp provider could not be reached. Please try again shortly.";
   if (code === "PROVIDER_INSTANCE_UNRESOLVED") return "The earlier connection attempt needs administrator review before it can be retried safely.";
+  if (code === "PROVIDER_INSTANCE_STILL_EXISTS") return "The old WhatsApp instance still exists at the provider, so Pipelixr did not replace its credentials. An administrator must reconcile it first.";
+  if (["SESSION_RESET_CONFLICT", "SESSION_RESET_NOT_ALLOWED"].includes(code)) return "The connection changed while it was being reset. Refresh the page and try again.";
   return "WhatsApp pairing is unavailable right now. Please try again shortly.";
 }

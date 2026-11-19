@@ -76,6 +76,30 @@ export function providerInstanceId(result: unknown): string {
   return text(root.instanceId || root.id || data.instanceId || data.id || instance.id);
 }
 
+export type ProviderInstance = { id: string; name: string; token: string };
+
+export function providerInstances(result: unknown): ProviderInstance[] {
+  const root = object(result);
+  const records = Array.isArray(result)
+    ? result
+    : Array.isArray(root.data)
+      ? root.data
+      : Array.isArray(root.instances)
+        ? root.instances
+        : null;
+  if (!records) throw new Error("PROVIDER_INSTANCE_UNRESOLVED");
+  return records.slice(0, 1_000).map((value) => {
+    const record = object(value);
+    const data = object(record.data);
+    const instance = object(record.instance ?? data.instance);
+    return {
+      id: text(record.instanceId ?? record.instance_id ?? record.id ?? data.instanceId ?? data.instance_id ?? data.id ?? instance.instanceId ?? instance.instance_id ?? instance.id),
+      name: text(record.instanceName ?? record.instance_name ?? record.name ?? data.instanceName ?? data.instance_name ?? data.name ?? instance.instanceName ?? instance.instance_name ?? instance.name),
+      token: text(record.token ?? data.token ?? instance.token),
+    };
+  }).filter((instance) => instance.id || instance.name);
+}
+
 export function providerConnectionState(result: unknown): "connected" | "pending" | "disconnected" {
   const root = object(result);
   const data = object(root.data);
@@ -94,7 +118,17 @@ export function providerConnectionState(result: unknown): "connected" | "pending
 export function providerQr(result: unknown): string {
   const root = object(result);
   const data = object(root.data);
-  return text(data.Qrcode ?? data.qrcode ?? root.qrCode ?? root.qrcode ?? data.Code, 180000);
+  const nested = object(data.qrcode ?? data.qr ?? data.qrCode ?? root.qrcode ?? root.qr ?? root.qrCode);
+  const instance = object(root.instance ?? data.instance);
+  const instanceQr = object(instance.qrcode ?? instance.qr ?? instance.qrCode);
+  return text(
+    data.Qrcode ?? root.Qrcode ??
+    nested.base64 ?? nested.code ?? nested.Qrcode ??
+    data.qrcode ?? data.qrCode ?? root.qrcode ?? root.qrCode ??
+    instanceQr.base64 ?? instanceQr.code ?? instance.qrcode ?? instance.Qrcode ??
+    data.Code ?? root.Code,
+    180000,
+  );
 }
 
 export function providerErrorCode(error: unknown): string {

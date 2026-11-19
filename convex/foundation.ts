@@ -122,6 +122,11 @@ export const sessionById = internalQuery({
   handler: async (ctx, args) => ctx.db.get(args.sessionId),
 });
 
+export const sessionByBusiness = internalQuery({
+  args: { businessId: v.id("businesses") }, returns: v.union(v.null(), sessionDocument),
+  handler: async (ctx, args) => ctx.db.query("whatsappSessions").withIndex("by_business", (builder) => builder.eq("businessId", args.businessId)).unique(),
+});
+
 export const sessionByProvider = internalQuery({
   args: { providerInstanceId: v.string() }, returns: v.union(v.null(), sessionDocument),
   handler: async (ctx, args) => ctx.db.query("whatsappSessions").withIndex("by_provider", (builder) => builder.eq("providerInstanceId", args.providerInstanceId)).unique(),
@@ -256,6 +261,44 @@ export const completeDisconnect = internalMutation({
       await ctx.db.patch(session._id, { disconnectedAt: Date.now(), disconnectDueAt: undefined, tokenCiphertext: "", tokenHash: "", lastError: undefined, operationLeaseUntil: undefined });
     }
     return null;
+  },
+});
+
+export const resetRevokedSession = internalMutation({
+  args: {
+    sessionId: v.id("whatsappSessions"),
+    generation: v.number(),
+    operationVersion: v.number(),
+    tokenCiphertext: v.string(),
+    tokenHash: v.string(),
+  },
+  returns: v.boolean(),
+  handler: async (ctx, args) => {
+    const session = await ctx.db.get(args.sessionId);
+    if (!session || session.state !== "revoked" || session.generation !== args.generation || (session.operationVersion ?? 0) !== args.operationVersion) return false;
+    const now = Date.now();
+    await ctx.db.patch(session._id, {
+      providerInstanceId: undefined,
+      generation: session.generation + 1,
+      state: "disconnected",
+      tokenCiphertext: args.tokenCiphertext,
+      tokenHash: args.tokenHash,
+      updatedAt: now,
+      lastHealthAt: undefined,
+      nextHealthAt: now + foundationPolicy().healthIntervalMs,
+      operationLeaseUntil: undefined,
+      operationVersion: (session.operationVersion ?? 0) + 1,
+      createAttemptedAt: undefined,
+      lastError: undefined,
+      qrCiphertext: undefined,
+      qrExpiresAt: undefined,
+      disconnectAttempts: undefined,
+      disconnectDueAt: undefined,
+      disconnectedAt: undefined,
+    });
+    await ctx.db.patch(session.businessId, { whatsappStatus: "disconnected", killSwitch: true });
+    await ctx.db.insert("foundationAudit", { businessId: session.businessId, kind: "session_reset", correlationId: session._id, code: "REMOTE_INSTANCE_ABSENT", at: now, expiresAt: now + foundationPolicy().eventRetentionDays * 86400000 });
+    return true;
   },
 });
 

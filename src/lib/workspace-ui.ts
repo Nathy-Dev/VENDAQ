@@ -1,4 +1,10 @@
 export type WorkspaceScreen = "overview" | "inbox" | "actions" | "viewers" | "settings" | "profile" | "setup" | "connect";
+export type LaunchOnboardingStage = "connection" | "business_ai" | "groups";
+
+export function launchOnboardingStage(workspace: { state: string; hasBusinessSystemPrompt: boolean }): LaunchOnboardingStage {
+  if (workspace.state !== "connected") return "connection";
+  return workspace.hasBusinessSystemPrompt ? "groups" : "business_ai";
+}
 
 export function workspaceScreen(pathname: string): WorkspaceScreen {
   if (pathname === "/onboarding/connect" || pathname.startsWith("/onboarding/connect/")) return "connect";

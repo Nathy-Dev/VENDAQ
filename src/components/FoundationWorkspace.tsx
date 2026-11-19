@@ -6,7 +6,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { ArrowRight, Check, Link2, ShieldCheck } from "lucide-react";
 import { api } from "../../convex/_generated/api";
-import { workspaceScreen } from "@/lib/workspace-ui";
+import { launchOnboardingStage, workspaceScreen } from "@/lib/workspace-ui";
 import Brand from "./Brand";
 import DashboardShell from "./DashboardShell";
 import WorkspaceOverview from "./WorkspaceOverview";
@@ -36,16 +36,23 @@ export default function FoundationWorkspace() {
         {screen === "viewers" && <><PageHeader title="Coming in a later phase" description="Status-to-Cash is preserved in the codebase but blocked for the first launch." /><section className={styles.card}><h2>Status-to-Cash is not part of Launch 1</h2><p className={styles.helper}>This route cannot collect viewers, create leads, or trigger outreach. It will be reintroduced behind a deliberate rollout later.</p></section></>}
         {screen === "settings" && <WorkspaceSettings workspace={workspace} />}
         {screen === "profile" && <ProfilePanel workspace={workspace} />}
-        {(screen === "setup" || screen === "connect") && (
+        {(screen === "setup" || screen === "connect") && (() => {
+          const stage = launchOnboardingStage(workspace);
+          return (
           <div className={styles.stack}>
             <PageHeader title="Launch your WhatsApp assistant" description="Connect WhatsApp, teach Pipelixr about your business, then choose where it may reply." />
-            <div className={styles.steps}><span><b><Check size={12} /></b>Business created</span><span className={workspace.state === "connected" ? undefined : styles.current}><b>2</b>Connect WhatsApp</span><span className={workspace.hasBusinessSystemPrompt ? undefined : styles.current}><b>3</b>Business AI</span><span><b>4</b>Groups</span></div>
-            <ConnectionPanel workspace={workspace} />
-            <BusinessAssistantSettings workspace={workspace} compact />
-            <WorkspaceGroups workspace={workspace} />
-            <div><Link href="/dashboard" className={buttonClass.secondary}>Go to workspace<ArrowRight size={14} /></Link><p className={styles.helper}>Pipelixr only replies after you save a complete system prompt and explicitly authorize customer or group replies.</p></div>
+            <div className={styles.steps}>
+              <span><b><Check size={12} /></b>Business created</span>
+              <span className={stage === "connection" ? styles.current : undefined}><b>{stage === "connection" ? "2" : <Check size={12} />}</b>Connect WhatsApp</span>
+              {stage !== "connection" && <span className={stage === "business_ai" ? styles.current : undefined}><b>{stage === "business_ai" ? "3" : <Check size={12} />}</b>Business AI</span>}
+              {stage === "groups" && <span className={styles.current}><b>4</b>Groups</span>}
+            </div>
+            {stage === "connection" && <ConnectionPanel workspace={workspace} />}
+            {stage === "business_ai" && <BusinessAssistantSettings workspace={workspace} compact />}
+            {stage === "groups" && <><WorkspaceGroups workspace={workspace} /><div><Link href="/dashboard" className={buttonClass.secondary}>Go to workspace<ArrowRight size={14} /></Link><p className={styles.helper}>Pipelixr only replies after you explicitly authorize customer replies or enable individual groups.</p></div></>}
           </div>
-        )}
+          );
+        })()}
       </div>
     </DashboardShell>
   );
