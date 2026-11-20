@@ -20,6 +20,7 @@ import type * as businesses from "../businesses.js";
 import type * as cloudinary from "../cloudinary.js";
 import type * as connections from "../connections.js";
 import type * as crons from "../crons.js";
+import type * as directorySync from "../directorySync.js";
 import type * as evolutionGoClient from "../evolutionGoClient.js";
 import type * as extensions from "../extensions.js";
 import type * as followUps from "../followUps.js";
@@ -73,6 +74,7 @@ declare const fullApi: ApiFromModules<{
   cloudinary: typeof cloudinary;
   connections: typeof connections;
   crons: typeof crons;
+  directorySync: typeof directorySync;
   evolutionGoClient: typeof evolutionGoClient;
   extensions: typeof extensions;
   followUps: typeof followUps;

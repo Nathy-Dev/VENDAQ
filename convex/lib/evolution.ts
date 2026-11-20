@@ -1,7 +1,7 @@
 import { foundationPolicy, assertNoOutbound } from "./policy";
 import { object, text } from "./events";
 
-const allowedOperations = new Set(["GET /instance/all", "POST /instance/create", "POST /instance/connect", "GET /instance/status", "GET /instance/qr", "POST /instance/disconnect", "GET /group/list"]);
+const allowedOperations = new Set(["GET /instance/all", "POST /instance/create", "POST /instance/connect", "GET /instance/status", "GET /instance/qr", "POST /instance/disconnect", "GET /group/list", "GET /user/contacts", "POST /user/info"]);
 
 function usesNgrokBrowserWarning(hostname: string): boolean {
   return hostname.endsWith(".ngrok-free.app") || hostname.endsWith(".ngrok-free.dev");
@@ -160,6 +160,8 @@ export function providerErrorCode(error: unknown): string {
 }
 
 export type ProviderGroup = { jid: string; name: string; memberCount: number; role: "owner" | "admin" | "member" };
+export type ProviderContact = { jid: string; name: string };
+export type ProviderIdentityMapping = { canonicalJid: string; aliases: string[] };
 
 function comparableAccountJid(value: unknown): string {
   const jid = text(value).trim().toLowerCase();
@@ -169,6 +171,60 @@ function comparableAccountJid(value: unknown): string {
 
 function accountJids(...values: unknown[]): Set<string> {
   return new Set(values.map(comparableAccountJid).filter(Boolean));
+}
+
+function recordsFromProvider(result: unknown): unknown[] {
+  const root = object(result);
+  const data = root.data;
+  return Array.isArray(result) ? result : Array.isArray(data) ? data : [];
+}
+
+export function providerContacts(result: unknown): ProviderContact[] {
+  const contacts = new Map<string, ProviderContact>();
+  for (const value of recordsFromProvider(result).slice(0, 10_000)) {
+    const contact = object(value);
+    const jid = comparableAccountJid(contact.Jid ?? contact.jid ?? contact.JID);
+    if (!jid || !jid.endsWith("@s.whatsapp.net")) continue;
+    // FullName and FirstName come from the owner's saved address book. PushName
+    // and BusinessName are fallbacks only when no saved name exists.
+    const name = [contact.FullName, contact.fullName, contact.FirstName, contact.firstName, contact.BusinessName, contact.businessName, contact.PushName, contact.pushName]
+      .map((candidate) => text(candidate, 120).trim())
+      .find(Boolean) ?? "";
+    if (name) contacts.set(jid, { jid, name });
+  }
+  return [...contacts.values()];
+}
+
+export function providerAccountAliases(result: unknown): string[] {
+  const root = object(result);
+  const data = object(root.data);
+  const users = object(data.Users ?? data.users);
+  const aliases = new Set<string>();
+  for (const [key, value] of Object.entries(users).slice(0, 10)) {
+    const record = object(value);
+    for (const candidate of [key, record.JID, record.jid, record.LID, record.lid]) {
+      const jid = comparableAccountJid(candidate);
+      if (jid) aliases.add(jid);
+    }
+  }
+  return [...aliases];
+}
+
+export function providerIdentityMappings(result: unknown): ProviderIdentityMapping[] {
+  const root = object(result);
+  const data = object(root.data);
+  const users = object(data.Users ?? data.users);
+  const mappings = new Map<string, Set<string>>();
+  for (const [key, value] of Object.entries(users).slice(0, 1_000)) {
+    const record = object(value);
+    const candidates = [key, record.JID, record.jid, record.LID, record.lid].map(comparableAccountJid).filter(Boolean);
+    const canonicalJid = candidates.find((jid) => jid.endsWith("@s.whatsapp.net"));
+    if (!canonicalJid) continue;
+    const aliases = mappings.get(canonicalJid) ?? new Set<string>();
+    for (const jid of candidates) aliases.add(jid);
+    mappings.set(canonicalJid, aliases);
+  }
+  return [...mappings].map(([canonicalJid, aliases]) => ({ canonicalJid, aliases: [...aliases] }));
 }
 
 function sharesAccountJid(left: Set<string>, right: Set<string>): boolean {
@@ -184,7 +240,7 @@ function participantRole(value: unknown): "owner" | "admin" | "member" {
   return "member";
 }
 
-export function providerGroups(result: unknown, connectedAccountJid = ""): ProviderGroup[] {
+export function providerGroups(result: unknown, connectedAccountJid: string | string[] = ""): ProviderGroup[] {
   const root = object(result);
   const data = root.data;
   const dataObject = object(data);
@@ -198,7 +254,7 @@ export function providerGroups(result: unknown, connectedAccountJid = ""): Provi
           ? root.groups
           : [];
   const groups = new Map<string, ProviderGroup>();
-  const connectedJids = accountJids(connectedAccountJid);
+  const connectedJids = accountJids(...(Array.isArray(connectedAccountJid) ? connectedAccountJid : [connectedAccountJid]));
   for (const value of records.slice(0, 500)) {
     const group = object(value);
     const jid = text(group.id ?? group.jid ?? group.groupJid ?? group.remoteJid ?? group.JID);

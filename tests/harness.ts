@@ -27,13 +27,14 @@ export async function tenant(harness: Harness, label = "seller-one") {
 }
 
 export function message(source: Awaited<ReturnType<typeof tenant>>, options: {
-  id?: string; chat?: string; content?: Record<string, unknown>; fromMe?: boolean; at?: number; name?: string;
+  id?: string; chat?: string; content?: Record<string, unknown>; fromMe?: boolean; at?: number; name?: string; info?: Record<string, unknown>; data?: Record<string, unknown>;
 } = {}) {
   return {
     event: options.fromMe ? "SendMessage" : "Message", instanceId: source.instanceId, instanceToken: source.token,
     data: {
-      Info: { ID: options.id ?? "message-1", Chat: options.chat ?? "2348000000001@s.whatsapp.net", IsFromMe: options.fromMe ?? false, IsGroup: false, PushName: options.name ?? "Synthetic Buyer", Timestamp: new Date(options.at ?? Date.now()).toISOString() },
+      Info: { ID: options.id ?? "message-1", Chat: options.chat ?? "2348000000001@s.whatsapp.net", IsFromMe: options.fromMe ?? false, IsGroup: false, PushName: options.name ?? "Synthetic Buyer", Timestamp: new Date(options.at ?? Date.now()).toISOString(), ...options.info },
       Message: options.content ?? { conversation: "How much for this one?" },
+      ...options.data,
     },
   };
 }

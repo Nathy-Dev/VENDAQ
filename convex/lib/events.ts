@@ -16,6 +16,17 @@ export function normalizeIdentity(value: unknown): string {
   throw new Error("INVALID_IDENTITY");
 }
 
+function optionalIdentity(value: unknown): string {
+  if (typeof value !== "string" || !value || value.length > 256) return "";
+  try { return normalizeIdentity(value); } catch { return ""; }
+}
+
+function groupName(data: Record<string, unknown>): string {
+  const group = object(data.groupData ?? data.GroupData);
+  const nestedName = object(group.GroupName);
+  return text(group.Name ?? group.name ?? group.Subject ?? group.subject ?? group.groupName ?? nestedName.Name ?? nestedName.name, 120);
+}
+
 export function eventTime(value: unknown, now: number): number {
   const timestamp = typeof value === "number" ? (value < 100000000000 ? value * 1000 : value) : typeof value === "string" ? Date.parse(value) : NaN;
   if (!Number.isFinite(timestamp) || timestamp < 0 || timestamp > now + 300000) throw new Error("INVALID_TIMESTAMP");
@@ -28,8 +39,19 @@ export function normalizeEvent(body: Record<string, unknown>, now: number): Norm
   if (event === "Message" || event === "SendMessage") {
     const info = object(data.Info);
     const message = object(data.Message);
-    const chat = normalizeIdentity(info.Chat);
-    const isGroup = info.IsGroup === true || chat.endsWith("@g.us");
+    const rawChat = normalizeIdentity(info.Chat);
+    const isGroup = info.IsGroup === true || rawChat.endsWith("@g.us");
+    const fromMe = event === "SendMessage" || info.IsFromMe === true;
+    // WhatsApp privacy IDs (@lid) and phone JIDs can identify the same person.
+    // Prefer the provider's phone-number alias for private inbound messages.
+    // SendMessage events already carry the actual recipient in Info.Chat.
+    const senderAlt = optionalIdentity(info.SenderAlt);
+    const recipientAlt = optionalIdentity(info.RecipientAlt);
+    const preferredPrivateAlias = fromMe ? recipientAlt : senderAlt;
+    const chat = !isGroup && rawChat.endsWith("@lid") && preferredPrivateAlias.endsWith("@s.whatsapp.net")
+      ? preferredPrivateAlias
+      : rawChat;
+    const aliasJids = isGroup ? [] : [...new Set([rawChat, preferredPrivateAlias].filter((jid) => jid && jid !== chat))];
     if (chat === "status@broadcast") return { kind: "ignored", reason: "STATUS_CONTENT_DEFERRED" };
     const messageId = text(info.ID);
     if (!messageId || (info.ID as string).length > 256 || typeof info.IsFromMe !== "boolean") throw new Error("INVALID_MESSAGE_METADATA");
@@ -40,8 +62,9 @@ export function normalizeEvent(body: Record<string, unknown>, now: number): Norm
     // mentioned. A generic `mentionedJid` list could refer to somebody else.
     const mentioned = isGroup && (info.IsMention === true || info.IsBotMentioned === true || data.IsMentioned === true);
     return {
-      kind: "message", messageId, chat, identityKey: "", fromMe: event === "SendMessage" || info.IsFromMe, isGroup, mentioned,
-      ...(text(info.PushName, 120) ? { name: text(info.PushName, 120) } : {}),
+      kind: "message", messageId, chat, identityKey: "", fromMe, isGroup, mentioned,
+      ...((isGroup ? groupName(data) : text(info.PushName, 120)) ? { name: isGroup ? groupName(data) : text(info.PushName, 120) } : {}),
+      ...(aliasJids.length ? { aliasJids } : {}),
       // Large text is minimized, with an explicit manual-review signal rather
       // than presenting a truncated message as complete buyer context.
       text: plain || caption, mediaType: type, eventAt: eventTime(info.Timestamp, now), manualReview: type !== "text" || plain.length === foundationPolicy().maxTextLength || caption.length === foundationPolicy().maxTextLength,

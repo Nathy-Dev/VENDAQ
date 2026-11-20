@@ -1,10 +1,10 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
-import { Bell, Shield, Building, Moon, ChevronRight, Save, Store, Factory, Zap, Clock, Banknote, MessageSquare, Brain, Eye, CheckCircle2, XCircle, Sparkles, Users, RefreshCw } from "lucide-react";
+import { Bell, Shield, Building, Moon, ChevronRight, Save, Store, Factory, Zap, Clock, Banknote, MessageSquare, Brain, Eye, CheckCircle2, XCircle, Sparkles, Users } from "lucide-react";
 
 import { useSession } from "next-auth/react";
-import { useQuery, useMutation, useAction } from "convex/react";
+import { useQuery, useMutation } from "convex/react";
 
 import { api } from "../../../convex/_generated/api";
 import DashboardNavbar from "@/components/DashboardNavbar";
@@ -115,12 +115,7 @@ export default function SettingsPage() {
   );
   const setGroupEnabled = useMutation(api.groups.setGroupEnabled);
   const setGroupMentionOnly = useMutation(api.groups.setGroupMentionOnly);
-  // refreshGroups is an ACTION (it calls Evolution Go), not a mutation.
-  // useAction is the correct hook for calling actions from React.
-  const refreshGroups = useAction(api.groups.refreshGroups);
-
   const [groupsFilter, setGroupsFilter] = useState<"managed" | "all">("managed");
-  const [isRefreshingGroups, setIsRefreshingGroups] = useState(false);
 
   // Filter groups: by default show only groups you manage (owner/admin).
   // "All" reveals member-only groups too — useful for community managers who
@@ -238,19 +233,6 @@ export default function SettingsPage() {
       console.error("Failed to update mention-only", err);
     }
   };
-
-  const handleRefreshGroups = async () => {
-    if (!business?._id) return;
-    setIsRefreshingGroups(true);
-    try {
-      await refreshGroups({ businessId: business._id });
-    } catch (err) {
-      console.error("Failed to refresh groups", err);
-    } finally {
-      setIsRefreshingGroups(false);
-    }
-  };
-
 
   return (
     <>
@@ -809,28 +791,7 @@ export default function SettingsPage() {
                         </button>
                       ))}
                     </div>
-                    <button
-                      type="button"
-                      onClick={handleRefreshGroups}
-                      disabled={isRefreshingGroups || !business}
-                      style={{
-                        marginLeft: "auto",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "0.35rem",
-                        padding: "0.4rem 0.85rem",
-                        borderRadius: "0.5rem",
-                        background: "rgba(255,255,255,0.03)",
-                        border: "1px solid rgba(255,255,255,0.08)",
-                        color: "#cbd5e1",
-                        fontSize: "0.75rem",
-                        cursor: isRefreshingGroups ? "not-allowed" : "pointer",
-                        opacity: isRefreshingGroups ? 0.6 : 1,
-                      }}
-                    >
-                      <RefreshCw size={13} style={{ animation: isRefreshingGroups ? "spin 1s linear infinite" : undefined }} />
-                      {isRefreshingGroups ? "Refreshing..." : "Refresh from WhatsApp"}
-                    </button>
+                    <span style={{ marginLeft: "auto", color: "#94a3b8", fontSize: "0.75rem" }}>Synced automatically</span>
                   </div>
 
                   {!groups && (
@@ -842,7 +803,7 @@ export default function SettingsPage() {
                   {groups && visibleGroups.length === 0 && (
                     <div style={{ padding: "2rem 1rem", textAlign: "center", color: "#94a3b8", fontSize: "0.85rem", background: "rgba(255,255,255,0.02)", border: "1px dashed rgba(255,255,255,0.1)", borderRadius: "0.6rem" }}>
                       {groupsFilter === "managed"
-                        ? "No groups you manage yet. If you own or admin a WhatsApp group, click Refresh to pull them in — or switch to All groups."
+                        ? "No groups you manage yet. Pipelixr refreshes this list automatically — or switch to All groups."
                         : "No WhatsApp groups found for this account."}
                     </div>
                   )}

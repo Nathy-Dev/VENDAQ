@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { api, internal } from "../convex/_generated/api";
 import { decryptSecret } from "../convex/lib/crypto";
-import { providerConnectionState, providerDisplayName, providerGroups, providerInstances, providerQr, providerRequest } from "../convex/lib/evolution";
+import { providerAccountAliases, providerConnectionState, providerContacts, providerDisplayName, providerGroups, providerIdentityMappings, providerInstances, providerQr, providerRequest } from "../convex/lib/evolution";
 import { createHarness, drain, message, tenant, webhook } from "./harness";
 
 function enableProvider() {
@@ -13,6 +13,13 @@ function enableProvider() {
 }
 
 describe("read-only provider sessions", () => {
+  it("prioritizes saved contact names and resolves phone/LID account aliases", () => {
+    expect(providerContacts({ data: [{ Jid: "2348000000001@s.whatsapp.net", FullName: "Saved Name", FirstName: "Saved", PushName: "Push Name", BusinessName: "Business Name" }] })).toEqual([{ jid: "2348000000001@s.whatsapp.net", name: "Saved Name" }]);
+    const userInfo = { data: { Users: { "2348000000000@s.whatsapp.net": { LID: "987654321@lid" } } } };
+    expect(providerAccountAliases(userInfo)).toEqual(["2348000000000@s.whatsapp.net", "987654321@lid"]);
+    expect(providerIdentityMappings(userInfo)).toEqual([{ canonicalJid: "2348000000000@s.whatsapp.net", aliases: ["2348000000000@s.whatsapp.net", "987654321@lid"] }]);
+  });
+
   it("requires ownership, disclosure, and explicit contract qualification", async () => {
     const harness = createHarness();
     const source = await tenant(harness);
@@ -340,6 +347,7 @@ describe("read-only provider sessions", () => {
     vi.mocked(fetch).mockImplementation(async (input) => {
       const path = new URL(String(input)).pathname;
       if (path === "/instance/all") return Response.json({ data: [{ id: source.instanceId, jid: "2348000000000:7@s.whatsapp.net" }] });
+      if (path === "/user/info") return Response.json({ data: { Users: { "2348000000000@s.whatsapp.net": { LID: "987654321098765@lid" } } } });
       if (path === "/group/list") return Response.json({ data: [{
         JID: "120363000000005@g.us",
         OwnerJID: "2348999999999@s.whatsapp.net",
@@ -364,6 +372,7 @@ describe("read-only provider sessions", () => {
     vi.mocked(fetch).mockImplementation(async (input, init) => {
       const path = new URL(String(input)).pathname;
       if (path === "/instance/all") return Response.json({ data: [{ id: source.instanceId, token: currentToken, jid: "2348000000000:7@s.whatsapp.net" }] });
+      if (path === "/user/info") return Response.json({ data: { Users: { "2348000000000@s.whatsapp.net": { LID: "987654321098765@lid" } } } });
       if (path === "/group/list") {
         expect(new Headers(init?.headers).get("apikey")).toBe(currentToken);
         return Response.json({ data: [{

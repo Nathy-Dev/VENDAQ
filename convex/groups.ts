@@ -3,7 +3,7 @@ import { action, internalMutation, internalQuery, mutation, query } from "./_gen
 import { internal } from "./_generated/api";
 import { requireBusiness, requireIdentity } from "./lib/authorization";
 import { decryptSecret, encryptSecret, sha256 } from "./lib/crypto";
-import { providerGroups, providerInstances, providerRequest } from "./lib/evolution";
+import { providerAccountAliases, providerGroups, providerInstances, providerRequest } from "./lib/evolution";
 import { BUSINESS_SYSTEM_PROMPT_MIN_LENGTH } from "./lib/launch";
 
 const groupRole = v.union(v.literal("owner"), v.literal("admin"), v.literal("member"));
@@ -124,7 +124,8 @@ export const refresh = action({
     }
     const result = await providerRequest("GET", "/group/list", { token, instanceId: session.providerInstanceId });
     const connectedJid = providerInstance?.jid ?? "";
-    const groups = providerGroups(result, connectedJid);
+    const accountResult = connectedJid ? await providerRequest("POST", "/user/info", { token, instanceId: session.providerInstanceId, body: { number: [connectedJid], formatJid: false } }) : { data: { Users: {} } };
+    const groups = providerGroups(result, [connectedJid, ...providerAccountAliases(accountResult)]);
     await ctx.runMutation(internal.groups.upsertFromProvider, { businessId: args.businessId, groups });
     return { refreshed: groups.length };
   },

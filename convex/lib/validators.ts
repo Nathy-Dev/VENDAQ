@@ -4,7 +4,7 @@ export const mediaType = v.union(v.literal("text"), v.literal("image"), v.litera
 export const connectionState = v.union(v.literal("provisioning"), v.literal("pending"), v.literal("connected"), v.literal("disconnected"), v.literal("error"), v.literal("revoked"));
 export const receiptState = v.union(v.literal("delivered"), v.literal("read"), v.literal("read_self"));
 export const normalizedEvent = v.union(
-  v.object({ kind: v.literal("message"), messageId: v.string(), chat: v.string(), identityKey: v.string(), fromMe: v.boolean(), isGroup: v.boolean(), mentioned: v.boolean(), name: v.optional(v.string()), text: v.string(), mediaType, eventAt: v.number(), manualReview: v.boolean() }),
+  v.object({ kind: v.literal("message"), messageId: v.string(), chat: v.string(), identityKey: v.string(), fromMe: v.boolean(), isGroup: v.boolean(), mentioned: v.boolean(), name: v.optional(v.string()), aliasJids: v.optional(v.array(v.string())), text: v.string(), mediaType, eventAt: v.number(), manualReview: v.boolean() }),
   v.object({ kind: v.literal("receipt"), chat: v.string(), sender: v.string(), identityKey: v.string(), messageIds: v.array(v.string()), state: receiptState, eventAt: v.number() }),
   v.object({ kind: v.literal("connection"), event: v.string(), eventAt: v.optional(v.number()), qrCiphertext: v.optional(v.string()) }),
   v.object({ kind: v.literal("ignored"), reason: v.string() }),

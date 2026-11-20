@@ -42,12 +42,25 @@ export const customers = query({
   handler: async (ctx, args) => {
     await requireBusiness(ctx, args.businessId);
     const conversations = await ctx.db.query("conversations").withIndex("by_business_activity", (builder) => builder.eq("businessId", args.businessId)).order("desc").take(50);
-    const output: { customerId: Id<"customers">; name: string; identity: string; lastActivityAt: number; firstInboundAt: number | null }[] = [];
+    const output = new Map<string, { customerId: Id<"customers">; name: string; identity: string; lastActivityAt: number; firstInboundAt: number | null }>();
     for (const conversation of conversations) {
       const customer = await ctx.db.get(conversation.customerId);
-      if (customer && customer.businessId === args.businessId && customer.deletedAt === undefined) output.push({ customerId: customer._id, name: customer.name || "Unnamed customer", identity: customer.phone, lastActivityAt: conversation.lastEventAt, firstInboundAt: customer.firstInboundAt ?? null });
+      if (!customer || customer.businessId !== args.businessId || customer.deletedAt !== undefined) continue;
+      const alias = !customer.isGroup ? await ctx.db.query("contactAliases").withIndex("by_business_jid", (builder) => builder.eq("businessId", args.businessId).eq("jid", customer.phone)).unique() : null;
+      const identity = alias?.canonicalJid ?? customer.phone;
+      const key = alias?.canonicalJid ?? customer.identityKey ?? customer.phone;
+      const current = output.get(key);
+      const candidateName = alias?.name || customer.name || (customer.isGroup ? "WhatsApp group" : identity.split("@")[0]);
+      const customerId = current && current.identity === identity ? current.customerId : customer._id;
+      output.set(key, {
+        customerId,
+        name: alias?.name || current?.name || candidateName,
+        identity,
+        lastActivityAt: Math.max(current?.lastActivityAt ?? 0, conversation.lastEventAt),
+        firstInboundAt: current?.firstInboundAt === null || current?.firstInboundAt === undefined || customer.firstInboundAt === undefined ? current?.firstInboundAt ?? customer.firstInboundAt ?? null : Math.min(current.firstInboundAt, customer.firstInboundAt),
+      });
     }
-    return output;
+    return [...output.values()].sort((a, b) => b.lastActivityAt - a.lastActivityAt);
   },
 });
 
@@ -58,8 +71,17 @@ export const messages = query({
     await requireBusiness(ctx, args.businessId);
     const customer = await ctx.db.get(args.customerId);
     if (!customer || customer.businessId !== args.businessId || customer.deletedAt !== undefined) throw new ConvexError({ code: "NOT_FOUND" });
-    const messages = await ctx.db.query("interactions").withIndex("by_customer", (builder) => builder.eq("customerId", args.customerId)).order("desc").take(100);
-    return messages.filter((message) => message.businessId === args.businessId).map((message) => ({ messageId: message._id, role: message.role, text: message.content, timestamp: message.timestamp, manualReview: message.manualReviewRequired ?? false, type: message.messageType ?? "unsupported" }));
+    const alias = !customer.isGroup ? await ctx.db.query("contactAliases").withIndex("by_business_jid", (builder) => builder.eq("businessId", args.businessId).eq("jid", customer.phone)).unique() : null;
+    const linkedCustomers = [customer];
+    if (alias) {
+      const aliases = await ctx.db.query("contactAliases").withIndex("by_business_canonical", (builder) => builder.eq("businessId", args.businessId).eq("canonicalJid", alias.canonicalJid)).take(20);
+      for (const entry of aliases) {
+        const linked = await ctx.db.query("customers").withIndex("by_business_phone", (builder) => builder.eq("businessId", args.businessId).eq("phone", entry.jid)).unique();
+        if (linked && linked.deletedAt === undefined && !linkedCustomers.some((current) => current._id === linked._id)) linkedCustomers.push(linked);
+      }
+    }
+    const batches = await Promise.all(linkedCustomers.map((linked) => ctx.db.query("interactions").withIndex("by_customer", (builder) => builder.eq("customerId", linked._id)).order("desc").take(100)));
+    return batches.flat().filter((message) => message.businessId === args.businessId).sort((a, b) => b.timestamp - a.timestamp).slice(0, 100).map((message) => ({ messageId: message._id, role: message.role, text: message.content, timestamp: message.timestamp, manualReview: message.manualReviewRequired ?? false, type: message.messageType ?? "unsupported" }));
   },
 });
 

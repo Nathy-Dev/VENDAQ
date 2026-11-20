@@ -201,6 +201,7 @@ export const checkHealth = internalAction({
       }
       const effectiveState = state === "connected" ? "connected" : session.state === "pending" || qrCiphertext ? "pending" : state;
       await ctx.runMutation(internal.foundation.updateSession, { sessionId: session._id, generation: session.generation, state: effectiveState, health: true, ...(qrCiphertext ? { qrCiphertext } : {}) });
+      if (effectiveState === "connected") await ctx.scheduler.runAfter(0, internal.directorySync.sync, { sessionId: session._id, generation: session.generation });
       logEvent("connection_checked", { correlationId: session._id, businessId: session.businessId, code: state.toUpperCase() });
     } catch (error) {
       const code = connectionErrorCode(error);

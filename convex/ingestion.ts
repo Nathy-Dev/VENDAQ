@@ -44,6 +44,9 @@ export const enqueue = internalMutation({
         });
         await ctx.db.patch(session.businessId, { whatsappStatus: state === "connected" ? "connected" : state === "pending" ? "pending" : state === "error" ? "error" : "disconnected" });
       }
+      if (state === "connected" && session.providerInstanceId) {
+        await ctx.scheduler.runAfter(0, internal.directorySync.sync, { sessionId: session._id, generation: session.generation });
+      }
       if (event !== "QRCode" && session.providerInstanceId) await ctx.scheduler.runAfter(0, internal.connections.checkHealth, { sessionId: session._id, generation: session.generation });
     }
     const existing = await ctx.db.query("inboundEvents").withIndex("by_session_key", (builder) => builder.eq("sessionId", session._id).eq("eventKey", eventKey)).unique();
@@ -102,20 +105,46 @@ export const applyEvent = internalMutation({
       const messageKey = `${session._id}:${event.eventKey}`;
       const existingMessage = await ctx.db.query("interactions").withIndex("by_business_event", (builder) => builder.eq("businessId", business._id).eq("providerEventKey", messageKey)).unique();
       if (!existingMessage) {
-        let customer = await ctx.db.query("customers").withIndex("by_business_identity", (builder) => builder.eq("businessId", business._id).eq("identityKey", payload.identityKey)).unique();
+        const aliases = payload.isGroup ? [] : [...new Set([payload.chat, ...(payload.aliasJids ?? [])])];
+        let canonicalChat = payload.chat;
+        let canonicalIdentityKey = payload.identityKey;
+        let savedName = "";
+        for (const jid of aliases) {
+          const alias = await ctx.db.query("contactAliases").withIndex("by_business_jid", (builder) => builder.eq("businessId", business._id).eq("jid", jid)).unique();
+          if (alias) {
+            canonicalChat = alias.canonicalJid;
+            canonicalIdentityKey = alias.canonicalIdentityKey ?? canonicalIdentityKey;
+            savedName ||= alias.name ?? "";
+          }
+        }
+        if (canonicalIdentityKey !== payload.identityKey) await ctx.db.patch(event._id, { identityKey: canonicalIdentityKey });
+        for (const jid of aliases) {
+          const existingAlias = await ctx.db.query("contactAliases").withIndex("by_business_jid", (builder) => builder.eq("businessId", business._id).eq("jid", jid)).unique();
+          if (existingAlias) await ctx.db.patch(existingAlias._id, { canonicalJid: canonicalChat, canonicalIdentityKey, updatedAt: Date.now() });
+          else await ctx.db.insert("contactAliases", { businessId: business._id, jid, canonicalJid: canonicalChat, canonicalIdentityKey, updatedAt: Date.now() });
+        }
+        let customer = await ctx.db.query("customers").withIndex("by_business_identity", (builder) => builder.eq("businessId", business._id).eq("identityKey", canonicalIdentityKey)).unique();
+        if (!customer) customer = await ctx.db.query("customers").withIndex("by_business_phone", (builder) => builder.eq("businessId", business._id).eq("phone", canonicalChat)).unique();
+        if (!customer && canonicalChat !== payload.chat) customer = await ctx.db.query("customers").withIndex("by_business_identity", (builder) => builder.eq("businessId", business._id).eq("identityKey", payload.identityKey)).unique();
         if (!customer) {
-          const customerId = await ctx.db.insert("customers", { businessId: business._id, phone: payload.chat, ...(payload.name && !payload.fromMe ? { name: payload.name } : {}), identityKey: payload.identityKey, totalValue: 0, lastInteraction: payload.eventAt, isGroup: payload.isGroup, ...(payload.fromMe ? { lastOutboundAt: payload.eventAt } : { firstInboundAt: payload.eventAt, lastInboundAt: payload.eventAt }), leadSource: payload.fromMe ? "imported" : "dm", funnelStage: payload.fromMe ? "viewer" : "engaged", tags: ["captured", ...(payload.isGroup ? ["group"] : [])] });
+          const preferredName = savedName || payload.name;
+          const customerId = await ctx.db.insert("customers", { businessId: business._id, phone: canonicalChat, ...(preferredName ? { name: preferredName } : {}), identityKey: canonicalIdentityKey, totalValue: 0, lastInteraction: payload.eventAt, isGroup: payload.isGroup, ...(payload.fromMe ? { lastOutboundAt: payload.eventAt } : { firstInboundAt: payload.eventAt, lastInboundAt: payload.eventAt }), leadSource: payload.fromMe ? "imported" : "dm", funnelStage: payload.fromMe ? "viewer" : "engaged", tags: ["captured", ...(payload.isGroup ? ["group"] : [])] });
           customer = await ctx.db.get(customerId);
         }
         if (!customer || customer.deletedAt !== undefined) throw new Error("INVALID_CUSTOMER_STATE");
+        if (customer.phone !== canonicalChat || customer.identityKey !== canonicalIdentityKey || (savedName && customer.name !== savedName) || payload.isGroup !== (customer.isGroup ?? false)) {
+          await ctx.db.patch(customer._id, { phone: canonicalChat, identityKey: canonicalIdentityKey, ...(savedName ? { name: savedName } : {}), isGroup: payload.isGroup });
+        }
         await ctx.db.patch(customer._id, { expiresAt: Math.max(customer.lastInteraction, payload.eventAt) + (business.messageRetentionDays ?? foundationPolicy().messageRetentionDays) * 86400000 });
-        await ctx.db.patch(customer._id, { lastInteraction: Math.max(customer.lastInteraction, payload.eventAt), ...(payload.fromMe ? { lastOutboundAt: Math.max(customer.lastOutboundAt ?? 0, payload.eventAt) } : { firstInboundAt: customer.firstInboundAt === undefined ? payload.eventAt : Math.min(customer.firstInboundAt, payload.eventAt), lastInboundAt: Math.max(customer.lastInboundAt ?? 0, payload.eventAt), leadSource: "dm" }), ...(!payload.fromMe && payload.name && !customer.name ? { name: payload.name } : {}) });
-        let conversation = await ctx.db.query("conversations").withIndex("by_business_identity", (builder) => builder.eq("businessId", business._id).eq("identityKey", payload.identityKey)).unique();
+        await ctx.db.patch(customer._id, { lastInteraction: Math.max(customer.lastInteraction, payload.eventAt), ...(payload.fromMe ? { lastOutboundAt: Math.max(customer.lastOutboundAt ?? 0, payload.eventAt) } : { firstInboundAt: customer.firstInboundAt === undefined ? payload.eventAt : Math.min(customer.firstInboundAt, payload.eventAt), lastInboundAt: Math.max(customer.lastInboundAt ?? 0, payload.eventAt), leadSource: "dm" }), ...(!savedName && !payload.fromMe && payload.name && !customer.name ? { name: payload.name } : {}) });
+        let conversation = await ctx.db.query("conversations").withIndex("by_business_identity", (builder) => builder.eq("businessId", business._id).eq("identityKey", canonicalIdentityKey)).unique();
+        if (!conversation && canonicalIdentityKey !== payload.identityKey) conversation = await ctx.db.query("conversations").withIndex("by_business_identity", (builder) => builder.eq("businessId", business._id).eq("identityKey", payload.identityKey)).unique();
         if (!conversation) {
-          const conversationId = await ctx.db.insert("conversations", { businessId: business._id, customerId: customer._id, identityKey: payload.identityKey, revision: 0, lastEventAt: payload.eventAt, messageCount: 0 });
+          const conversationId = await ctx.db.insert("conversations", { businessId: business._id, customerId: customer._id, identityKey: canonicalIdentityKey, revision: 0, lastEventAt: payload.eventAt, messageCount: 0 });
           conversation = await ctx.db.get(conversationId);
         }
-        if (!conversation || conversation.customerId !== customer._id) throw new Error("INVALID_CONVERSATION_STATE");
+        if (!conversation) throw new Error("INVALID_CONVERSATION_STATE");
+        if (conversation.customerId !== customer._id || conversation.identityKey !== canonicalIdentityKey) await ctx.db.patch(conversation._id, { customerId: customer._id, identityKey: canonicalIdentityKey });
         const lastOwnerAt = Math.max(conversation.lastOwnerAt ?? 0, payload.fromMe ? payload.eventAt : 0);
         await ctx.db.patch(conversation._id, { revision: conversation.revision + 1, lastEventAt: Math.max(conversation.lastEventAt, payload.eventAt), messageCount: conversation.messageCount + 1, ...(payload.fromMe ? { lastOwnerAt } : { lastInboundAt: Math.max(conversation.lastInboundAt ?? 0, payload.eventAt) }) });
         // Predictions are immutable evidence on customer messages. Owner messages

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { api } from "../convex/_generated/api";
+import { api, internal } from "../convex/_generated/api";
+import { identityDigest } from "../convex/lib/crypto";
 import { createHarness, drain, message, tenant, webhook } from "./harness";
 
 describe("authenticated WhatsApp ingestion", () => {
@@ -93,25 +94,60 @@ describe("authenticated WhatsApp ingestion", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it("keeps group identities separate while blocking group tasks and Status-to-Cash observations", async () => {
+  it("canonicalizes private LID messages and names group threads from group metadata", async () => {
     const harness = createHarness();
     const source = await tenant(harness);
-    await webhook(harness, message(source, { chat: "12345@lid" }));
-    await webhook(harness, message(source, { chat: "12345@s.whatsapp.net" }));
-    await webhook(harness, message(source, { chat: "12345@g.us" }));
+    await webhook(harness, message(source, { id: "lid-inbound", chat: "12345@lid", info: { SenderAlt: "2348000000001@s.whatsapp.net" } }));
+    await webhook(harness, message(source, { id: "phone-inbound", chat: "2348000000001@s.whatsapp.net" }));
+    await webhook(harness, message(source, { id: "group-message", chat: "12345@g.us", name: "First Participant", info: { IsGroup: true }, data: { groupData: { Name: "Market Community" } } }));
     await webhook(harness, { event: "Receipt", instanceId: source.instanceId, instanceToken: source.token, state: "Read", data: { Chat: "status@broadcast", Sender: "56789@lid", MessageIDs: ["status-1", "status-2"], Timestamp: new Date().toISOString() } });
     await drain(harness);
-    expect(await harness.run((ctx) => ctx.db.query("customers").collect())).toHaveLength(3);
+    expect(await harness.run((ctx) => ctx.db.query("customers").collect())).toHaveLength(2);
+    const contacts = await source.owner.query(api.foundation.customers, { businessId: source.businessId });
+    expect(contacts).toEqual(expect.arrayContaining([
+      expect.objectContaining({ identity: "2348000000001@s.whatsapp.net", name: "Synthetic Buyer" }),
+      expect.objectContaining({ identity: "12345@g.us", name: "Market Community" }),
+    ]));
     const observations = await harness.run((ctx) => ctx.db.query("statusObservations").collect());
     expect(observations).toHaveLength(0);
     const groups = await harness.run((ctx) => ctx.db.query("managedGroups").collect());
     expect(groups).toHaveLength(1);
-    expect(groups[0]).toMatchObject({ groupJid: "12345@g.us", isEnabled: false, mentionOnly: true });
+    expect(groups[0]).toMatchObject({ groupJid: "12345@g.us", groupName: "Market Community", isEnabled: false, mentionOnly: true });
     const tasks = await harness.run((ctx) => ctx.db.query("followUpTasks").collect());
-    expect(tasks).toHaveLength(2);
+    expect(tasks).toHaveLength(1);
     expect(tasks.every((task) => task.reason === "buying_signal" && task.triggerInteractionId !== undefined)).toBe(true);
     expect(await harness.run((ctx) => ctx.db.query("assistantDispatches").collect())).toHaveLength(0);
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("keeps owner messages on their recipient thread when SenderAlt is the owner's LID", async () => {
+    const harness = createHarness();
+    const source = await tenant(harness);
+    await webhook(harness, message(source, { id: "owner-lid-message", chat: "2348111111111@s.whatsapp.net", fromMe: true, info: { SenderAlt: "987654321@lid" }, name: "Owner" }));
+    await drain(harness);
+    const contacts = await source.owner.query(api.foundation.customers, { businessId: source.businessId });
+    expect(contacts).toHaveLength(1);
+    expect(contacts[0].identity).toBe("2348111111111@s.whatsapp.net");
+  });
+
+  it("combines existing LID and phone histories and prioritizes the saved contact name", async () => {
+    const harness = createHarness();
+    const source = await tenant(harness);
+    await webhook(harness, message(source, { id: "lid-history", chat: "99999@lid", name: "Push Name" }));
+    await webhook(harness, message(source, { id: "phone-history", chat: "2348999999999@s.whatsapp.net", name: "Other Push Name" }));
+    await drain(harness);
+    const canonicalIdentityKey = await identityDigest(source.businessId, "2348999999999@s.whatsapp.net");
+    await harness.mutation(internal.directorySync.apply, {
+      businessId: source.businessId,
+      contacts: [{ jid: "2348999999999@s.whatsapp.net", name: "Saved Contact" }],
+      mappings: [{ canonicalJid: "2348999999999@s.whatsapp.net", canonicalIdentityKey, aliases: ["99999@lid", "2348999999999@s.whatsapp.net"] }],
+      groups: [],
+    });
+    const contacts = await source.owner.query(api.foundation.customers, { businessId: source.businessId });
+    expect(contacts).toHaveLength(1);
+    expect(contacts[0]).toMatchObject({ name: "Saved Contact", identity: "2348999999999@s.whatsapp.net" });
+    const messages = await source.owner.query(api.foundation.messages, { businessId: source.businessId, customerId: contacts[0].customerId });
+    expect(messages).toHaveLength(2);
   });
 
   it("bounds payloads and quarantines authenticated malformed events without raw content", async () => {

@@ -125,6 +125,7 @@ export const sweep = internalMutation({
     for (const session of healthDue) {
       await ctx.db.patch(session._id, { nextHealthAt: now + foundationPolicy().healthIntervalMs, ...((session.qrExpiresAt ?? Infinity) <= now ? { qrCiphertext: undefined, qrExpiresAt: undefined } : {}) });
       if (session.state !== "revoked" && session.providerInstanceId) await ctx.scheduler.runAfter(0, internal.connections.checkHealth, { sessionId: session._id, generation: session.generation });
+      if (session.state === "connected" && session.providerInstanceId) await ctx.scheduler.runAfter(0, internal.directorySync.sync, { sessionId: session._id, generation: session.generation });
     }
     // Recover only expired disconnect leases. This avoids duplicate actions while
     // a provider request is still in progress.

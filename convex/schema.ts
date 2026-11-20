@@ -53,6 +53,7 @@ export default defineSchema({
     businessSystemPrompt: v.optional(v.string()),
     businessSystemPromptUpdatedAt: v.optional(v.number()),
     businessSystemPromptGeneratedAt: v.optional(v.number()),
+    lastDirectorySyncAt: v.optional(v.number()),
     // Status-to-Cash: template used when nudging a status viewer who never DMs.
     // Supports the placeholder [Customer Name].
     viewedNoDmTemplate: v.optional(v.string()),
@@ -128,6 +129,16 @@ export default defineSchema({
     .index("by_business_funnel_stage", ["businessId", "funnelStage"])
     .index("by_expiry", ["expiresAt"])
     .index("by_business_identity", ["businessId", "identityKey"]),
+
+  contactAliases: defineTable({
+    businessId: v.id("businesses"),
+    jid: v.string(),
+    canonicalJid: v.string(),
+    canonicalIdentityKey: v.optional(v.string()),
+    name: v.optional(v.string()),
+    updatedAt: v.number(),
+  }).index("by_business_jid", ["businessId", "jid"])
+    .index("by_business_canonical", ["businessId", "canonicalJid"]),
 
   orders: defineTable({
     businessId: v.id("businesses"),
