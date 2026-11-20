@@ -23,7 +23,7 @@ export function foundationPolicy() {
     eventRetentionDays: setting("FOUNDATION_EVENT_RETENTION_DAYS", 7, 1, 30),
     qrLifetimeMs: setting("FOUNDATION_QR_LIFETIME_MS", 120000, 1000, 300000),
     providerTimeoutMs: setting("FOUNDATION_PROVIDER_TIMEOUT_MS", 10000, 1000, 25000),
-    healthIntervalMs: setting("FOUNDATION_HEALTH_INTERVAL_MS", 300000, 60000, 3600000),
+    healthIntervalMs: setting("FOUNDATION_HEALTH_INTERVAL_MS", 60000, 60000, 3600000),
     authWindowMs: setting("FOUNDATION_AUTH_WINDOW_MS", 900000, 60000, 3600000),
     authAccountLimit: setting("FOUNDATION_AUTH_ACCOUNT_LIMIT", 10, 1, 100),
     authGlobalLimit: setting("FOUNDATION_AUTH_GLOBAL_LIMIT", 200, 10, 10000),

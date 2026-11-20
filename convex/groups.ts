@@ -2,8 +2,8 @@ import { ConvexError, v } from "convex/values";
 import { action, internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { requireBusiness, requireIdentity } from "./lib/authorization";
-import { decryptSecret } from "./lib/crypto";
-import { providerGroups, providerRequest } from "./lib/evolution";
+import { decryptSecret, encryptSecret, sha256 } from "./lib/crypto";
+import { providerGroups, providerInstances, providerRequest } from "./lib/evolution";
 import { BUSINESS_SYSTEM_PROMPT_MIN_LENGTH } from "./lib/launch";
 
 const groupRole = v.union(v.literal("owner"), v.literal("admin"), v.literal("member"));
@@ -65,13 +65,13 @@ export const setMentionOnly = mutation({
 
 export const authorizeRefresh = internalQuery({
   args: { businessId: v.id("businesses"), ownerId: v.string() },
-  returns: v.object({ sessionId: v.id("whatsappSessions"), tokenCiphertext: v.string(), providerInstanceId: v.string() }),
+  returns: v.object({ sessionId: v.id("whatsappSessions"), generation: v.number(), tokenCiphertext: v.string(), tokenHash: v.string(), providerInstanceId: v.string() }),
   handler: async (ctx, args) => {
     const business = await ctx.db.get(args.businessId);
     if (!business || business.ownerId !== args.ownerId || business.foundationVersion !== 1) throw new ConvexError({ code: "NOT_FOUND" });
     const session = await ctx.db.query("whatsappSessions").withIndex("by_business", (builder) => builder.eq("businessId", args.businessId)).unique();
     if (!session || session.state !== "connected" || !session.providerInstanceId) throw new ConvexError({ code: "WHATSAPP_NOT_CONNECTED" });
-    return { sessionId: session._id, tokenCiphertext: session.tokenCiphertext, providerInstanceId: session.providerInstanceId };
+    return { sessionId: session._id, generation: session.generation, tokenCiphertext: session.tokenCiphertext, tokenHash: session.tokenHash, providerInstanceId: session.providerInstanceId };
   },
 });
 
@@ -108,9 +108,23 @@ export const refresh = action({
   handler: async (ctx, args) => {
     const identity = await requireIdentity(ctx);
     const session = await ctx.runQuery(internal.groups.authorizeRefresh, { businessId: args.businessId, ownerId: identity.subject });
-    const token = await decryptSecret(session.tokenCiphertext, `business:${args.businessId}:session-token`);
+    const storedToken = await decryptSecret(session.tokenCiphertext, `business:${args.businessId}:session-token`);
+    const instancesResult = await providerRequest("GET", "/instance/all");
+    const providerInstance = providerInstances(instancesResult).find((instance) => instance.id === session.providerInstanceId);
+    const token = providerInstance?.token || storedToken;
+    if (token !== storedToken) {
+      await ctx.runMutation(internal.foundation.repairSessionCredential, {
+        sessionId: session.sessionId,
+        generation: session.generation,
+        providerInstanceId: session.providerInstanceId,
+        expectedTokenHash: session.tokenHash,
+        tokenCiphertext: await encryptSecret(token, `business:${args.businessId}:session-token`),
+        tokenHash: await sha256(token),
+      });
+    }
     const result = await providerRequest("GET", "/group/list", { token, instanceId: session.providerInstanceId });
-    const groups = providerGroups(result);
+    const connectedJid = providerInstance?.jid ?? "";
+    const groups = providerGroups(result, connectedJid);
     await ctx.runMutation(internal.groups.upsertFromProvider, { businessId: args.businessId, groups });
     return { refreshed: groups.length };
   },

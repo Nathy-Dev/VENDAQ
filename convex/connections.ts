@@ -16,6 +16,24 @@ function connectionErrorCode(error: unknown): string {
   return providerErrorCode(error);
 }
 
+async function repairProviderCredential(ctx: ActionCtx, session: SessionDocument, rejectedToken: string): Promise<string | null> {
+  const matches = providerInstances(await providerRequest("GET", "/instance/all"))
+    .filter((instance) => instance.id === session.providerInstanceId);
+  if (matches.length !== 1 || !matches[0].token || matches[0].token === rejectedToken) return null;
+  const token = matches[0].token;
+  const tokenCiphertext = await encryptSecret(token, `business:${session.businessId}:session-token`);
+  const tokenHash = await sha256(token);
+  const repaired = await ctx.runMutation(internal.foundation.repairSessionCredential, {
+    sessionId: session._id,
+    generation: session.generation,
+    providerInstanceId: session.providerInstanceId!,
+    expectedTokenHash: session.tokenHash,
+    tokenCiphertext,
+    tokenHash,
+  });
+  return repaired ? token : null;
+}
+
 async function resetRevokedSession(ctx: ActionCtx, session: SessionDocument): Promise<ConnectionResult> {
   if (session.state !== "revoked") return { state: session.state, qr: null, error: "SESSION_RESET_NOT_ALLOWED" };
   try {
@@ -155,8 +173,17 @@ export const checkHealth = internalAction({
     const session = await ctx.runQuery(internal.foundation.sessionById, { sessionId: args.sessionId });
     if (!session || session.generation !== args.generation || session.state === "revoked" || !session.providerInstanceId) return null;
     try {
-      const token = await decryptSecret(session.tokenCiphertext, `business:${session.businessId}:session-token`);
-      const status = await providerRequest("GET", "/instance/status", { token, instanceId: session.providerInstanceId });
+      let token = await decryptSecret(session.tokenCiphertext, `business:${session.businessId}:session-token`);
+      let status: unknown;
+      try {
+        status = await providerRequest("GET", "/instance/status", { token, instanceId: session.providerInstanceId });
+      } catch (error) {
+        if (providerErrorCode(error) !== "PROVIDER_AUTH_FAILED") throw error;
+        const repairedToken = await repairProviderCredential(ctx, session, token);
+        if (!repairedToken) throw error;
+        token = repairedToken;
+        status = await providerRequest("GET", "/instance/status", { token, instanceId: session.providerInstanceId });
+      }
       const state = providerConnectionState(status);
       let qrCiphertext: string | undefined;
       if (state === "pending" || (state !== "connected" && session.state === "pending")) {

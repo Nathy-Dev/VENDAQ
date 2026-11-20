@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api, internal } from "../convex/_generated/api";
+import { assistantReplyDelayMs } from "../convex/lib/launch";
 import { createHarness, tenant } from "./harness";
 
 const directPrompt = "You represent Launch Safety, a Nigerian retail business. Answer only with verified facts from this system prompt, never invent prices, stock, delivery dates, policies, discounts, or payment details, ask one short clarifying question when information is missing, and escalate complaints, refunds, and uncertain requests to the owner using concise friendly WhatsApp language.";
@@ -44,6 +45,14 @@ describe("Launch 1 assistant authorization", () => {
     vi.useFakeTimers();
     process.env.AUTH_JWT_ISSUER = "https://auth.example.test";
     process.env.FOUNDATION_ENCRYPTION_KEY = Buffer.alloc(32, 7).toString("base64");
+  });
+
+  it("uses a bounded natural reply delay that grows with message length", () => {
+    const short = assistantReplyDelayMs(20, "short-interaction");
+    const long = assistantReplyDelayMs(500, "long-interaction");
+    expect(short).toBeGreaterThanOrEqual(3_000);
+    expect(long).toBeLessThanOrEqual(15_000);
+    expect(long).toBeGreaterThan(short);
   });
 
   it("requires a comprehensive system prompt before replies can be authorized", async () => {
@@ -207,14 +216,17 @@ describe("Launch 1 assistant authorization", () => {
     vi.stubEnv("FOUNDATION_PROVIDER_ENABLED", "true");
     vi.stubEnv("EVOLUTION_GO_URL", "https://provider.example.test");
     vi.stubEnv("EVOLUTION_GO_API_KEY", "synthetic-provider-key");
-    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("provider timeout after submission")));
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async (input) => {
+      if (String(input).endsWith("/message/presence")) return Response.json({ message: "success" });
+      throw new Error("provider timeout after submission");
+    }));
 
     await harness.action(internal.assistantReply.submit, { dispatchId: dispatchId! });
     expect(await harness.run((ctx) => ctx.db.get(dispatchId!))).toMatchObject({ state: "unknown", attempts: 1, errorCode: "provider timeout after submission" });
-    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(fetch).toHaveBeenCalledTimes(2);
 
     await harness.action(internal.assistantReply.submit, { dispatchId: dispatchId! });
-    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(fetch).toHaveBeenCalledTimes(2);
     expect(await harness.run((ctx) => ctx.db.get(dispatchId!))).toMatchObject({ state: "unknown", attempts: 1 });
   });
 });

@@ -191,6 +191,35 @@ export const updateSession = internalMutation({
   },
 });
 
+export const repairSessionCredential = internalMutation({
+  args: {
+    sessionId: v.id("whatsappSessions"),
+    generation: v.number(),
+    providerInstanceId: v.string(),
+    expectedTokenHash: v.string(),
+    tokenCiphertext: v.string(),
+    tokenHash: v.string(),
+  },
+  returns: v.boolean(),
+  handler: async (ctx, args) => {
+    const session = await ctx.db.get(args.sessionId);
+    if (
+      !session ||
+      session.state === "revoked" ||
+      session.generation !== args.generation ||
+      session.providerInstanceId !== args.providerInstanceId ||
+      session.tokenHash !== args.expectedTokenHash
+    ) return false;
+    await ctx.db.patch(session._id, {
+      tokenCiphertext: args.tokenCiphertext,
+      tokenHash: args.tokenHash,
+      updatedAt: Date.now(),
+      lastError: undefined,
+    });
+    return true;
+  },
+});
+
 export const revokeSession = mutation({
   args: { businessId: v.id("businesses") }, returns: v.null(),
   handler: async (ctx, args) => {

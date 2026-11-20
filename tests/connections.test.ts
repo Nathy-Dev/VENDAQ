@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { api, internal } from "../convex/_generated/api";
 import { decryptSecret } from "../convex/lib/crypto";
-import { providerConnectionState, providerDisplayName, providerInstances, providerQr, providerRequest } from "../convex/lib/evolution";
+import { providerConnectionState, providerDisplayName, providerGroups, providerInstances, providerQr, providerRequest } from "../convex/lib/evolution";
 import { createHarness, drain, message, tenant, webhook } from "./harness";
 
 function enableProvider() {
@@ -202,6 +202,33 @@ describe("read-only provider sessions", () => {
     expect((await owner.query(api.foundation.workspace, {}))?.state).toBe("pending");
   });
 
+  it("repairs a stale encrypted provider token by the already-bound instance id", async () => {
+    enableProvider();
+    const harness = createHarness();
+    const source = await tenant(harness);
+    const currentToken = "provider-current-token";
+    const calls: string[] = [];
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const path = new URL(String(input)).pathname;
+      const credential = new Headers(init?.headers).get("apikey") ?? "";
+      calls.push(`${path}:${credential}`);
+      if (path === "/instance/status" && credential === source.token) return Response.json({ error: "not authorized" }, { status: 401 });
+      if (path === "/instance/all") return Response.json({ data: [{ id: source.instanceId, name: "seller-one", token: currentToken, jid: "2348000000000:7@s.whatsapp.net" }] });
+      if (path === "/instance/status" && credential === currentToken) return Response.json({ data: { Connected: true, LoggedIn: true } });
+      throw new Error(`Unexpected provider operation: ${path}`);
+    });
+
+    await expect(harness.action(internal.connections.checkHealth, { sessionId: source.sessionId, generation: 1 })).resolves.toBeNull();
+    const session = await harness.run((ctx) => ctx.db.get(source.sessionId));
+    expect(session?.state).toBe("connected");
+    expect(await decryptSecret(session!.tokenCiphertext, `business:${source.businessId}:session-token`)).toBe(currentToken);
+    expect(calls).toEqual([
+      `/instance/status:${source.token}`,
+      "/instance/all:synthetic-global-key",
+      `/instance/status:${currentToken}`,
+    ]);
+  });
+
   it("allows the internal operator path to apply the same guarded reset", async () => {
     enableProvider();
     const harness = createHarness();
@@ -243,7 +270,7 @@ describe("read-only provider sessions", () => {
     expect(providerQr({ data: { Qrcode: "synthetic-qr" } })).toBe("synthetic-qr");
     expect(providerQr({ data: { qrcode: { base64: "nested-base64" } } })).toBe("nested-base64");
     expect(providerQr({ data: { Code: "raw-qr-code" } })).toBe("raw-qr-code");
-    expect(providerInstances({ data: [{ instance: { id: "nested-id", name: "nested-name", token: "nested-token" } }] })).toEqual([{ id: "nested-id", name: "nested-name", token: "nested-token" }]);
+    expect(providerInstances({ data: [{ instance: { id: "nested-id", name: "nested-name", token: "nested-token", jid: "2348000000000:12@s.whatsapp.net" } }] })).toEqual([{ id: "nested-id", name: "nested-name", token: "nested-token", jid: "2348000000000:12@s.whatsapp.net" }]);
     expect(() => providerInstances({ message: "unexpected" })).toThrow("PROVIDER_INSTANCE_UNRESOLVED");
     expect(() => providerConnectionState({ unexpected: true })).toThrow("UNKNOWN_PROVIDER_STATE");
     expect(providerDisplayName("  Ada's   Studio  ", "business-id")).toBe("Ada's Studio");
@@ -252,6 +279,106 @@ describe("read-only provider sessions", () => {
     vi.stubEnv("EVOLUTION_GO_URL", "http://public.example.test");
     await expect(providerRequest("GET", "/instance/all")).rejects.toThrow("INSECURE_PROVIDER_URL");
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("maps Evolution Go group ownership and admin roles only for the connected account", () => {
+    const groups = providerGroups({ data: [
+      {
+        JID: "120363000000001@g.us",
+        OwnerJID: "2348000000000@s.whatsapp.net",
+        GroupName: { Name: "Owner group" },
+        Participants: [
+          { JID: "2348000000000@s.whatsapp.net", IsAdmin: true, IsSuperAdmin: true },
+          { JID: "2348111111111@s.whatsapp.net", IsAdmin: false, IsSuperAdmin: false },
+        ],
+      },
+      {
+        JID: "120363000000002@g.us",
+        OwnerJID: "2348222222222@s.whatsapp.net",
+        GroupName: { Name: "Admin group" },
+        Participants: [
+          { JID: "2348000000000@s.whatsapp.net", IsAdmin: true, IsSuperAdmin: false },
+          { JID: "2348222222222@s.whatsapp.net", IsAdmin: true, IsSuperAdmin: true },
+        ],
+      },
+      {
+        JID: "120363000000003@g.us",
+        OwnerJID: "2348333333333@s.whatsapp.net",
+        GroupName: { Name: "Member group" },
+        Participants: [
+          { JID: "2348000000000@s.whatsapp.net", IsAdmin: false, IsSuperAdmin: false },
+          { JID: "2348333333333@s.whatsapp.net", IsAdmin: true, IsSuperAdmin: true },
+        ],
+      },
+      {
+        JID: "120363000000004@g.us",
+        OwnerJID: "123456789012345@lid",
+        OwnerPN: "2348444444444@s.whatsapp.net",
+        GroupName: { Name: "LID admin group" },
+        Participants: [
+          { JID: "987654321098765@lid", PhoneNumber: "2348000000000@s.whatsapp.net", IsAdmin: true, IsSuperAdmin: false },
+          { JID: "123456789012345@lid", PhoneNumber: "2348444444444@s.whatsapp.net", IsAdmin: true, IsSuperAdmin: true },
+        ],
+      },
+    ] }, "2348000000000:12@s.whatsapp.net");
+
+    expect(groups).toEqual([
+      { jid: "120363000000001@g.us", name: "Owner group", memberCount: 2, role: "owner" },
+      { jid: "120363000000002@g.us", name: "Admin group", memberCount: 2, role: "admin" },
+      { jid: "120363000000003@g.us", name: "Member group", memberCount: 2, role: "member" },
+      { jid: "120363000000004@g.us", name: "LID admin group", memberCount: 2, role: "admin" },
+    ]);
+    expect(providerGroups({ data: [{ JID: "120363000000005@g.us", Participants: [{ JID: "2348999999999@s.whatsapp.net", IsAdmin: true }] }] })).toEqual([
+      { jid: "120363000000005@g.us", name: "120363000000005", memberCount: 1, role: "member" },
+    ]);
+  });
+
+  it("refreshes groups using the connected instance JID", async () => {
+    enableProvider();
+    const harness = createHarness();
+    const source = await tenant(harness);
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const path = new URL(String(input)).pathname;
+      if (path === "/instance/all") return Response.json({ data: [{ id: source.instanceId, jid: "2348000000000:7@s.whatsapp.net" }] });
+      if (path === "/group/list") return Response.json({ data: [{
+        JID: "120363000000005@g.us",
+        OwnerJID: "2348999999999@s.whatsapp.net",
+        GroupName: { Name: "Operations" },
+        Participants: [
+          { JID: "2348000000000@s.whatsapp.net", IsAdmin: true, IsSuperAdmin: false },
+          { JID: "2348999999999@s.whatsapp.net", IsAdmin: true, IsSuperAdmin: true },
+        ],
+      }] });
+      throw new Error(`Unexpected provider operation: ${path}`);
+    });
+
+    await expect(source.owner.action(api.groups.refresh, { businessId: source.businessId })).resolves.toEqual({ refreshed: 1 });
+    await expect(source.owner.query(api.groups.list, { businessId: source.businessId })).resolves.toEqual([expect.objectContaining({ groupName: "Operations", role: "admin" })]);
+  });
+
+  it("refreshes groups with the provider's current token when the stored token is stale", async () => {
+    enableProvider();
+    const harness = createHarness();
+    const source = await tenant(harness);
+    const currentToken = "provider-current-token";
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const path = new URL(String(input)).pathname;
+      if (path === "/instance/all") return Response.json({ data: [{ id: source.instanceId, token: currentToken, jid: "2348000000000:7@s.whatsapp.net" }] });
+      if (path === "/group/list") {
+        expect(new Headers(init?.headers).get("apikey")).toBe(currentToken);
+        return Response.json({ data: [{
+          JID: "120363000000006@g.us",
+          GroupName: { Name: "Current token group" },
+          Participants: [{ JID: "987654321098765@lid", PhoneNumber: "2348000000000@s.whatsapp.net", IsAdmin: true }],
+        }] });
+      }
+      throw new Error(`Unexpected provider operation: ${path}`);
+    });
+
+    await expect(source.owner.action(api.groups.refresh, { businessId: source.businessId })).resolves.toEqual({ refreshed: 1 });
+    const session = await harness.run((ctx) => ctx.db.get(source.sessionId));
+    expect(await decryptSecret(session!.tokenCiphertext, `business:${source.businessId}:session-token`)).toBe(currentToken);
+    await expect(source.owner.query(api.groups.list, { businessId: source.businessId })).resolves.toEqual([expect.objectContaining({ role: "admin" })]);
   });
 
   it("bypasses the ngrok browser warning and rejects non-JSON provider pages", async () => {

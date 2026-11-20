@@ -2,9 +2,9 @@ import { v } from "convex/values";
 import { internalAction, internalMutation, internalQuery } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { decryptSecret } from "./lib/crypto";
-import { ASSISTANT_REPLY_DELAY_MS, BUSINESS_SYSTEM_PROMPT_MIN_LENGTH } from "./lib/launch";
+import { assistantReplyDelayMs, BUSINESS_SYSTEM_PROMPT_MIN_LENGTH } from "./lib/launch";
 import { foundationPolicy } from "./lib/policy";
-import { providerSendResult, sendAuthorizedAssistantText } from "./lib/evolution";
+import { providerSendResult, sendAuthorizedAssistantText, showAuthorizedAssistantTyping } from "./lib/evolution";
 
 const candidate = v.object({
   businessId: v.id("businesses"),
@@ -195,7 +195,7 @@ export const prepareForInteraction = internalAction({
       const history = await ctx.runQuery(internal.assistantReply.recentConversation, { customerId: current.customerId });
       const content = await generateReply(current.systemPrompt, current.customerName, current.inboundContent, history);
       const dispatchId = await ctx.runMutation(internal.assistantReply.reserve, { interactionId: current.interactionId, content });
-      if (dispatchId) await ctx.scheduler.runAfter(ASSISTANT_REPLY_DELAY_MS, internal.assistantReply.submit, { dispatchId });
+      if (dispatchId) await ctx.scheduler.runAfter(0, internal.assistantReply.submit, { dispatchId });
     } catch (error) {
       console.error("assistant_reply_prepare_failed", error instanceof Error ? error.message : "UNKNOWN");
     }
@@ -216,7 +216,22 @@ export const submit = internalAction({
     }
     try {
       const token = await decryptSecret(record.tokenCiphertext, `business:${record.businessId}:session-token`);
-      const result = await sendAuthorizedAssistantText({ token, instanceId: record.providerInstanceId, target: record.target, content: record.content, interactionId: record.interactionId });
+      const delayMs = assistantReplyDelayMs(record.content.length, record.interactionId);
+      try {
+        // Evolution Go keeps the composing indicator alive for this bounded
+        // delay and clears it before returning. Failure is non-fatal: the
+        // assistant may still send, but consent is revalidated again below.
+        await showAuthorizedAssistantTyping({ token, instanceId: record.providerInstanceId, target: record.target, delayMs });
+      } catch (error) {
+        console.error("assistant_typing_failed", error instanceof Error ? error.message : "UNKNOWN");
+      }
+      const revalidated = await ctx.runQuery(internal.assistantReply.dispatchForSubmit, args);
+      if (!revalidated) {
+        await ctx.runMutation(internal.assistantReply.cancelBeforeSubmit, { dispatchId: args.dispatchId, errorCode: "AUTHORIZATION_REVOKED_DURING_TYPING" });
+        return null;
+      }
+      const currentToken = await decryptSecret(revalidated.tokenCiphertext, `business:${revalidated.businessId}:session-token`);
+      const result = await sendAuthorizedAssistantText({ token: currentToken, instanceId: revalidated.providerInstanceId, target: revalidated.target, content: revalidated.content, interactionId: revalidated.interactionId });
       const provider = providerSendResult(result);
       await ctx.runMutation(internal.assistantReply.finish, { dispatchId: args.dispatchId, state: "accepted", ...(provider.messageId ? { providerMessageId: provider.messageId } : {}) });
     } catch (error) {

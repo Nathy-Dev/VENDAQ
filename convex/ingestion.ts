@@ -16,10 +16,38 @@ export const enqueue = internalMutation({
     if (!session || session.state === "revoked" || session.generation !== args.generation || session.tokenHash !== args.tokenHash) throw new ConvexError({ code: "INVALID_WEBHOOK_AUTH" });
     const business = await ctx.db.get(session.businessId);
     if (!business || business.foundationVersion !== 1) throw new ConvexError({ code: "INVALID_WEBHOOK_AUTH" });
+    const now = Date.now();
     const eventKey = `${session.generation}:${args.eventKey}`;
+    // Apply every authenticated connection delivery before deduplication. The
+    // provider can emit the same event name across multiple disconnect/reconnect
+    // cycles, so treating all later "Connected" events as duplicates would
+    // leave the UI stuck after the first cycle.
+    if (args.payload.kind === "connection") {
+      const event = args.payload.event;
+      const state = event === "Connected" || event === "OfflineSyncCompleted"
+        ? "connected" as const
+        : event === "Disconnected" || event === "LoggedOut"
+          ? "disconnected" as const
+          : event === "QRTimeout"
+            ? "error" as const
+            : event === "QRCode" || event === "PairSuccess"
+              ? "pending" as const
+              : null;
+      if (state) {
+        await ctx.db.patch(session._id, {
+          state,
+          updatedAt: now,
+          lastError: event === "QRTimeout" ? "QR_TIMEOUT" : undefined,
+          nextHealthAt: now,
+          ...(state === "connected" || state === "disconnected" ? { qrCiphertext: undefined, qrExpiresAt: undefined } : {}),
+          ...(args.payload.qrCiphertext ? { qrCiphertext: args.payload.qrCiphertext, qrExpiresAt: now + foundationPolicy().qrLifetimeMs } : {}),
+        });
+        await ctx.db.patch(session.businessId, { whatsappStatus: state === "connected" ? "connected" : state === "pending" ? "pending" : state === "error" ? "error" : "disconnected" });
+      }
+      if (event !== "QRCode" && session.providerInstanceId) await ctx.scheduler.runAfter(0, internal.connections.checkHealth, { sessionId: session._id, generation: session.generation });
+    }
     const existing = await ctx.db.query("inboundEvents").withIndex("by_session_key", (builder) => builder.eq("sessionId", session._id).eq("eventKey", eventKey)).unique();
     if (existing) return { eventId: existing._id, duplicate: true, correlationId: existing.correlationId };
-    const now = Date.now();
     const identityKey = args.payload.kind === "message" || args.payload.kind === "receipt" ? args.payload.identityKey : undefined;
     const suppression = identityKey ? await ctx.db.query("privacySuppressions").withIndex("by_business_identity", (builder) => builder.eq("businessId", session.businessId).eq("identityKey", identityKey)).unique() : null;
     // Never persist a new content copy after this contact requested deletion.
@@ -170,11 +198,8 @@ export const applyEvent = internalMutation({
         }
       }
     } else if (payload.kind === "connection") {
-      if (payload.qrCiphertext && session.state !== "connected") await ctx.db.patch(session._id, { qrCiphertext: payload.qrCiphertext, qrExpiresAt: Date.now() + foundationPolicy().qrLifetimeMs, state: "pending", updatedAt: Date.now() });
-      if (payload.event !== "QRCode" && session.providerInstanceId) {
-        await ctx.db.patch(session._id, { nextHealthAt: Date.now(), lastError: "CONNECTION_RECHECK_PENDING" });
-        await ctx.scheduler.runAfter(0, internal.connections.checkHealth, { sessionId: session._id, generation: session.generation });
-      }
+      // Connection state and QR artifacts are applied synchronously by enqueue
+      // so clients do not wait for this background event processor.
     }
     await ctx.db.patch(event._id, { state: payload.kind === "ignored" ? "ignored" : "processed", payload: undefined, completedAt: Date.now(), errorCode: payload.kind === "ignored" ? payload.reason : undefined });
     logEvent("event_processed", { correlationId: event.correlationId, businessId: event.businessId, eventId: event._id, attempt: event.attempts });

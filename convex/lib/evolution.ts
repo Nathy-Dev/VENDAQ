@@ -7,7 +7,7 @@ function usesNgrokBrowserWarning(hostname: string): boolean {
   return hostname.endsWith(".ngrok-free.app") || hostname.endsWith(".ngrok-free.dev");
 }
 
-type ProviderRequestOptions = { token?: string; instanceId?: string; body?: Record<string, unknown> };
+type ProviderRequestOptions = { token?: string; instanceId?: string; body?: Record<string, unknown>; timeoutMs?: number };
 
 async function executeProviderRequest(method: string, path: string, options: ProviderRequestOptions = {}): Promise<unknown> {
   if (process.env.FOUNDATION_PROVIDER_ENABLED !== "true") throw new Error("PROVIDER_DISABLED");
@@ -32,7 +32,7 @@ async function executeProviderRequest(method: string, path: string, options: Pro
       ...(options.instanceId ? { instanceId: options.instanceId } : {}),
     },
     ...(options.body ? { body: JSON.stringify(options.body) } : {}),
-    signal: AbortSignal.timeout(foundationPolicy().providerTimeoutMs),
+    signal: AbortSignal.timeout(options.timeoutMs ?? foundationPolicy().providerTimeoutMs),
     redirect: "error",
   });
   if (!response.ok) throw new Error(response.status === 401 || response.status === 403 ? "PROVIDER_AUTH_FAILED" : "PROVIDER_REQUEST_FAILED");
@@ -69,6 +69,23 @@ export async function sendAuthorizedAssistantText(options: {
   });
 }
 
+export async function showAuthorizedAssistantTyping(options: {
+  token: string;
+  instanceId: string;
+  target: string;
+  delayMs: number;
+}): Promise<void> {
+  if (!options.target || !Number.isSafeInteger(options.delayMs) || options.delayMs < 1_000 || options.delayMs > 60_000) {
+    throw new Error("INVALID_ASSISTANT_TYPING");
+  }
+  await executeProviderRequest("POST", "/message/presence", {
+    token: options.token,
+    instanceId: options.instanceId,
+    body: { number: options.target, state: "composing", isAudio: false, delay: options.delayMs },
+    timeoutMs: options.delayMs + 5_000,
+  });
+}
+
 export function providerInstanceId(result: unknown): string {
   const root = object(result);
   const data = object(root.data);
@@ -76,7 +93,7 @@ export function providerInstanceId(result: unknown): string {
   return text(root.instanceId || root.id || data.instanceId || data.id || instance.id);
 }
 
-export type ProviderInstance = { id: string; name: string; token: string };
+export type ProviderInstance = { id: string; name: string; token: string; jid: string };
 
 export function providerDisplayName(businessName: string, businessId: string): string {
   const normalized = businessName.trim().replace(/\s+/g, " ").slice(0, 80);
@@ -101,6 +118,7 @@ export function providerInstances(result: unknown): ProviderInstance[] {
       id: text(record.instanceId ?? record.instance_id ?? record.id ?? data.instanceId ?? data.instance_id ?? data.id ?? instance.instanceId ?? instance.instance_id ?? instance.id),
       name: text(record.instanceName ?? record.instance_name ?? record.name ?? data.instanceName ?? data.instance_name ?? data.name ?? instance.instanceName ?? instance.instance_name ?? instance.name),
       token: text(record.token ?? data.token ?? instance.token),
+      jid: text(record.jid ?? record.JID ?? data.jid ?? data.JID ?? instance.jid ?? instance.JID),
     };
   }).filter((instance) => instance.id || instance.name);
 }
@@ -143,7 +161,30 @@ export function providerErrorCode(error: unknown): string {
 
 export type ProviderGroup = { jid: string; name: string; memberCount: number; role: "owner" | "admin" | "member" };
 
-export function providerGroups(result: unknown): ProviderGroup[] {
+function comparableAccountJid(value: unknown): string {
+  const jid = text(value).trim().toLowerCase();
+  const match = jid.match(/^([^:@]+)(?::\d+)?@(s\.whatsapp\.net|lid)$/);
+  return match ? `${match[1]}@${match[2]}` : "";
+}
+
+function accountJids(...values: unknown[]): Set<string> {
+  return new Set(values.map(comparableAccountJid).filter(Boolean));
+}
+
+function sharesAccountJid(left: Set<string>, right: Set<string>): boolean {
+  for (const jid of left) if (right.has(jid)) return true;
+  return false;
+}
+
+function participantRole(value: unknown): "owner" | "admin" | "member" {
+  const participant = object(value);
+  const rawRole = text(participant.role ?? participant.Role ?? participant.admin ?? participant.Admin).toLowerCase();
+  if (participant.IsSuperAdmin === true || participant.isSuperAdmin === true || rawRole === "owner" || rawRole === "superadmin") return "owner";
+  if (participant.IsAdmin === true || participant.isAdmin === true || rawRole === "admin") return "admin";
+  return "member";
+}
+
+export function providerGroups(result: unknown, connectedAccountJid = ""): ProviderGroup[] {
   const root = object(result);
   const data = root.data;
   const dataObject = object(data);
@@ -157,19 +198,32 @@ export function providerGroups(result: unknown): ProviderGroup[] {
           ? root.groups
           : [];
   const groups = new Map<string, ProviderGroup>();
+  const connectedJids = accountJids(connectedAccountJid);
   for (const value of records.slice(0, 500)) {
     const group = object(value);
     const jid = text(group.id ?? group.jid ?? group.groupJid ?? group.remoteJid ?? group.JID);
     if (!jid.endsWith("@g.us")) continue;
-    const name = text(group.subject ?? group.name ?? group.groupName ?? group.Name ?? group.Subject, 120) || jid.split("@")[0];
+    const groupName = object(group.GroupName);
+    const name = text(group.subject ?? group.name ?? group.groupName ?? group.Name ?? group.Subject ?? groupName.Name ?? groupName.name, 120) || jid.split("@")[0];
     const participants = Array.isArray(group.participants) ? group.participants : Array.isArray(group.Participants) ? group.Participants : [];
     const rawCount = group.size ?? group.Size ?? group.ParticipantCount;
     const memberCount = participants.length || (typeof rawCount === "number" && Number.isFinite(rawCount) ? Math.max(0, Math.floor(rawCount)) : 0);
     const self = object(group.selfParticipant ?? group.SelfParticipant);
     const rawRole = text(group.selfRole ?? group.role ?? self.role ?? self.admin).toLowerCase();
-    const role = group.isOwner === true || group.IsOwner === true || rawRole === "owner" || rawRole === "superadmin"
+    const reportedSelfJids = accountJids(group.selfJid, group.SelfJid, group.selfParticipantId, group.SelfParticipantId, group.selfPhoneNumber, group.SelfPhoneNumber);
+    const effectiveSelfJids = connectedJids.size ? connectedJids : reportedSelfJids;
+    const ownerJids = accountJids(group.owner, group.OwnerJID, group.ownerJid, group.OwnerPN, group.ownerPN);
+    const matchedParticipant = effectiveSelfJids.size
+      ? participants.find((participant) => {
+          const record = object(participant);
+          const participantJids = accountJids(record.id, record.jid, record.JID, record.lid, record.LID, record.phoneNumber, record.PhoneNumber);
+          return sharesAccountJid(effectiveSelfJids, participantJids);
+        })
+      : undefined;
+    const matchedRole = participantRole(matchedParticipant);
+    const role = group.isOwner === true || group.IsOwner === true || rawRole === "owner" || rawRole === "superadmin" || sharesAccountJid(effectiveSelfJids, ownerJids) || matchedRole === "owner"
       ? "owner"
-      : group.isAdmin === true || group.IsAdmin === true || self.isAdmin === true || self.IsAdmin === true || rawRole === "admin"
+      : group.isAdmin === true || group.IsAdmin === true || self.isAdmin === true || self.IsAdmin === true || rawRole === "admin" || matchedRole === "admin"
         ? "admin"
         : "member";
     groups.set(jid, { jid, name, memberCount, role });

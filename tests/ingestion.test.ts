@@ -51,6 +51,24 @@ describe("authenticated WhatsApp ingestion", () => {
     expect(await harness.run((ctx) => ctx.db.query("inboundEvents").collect())).toHaveLength(0);
   });
 
+  it("updates connected and disconnected state from authenticated webhooks without a manual refresh", async () => {
+    const harness = createHarness();
+    const source = await tenant(harness);
+    await harness.run((ctx) => ctx.db.patch(source.sessionId, { state: "disconnected" }));
+
+    expect((await webhook(harness, { event: "Connected", instanceId: source.instanceId, instanceToken: source.token, data: {} })).status).toBe(202);
+    expect((await source.owner.query(api.foundation.workspace, {}))?.state).toBe("connected");
+
+    expect((await webhook(harness, { event: "Disconnected", instanceId: source.instanceId, instanceToken: source.token, data: {} })).status).toBe(202);
+    expect((await source.owner.query(api.foundation.workspace, {}))?.state).toBe("disconnected");
+
+    // A later event with the same provider event name belongs to a new state
+    // cycle and must still update the live workspace even if its audit event
+    // key matches the first Connected delivery.
+    expect((await webhook(harness, { event: "Connected", instanceId: source.instanceId, instanceToken: source.token, data: {} })).status).toBe(202);
+    expect((await source.owner.query(api.foundation.workspace, {}))?.state).toBe("connected");
+  });
+
   it("stores casual and non-text messages, cancels either party's pending tasks, and keeps monotonic clocks", async () => {
     const harness = createHarness();
     const source = await tenant(harness);
