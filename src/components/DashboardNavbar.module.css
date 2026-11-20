@@ -1,5 +1,7 @@
-.sidebar { position: fixed; inset: 0 auto 0 0; z-index: 30; width: var(--sidebar-width); display: flex; flex-direction: column; padding: 30px 16px 18px; border-right: 1px solid var(--dash-border); background: #fff; }
+.sidebar { position: fixed; inset: 0 auto 0 0; z-index: 30; width: var(--sidebar-width); display: flex; flex-direction: column; padding: 30px 16px 18px; border-right: 1px solid var(--dash-border); background: #fff; transition: width 220ms ease, padding 220ms ease; }
 .brand { display: flex; min-height: 42px; margin: 0 12px 35px; }
+.collapseButton { position: absolute; top: 34px; right: -14px; z-index: 1; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: 1px solid var(--dash-border-strong); border-radius: 50%; background: #fff; color: var(--dash-text-muted); box-shadow: 0 3px 10px rgb(0 0 0 / 7%); }
+.collapseButton:hover { color: var(--dash-accent); border-color: var(--accent-border); background: var(--dash-accent-soft); }
 .mainNav { display: grid; gap: 7px; }
 .navLink { display: flex; align-items: center; gap: 16px; width: 100%; min-height: 49px; padding: 11px 14px; margin-bottom: 5px; border-radius: 8px; color: var(--dash-text); font-size: 15px; text-align: left; transition: background 150ms; }
 .navLink:hover { background: var(--dash-accent-soft); color: var(--dash-accent); }
@@ -18,12 +20,19 @@
 .mobileHeader, .bottomNav { display: none; }
 .iconButton { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: 8px; }
 .iconButton:hover { background: #f5f5f5; }
+.sidebar[data-collapsed="true"] { padding: 28px 10px 16px; }
+.sidebar[data-collapsed="true"] .brand { overflow: hidden; width: 34px; margin-inline: 11px; }
+.sidebar[data-collapsed="true"] .navLink { justify-content: center; padding-inline: 0; }
+.sidebar[data-collapsed="true"] .navLabel,
+.sidebar[data-collapsed="true"] .workspaceInfo,
+.sidebar[data-collapsed="true"] .footerNote { display: none; }
 @media (max-width: 1199px) and (min-width: 768px) {
   .sidebar { padding: 28px 10px 16px; }
   .brand { overflow: hidden; width: 34px; margin-inline: 11px; }
   .brand > span { gap: 22px; }
   .navLink { justify-content: center; padding-inline: 0; }
   .navLabel, .workspaceInfo, .footerNote { display: none; }
+  .collapseButton { display: none; }
 }
 @media (max-width: 767px) {
   .sidebar { display: none; }

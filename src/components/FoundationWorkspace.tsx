@@ -29,7 +29,7 @@ export default function FoundationWorkspace() {
 
   return (
     <DashboardShell>
-      <div className={styles.page} key={workspace.businessId}>
+      <div className={`${styles.page} ${screen === "settings" ? styles.settingsPage : ""}`} key={workspace.businessId}>
         {screen === "overview" && <WorkspaceOverview workspace={workspace} />}
         {screen === "inbox" && <WorkspaceInbox workspace={workspace} />}
         {screen === "actions" && <SellerWorkspacePanels workspace={workspace} />}

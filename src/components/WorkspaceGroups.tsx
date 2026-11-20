@@ -29,7 +29,7 @@ export default function WorkspaceGroups({ workspace }: { workspace: Workspace })
     finally { setBusy(null); }
   }
 
-  return <section className={styles.card}>
+  return <section className={`${styles.card} ${styles.groupsCard}`}>
     <div className={styles.sectionHeading}><div><h2>Groups & communities</h2><p>Choose each WhatsApp group where Pipelixr is allowed to interact. All groups are silent by default.</p></div><UsersRound size={18} aria-hidden="true" /></div>
     {!ready && <div className={styles.infoBanner}><ShieldCheck size={17} /><p>Before enabling a group: connect WhatsApp, save the business system prompt, and authorize group replies in Business AI.</p></div>}
     <div className={styles.toolbar}><Segmented value={filter} onChange={setFilter} label="Filter WhatsApp groups" options={[{ value: "managed", label: "Groups I manage" }, { value: "member", label: "Groups I belong to" }, { value: "all", label: "All groups" }]} /><Pill dot>Synced automatically</Pill></div>

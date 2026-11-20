@@ -31,11 +31,11 @@ const sections = [
 export default function WorkspaceSettings({ workspace }: { workspace: Workspace }) {
   const [section, setSection] = useState<(typeof sections)[number]["value"]>("general");
   return (
-    <div className={styles.stack}>
-      <PageHeader title="Settings" description="A few clear controls for the way you work." />
+    <div className={styles.settingsScreen}>
+      <div className={styles.settingsHeader}><PageHeader title="Settings" description="A few clear controls for the way you work." /></div>
       <div className={styles.settingsLayout}>
         <nav className={styles.settingsNav} aria-label="Settings sections">{sections.map((entry) => <button type="button" key={entry.value} aria-pressed={section === entry.value} onClick={() => setSection(entry.value)}>{entry.label}</button>)}</nav>
-        <div className={styles.stack}>
+        <div className={`${styles.stack} ${styles.settingsContent}`}>
           {section === "general" && <GeneralSettings workspace={workspace} />}
           {section === "connection" && <ConnectionPanel workspace={workspace} />}
           {section === "assistant" && <BusinessAssistantSettings workspace={workspace} />}

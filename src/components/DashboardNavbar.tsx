@@ -4,7 +4,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import { useQuery } from "convex/react";
-import { Home, MessageCircle, ListTodo, Radio, Settings, UserRound, LogOut, type LucideIcon } from "lucide-react";
+import { useEffect, useSyncExternalStore } from "react";
+import { Home, MessageCircle, ListTodo, Radio, Settings, UserRound, LogOut, PanelLeftClose, PanelLeftOpen, type LucideIcon } from "lucide-react";
 import { api } from "../../convex/_generated/api";
 import { initials } from "@/lib/workspace-ui";
 import Brand from "./Brand";
@@ -22,11 +23,50 @@ const accountNavigation = [
   { href: "/settings", icon: Settings, label: "Settings" },
 ];
 
+const SIDEBAR_STORAGE_KEY = "pipelixr-sidebar-collapsed";
+const SIDEBAR_CHANGE_EVENT = "pipelixr-sidebar-change";
+let sidebarCollapsedFallback = false;
+
+function getSidebarCollapsed() {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(SIDEBAR_STORAGE_KEY) === "true";
+  } catch {
+    return sidebarCollapsedFallback;
+  }
+}
+
+function subscribeToSidebar(callback: () => void) {
+  window.addEventListener("storage", callback);
+  window.addEventListener(SIDEBAR_CHANGE_EVENT, callback);
+  return () => {
+    window.removeEventListener("storage", callback);
+    window.removeEventListener(SIDEBAR_CHANGE_EVENT, callback);
+  };
+}
+
 export default function DashboardNavbar() {
   const pathname = usePathname();
   const { data: session } = useSession();
   const workspace = useQuery(api.foundation.workspace, {});
   const userName = session?.user?.name || "Your account";
+  const collapsed = useSyncExternalStore(subscribeToSidebar, getSidebarCollapsed, () => false);
+
+  useEffect(() => {
+    document.documentElement.dataset.sidebarCollapsed = String(collapsed);
+  }, [collapsed]);
+
+  function toggleSidebar() {
+    const next = !collapsed;
+    sidebarCollapsedFallback = next;
+    try {
+      window.localStorage.setItem(SIDEBAR_STORAGE_KEY, String(next));
+    } catch {
+      // Keep the in-memory preference for this visit.
+    }
+    document.documentElement.dataset.sidebarCollapsed = String(next);
+    window.dispatchEvent(new Event(SIDEBAR_CHANGE_EVENT));
+  }
 
   function navigationLink(item: { href: string; icon: LucideIcon; label: string }, mobile = false) {
     const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
@@ -42,8 +82,19 @@ export default function DashboardNavbar() {
 
   return (
     <>
-      <aside className={styles.sidebar} aria-label="Workspace navigation">
-        <Link href="/dashboard" className={styles.brand} aria-label="Pipelixr home"><Brand /></Link>
+      <aside id="workspace-sidebar" className={styles.sidebar} aria-label="Workspace navigation" data-collapsed={collapsed}>
+        <Link href="/dashboard" className={styles.brand} aria-label="Pipelixr home"><Brand compact={collapsed} /></Link>
+        <button
+          type="button"
+          className={styles.collapseButton}
+          onClick={toggleSidebar}
+          aria-controls="workspace-sidebar"
+          aria-expanded={!collapsed}
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        >
+          {collapsed ? <PanelLeftOpen size={15} aria-hidden="true" /> : <PanelLeftClose size={15} aria-hidden="true" />}
+        </button>
         <nav className={styles.mainNav} aria-label="Main">{mainNavigation.map((item) => navigationLink(item))}</nav>
         <div className={styles.sidebarBottom}>
           <div className={styles.workspaceInfo}>

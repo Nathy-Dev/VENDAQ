@@ -1,4 +1,5 @@
 .page { width: 100%; min-width: 0; }
+.settingsPage { height: 100%; min-height: 0; }
 .stack { display: grid; gap: 20px; min-width: 0; }
 .card { min-width: 0; background: #fff; border: 1px solid var(--dash-border); border-radius: 10px; padding: 20px; }
 .card h2 { font-size: 14px; font-weight: 600; letter-spacing: -.15px; }
@@ -103,11 +104,14 @@
 .auditList li { padding-block: 13px; border-bottom: 1px solid var(--dash-border); font-size: 12px; overflow-wrap: anywhere; }
 .auditList li:last-child { border-bottom: 0; }
 .auditList p { color: var(--dash-text-muted); font-size: 11px; margin-top: 4px; }
-.settingsLayout { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 28px; align-items: start; }
-.settingsNav { display: grid; gap: 4px; position: sticky; top: 30px; }
+.settingsScreen { display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 20px; height: 100%; min-height: 0; }
+.settingsHeader > header { margin-bottom: 0; }
+.settingsLayout { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 28px; align-items: stretch; min-height: 0; overflow: hidden; }
+.settingsNav { display: grid; align-content: start; gap: 4px; min-height: 0; overflow: hidden; }
 .settingsNav button { display: flex; align-items: center; gap: 9px; min-height: 40px; padding: 10px 12px; text-align: left; border-radius: 7px; color: #737373; font-size: 12px; }
 .settingsNav button:hover { background: var(--dash-accent-soft); color: var(--dash-accent); }
 .settingsNav button[aria-pressed="true"] { color: var(--dash-accent); background: var(--dash-accent-soft); font-weight: 600; }
+.settingsContent { min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding-right: 6px; }
 .settingRow { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding-block: 15px; border-bottom: 1px solid var(--dash-border); font-size: 12px; }
 .settingRow:last-child { border-bottom: 0; padding-bottom: 0; }
 .settingRow strong { font-size: 12px; font-weight: 550; }
@@ -198,7 +202,7 @@
   .summaryRail > .finePrint { grid-column: 1 / -1; }
   .inbox { grid-template-columns: 260px minmax(0, 1fr); }
 }
-@media (max-width: 900px) { .settingsLayout { grid-template-columns: 1fr; gap: 18px; } .settingsNav { display: flex; position: static; overflow-x: auto; padding-bottom: 6px; } .settingsNav button { white-space: nowrap; flex-shrink: 0; } }
+@media (max-width: 900px) { .settingsLayout { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); gap: 18px; } .settingsNav { display: flex; overflow-x: auto; overflow-y: hidden; padding-bottom: 6px; } .settingsNav button { white-space: nowrap; flex-shrink: 0; } }
 @media (max-width: 767px) {
   .inbox { display: block; height: calc(100dvh - 250px - env(safe-area-inset-bottom)); min-height: 390px; }
   .contactPane, .conversation { height: 100%; border-right: 0; }
@@ -232,7 +236,9 @@
 .toolbar { align-items: flex-start; }
 }
 
-.groupList { display: grid; gap: 10px; margin-top: 16px; }
+.groupsCard { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; }
+.groupsCard .toolbar { flex-shrink: 0; }
+.groupList { display: grid; align-content: start; flex: 1 1 auto; gap: 10px; min-height: 0; margin-top: 16px; padding-right: 6px; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
 .groupRow { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 15px 16px; border: 1px solid var(--dash-border); border-radius: 8px; background: #fff; }
 .groupInfo { min-width: 0; }
 .groupTitleRow { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
