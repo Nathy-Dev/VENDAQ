@@ -156,8 +156,14 @@ export const applyEvent = internalMutation({
           if (nextStage !== currentStage) await ctx.db.patch(customer._id, { funnelStage: nextStage });
         }
         const expiresAt = payload.eventAt + (business.messageRetentionDays ?? foundationPolicy().messageRetentionDays) * 86400000;
-        const interactionId = await ctx.db.insert("interactions", { businessId: business._id, customerId: customer._id, conversationId: conversation._id, sessionId: session._id, role: payload.fromMe ? "owner" : "customer", content: payload.text, timestamp: payload.eventAt, receivedAt: event.receivedAt, providerEventKey: messageKey, whatsappMessageId: payload.messageId, ...(payload.mediaType !== "unsupported" ? { messageType: payload.mediaType } : {}), manualReviewRequired: payload.manualReview, isGroup: payload.isGroup, wasMentioned: payload.mentioned, ...(classification ? { classifierLabel: classification.label, classifierVersion: classification.version, classifierConfidence: classification.confidence, classifierRuleIds: classification.ruleIds, classifiedAt: Date.now() } : {}), expiresAt });
+        const interactionId = await ctx.db.insert("interactions", { businessId: business._id, customerId: customer._id, conversationId: conversation._id, sessionId: session._id, role: payload.fromMe ? "owner" : "customer", content: payload.text, timestamp: payload.eventAt, receivedAt: event.receivedAt, providerEventKey: messageKey, whatsappMessageId: payload.messageId, ...(payload.mediaType !== "unsupported" ? { messageType: payload.mediaType } : {}), manualReviewRequired: payload.manualReview, isGroup: payload.isGroup, wasMentioned: payload.mentioned, ...(payload.participantJid ? { participantJid: payload.participantJid } : {}), ...(payload.participantName ? { participantName: payload.participantName } : {}), ...(classification ? { classifierLabel: classification.label, classifierVersion: classification.version, classifierConfidence: classification.confidence, classifierRuleIds: classification.ruleIds, classifiedAt: Date.now() } : {}), expiresAt });
         if (payload.isGroup) await ctx.scheduler.runAfter(0, internal.groups.upsertDiscovered, { businessId: business._id, groupJid: payload.chat, ...(payload.name ? { groupName: payload.name } : {}) });
+        if (!payload.fromMe && payload.mediaType === "audio" && payload.mediaPayload) {
+          await ctx.scheduler.runAfter(0, internal.transcription.transcribe, { interactionId, mediaPayload: payload.mediaPayload, ...(payload.mediaMimeType ? { mediaMimeType: payload.mediaMimeType } : {}) });
+        }
+        if (!payload.fromMe && !payload.manualReview && payload.mediaType === "text" && payload.text.trim()) {
+          await ctx.scheduler.runAfter(0, internal.communityEngine.captureFromInteraction, { interactionId });
+        }
         if (!payload.fromMe && !payload.manualReview && payload.mediaType === "text" && payload.text.trim() && !(business.killSwitch ?? true) && (business.businessSystemPrompt?.trim().length ?? 0) >= BUSINESS_SYSTEM_PROMPT_MIN_LENGTH) {
           let assistantAuthorized = business.customerAutoReplyEnabled ?? false;
           if (payload.isGroup) {

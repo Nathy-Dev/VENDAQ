@@ -8,7 +8,7 @@ const directPrompt = "You represent Launch Safety, a Nigerian retail business. A
 async function inboundInteraction(
   harness: ReturnType<typeof createHarness>,
   source: Awaited<ReturnType<typeof tenant>>,
-  options: { isGroup?: boolean; wasMentioned?: boolean; target?: string } = {},
+  options: { isGroup?: boolean; wasMentioned?: boolean; target?: string; classifierLabel?: "buying_signal" | "inquiry" | "payment_related" | "casual_noise" | "manual_review" } = {},
 ) {
   const now = Date.now();
   return await harness.run(async (ctx) => {
@@ -36,6 +36,7 @@ async function inboundInteraction(
       manualReviewRequired: false,
       isGroup: options.isGroup ?? false,
       wasMentioned: options.wasMentioned ?? false,
+      ...(options.classifierLabel ? { classifierLabel: options.classifierLabel } : {}),
     });
   });
 }
@@ -159,6 +160,33 @@ describe("Launch 1 assistant authorization", () => {
 
     const mentioned = await inboundInteraction(harness, source, { isGroup: true, wasMentioned: true });
     expect(await harness.mutation(internal.assistantReply.reserve, { interactionId: mentioned, content: "Hello group." })).not.toBeNull();
+  });
+
+  it("enforces each simple group governance mode before AI generation", async () => {
+    const harness = createHarness();
+    const source = await tenant(harness, "group-governance");
+    const groupJid = "120000000088@g.us";
+    await source.owner.mutation(api.businessProfile.save, { businessId: source.businessId, systemPrompt: directPrompt, customerAutoReplyEnabled: false, groupAutoReplyEnabled: true });
+    await harness.mutation(internal.groups.upsertFromProvider, { businessId: source.businessId, groups: [{ jid: groupJid, name: "Governed group", memberCount: 25, role: "admin" }] });
+    await source.owner.mutation(api.groups.setEnabled, { businessId: source.businessId, groupJid, isEnabled: true });
+
+    const mentioned = await inboundInteraction(harness, source, { isGroup: true, wasMentioned: true, target: groupJid, classifierLabel: "buying_signal" });
+    const question = await inboundInteraction(harness, source, { isGroup: true, target: groupJid, classifierLabel: "inquiry" });
+    const unmentioned = await inboundInteraction(harness, source, { isGroup: true, target: groupJid, classifierLabel: "buying_signal" });
+
+    await source.owner.mutation(api.groups.setGovernance, { businessId: source.businessId, groupJid, mode: "watch", allowPrivateHandoff: false });
+    expect(await harness.query(internal.assistantReply.candidateForInteraction, { interactionId: mentioned })).toBeNull();
+    await source.owner.mutation(api.groups.setGovernance, { businessId: source.businessId, groupJid, mode: "suggest", allowPrivateHandoff: false });
+    expect(await harness.query(internal.assistantReply.candidateForInteraction, { interactionId: mentioned })).toBeNull();
+    await source.owner.mutation(api.groups.setGovernance, { businessId: source.businessId, groupJid, mode: "mentions", allowPrivateHandoff: false });
+    expect(await harness.query(internal.assistantReply.candidateForInteraction, { interactionId: mentioned })).not.toBeNull();
+    expect(await harness.query(internal.assistantReply.candidateForInteraction, { interactionId: unmentioned })).toBeNull();
+    await source.owner.mutation(api.groups.setGovernance, { businessId: source.businessId, groupJid, mode: "common_questions", allowPrivateHandoff: true });
+    expect(await harness.query(internal.assistantReply.candidateForInteraction, { interactionId: question })).not.toBeNull();
+    expect(await harness.query(internal.assistantReply.candidateForInteraction, { interactionId: unmentioned })).toBeNull();
+    await source.owner.mutation(api.groups.setGovernance, { businessId: source.businessId, groupJid, mode: "custom", allowPrivateHandoff: false, customInstructions: "Only answer questions about delivery and opening hours." });
+    const custom = await harness.query(internal.assistantReply.candidateForInteraction, { interactionId: unmentioned });
+    expect(custom?.systemPrompt).toContain("Only answer questions about delivery and opening hours.");
   });
 
   it("creates at most one dispatch for a duplicate interaction", async () => {

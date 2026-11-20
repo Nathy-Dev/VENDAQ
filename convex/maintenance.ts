@@ -49,6 +49,8 @@ export const deleteCustomerBatch = internalMutation({
     const messages = await ctx.db.query("interactions").withIndex("by_customer", (builder) => builder.eq("customerId", job.customerId)).take(foundationPolicy().batchSize);
     for (const message of messages) {
       if (message.businessId !== job.businessId) throw new Error("CROSS_TENANT_DELETION_BLOCKED");
+      const dispatch = await ctx.db.query("assistantDispatches").withIndex("by_interaction", (builder) => builder.eq("interactionId", message._id)).unique();
+      if (dispatch) await ctx.db.delete(dispatch._id);
       await ctx.db.delete(message._id);
     }
     const tasks = await ctx.db.query("followUpTasks").withIndex("by_customer", (builder) => builder.eq("customerId", job.customerId)).take(foundationPolicy().batchSize);
@@ -64,6 +66,14 @@ export const deleteCustomerBatch = internalMutation({
         const scheduled = await ctx.db.system.get(opportunity.scheduledId);
         if (scheduled?.state.kind === "pending") await ctx.scheduler.cancel(opportunity.scheduledId);
       }
+      await ctx.db.delete(opportunity._id);
+    }
+    const communityOpportunities = (await Promise.all((["open", "in_progress", "won", "lost", "dismissed"] as const).map((state) => ctx.db.query("communityOpportunities").withIndex("by_customer_state", (builder) => builder.eq("customerId", job.customerId).eq("state", state)).take(foundationPolicy().batchSize)))).flat().slice(0, foundationPolicy().batchSize);
+    for (const opportunity of communityOpportunities) {
+      const suggestion = await ctx.db.query("knowledgeSuggestions").withIndex("by_interaction", (builder) => builder.eq("interactionId", opportunity.interactionId)).unique();
+      if (suggestion) await ctx.db.delete(suggestion._id);
+      const handoffEvents = await ctx.db.query("handoffEvents").withIndex("by_opportunity_time", (builder) => builder.eq("opportunityId", opportunity._id)).take(10);
+      for (const handoffEvent of handoffEvents) await ctx.db.delete(handoffEvent._id);
       await ctx.db.delete(opportunity._id);
     }
     const labels = await ctx.db.query("messageLabels").withIndex("by_customer", (builder) => builder.eq("customerId", job.customerId)).take(foundationPolicy().batchSize);
@@ -83,7 +93,7 @@ export const deleteCustomerBatch = internalMutation({
     for (const receipt of receipts) await ctx.db.delete(receipt._id);
     const views = await ctx.db.query("statusObservations").withIndex("by_business_identity", (builder) => builder.eq("businessId", job.businessId).eq("viewerIdentityKey", identityKey)).take(foundationPolicy().batchSize);
     for (const view of views) await ctx.db.delete(view._id);
-    if ([messages, tasks, opportunities, labels, actionEvents, attributions, orders, events, receipts, views].some((batch) => batch.length === foundationPolicy().batchSize)) {
+    if ([messages, tasks, opportunities, communityOpportunities, labels, actionEvents, attributions, orders, events, receipts, views].some((batch) => batch.length === foundationPolicy().batchSize)) {
       const scheduledId = await ctx.scheduler.runAfter(0, internal.maintenance.deleteCustomerBatch, args);
       await ctx.db.patch(job._id, { scheduledId, attempts: 1, dueAt: Date.now() });
       return null;
@@ -155,6 +165,16 @@ export const sweep = internalMutation({
       if (label) await ctx.db.delete(label._id);
       const opportunity = await ctx.db.query("missedRevenueOpportunities").withIndex("by_interaction", (builder) => builder.eq("interactionId", message._id)).unique();
       if (opportunity) await ctx.db.delete(opportunity._id);
+      const communityOpportunity = await ctx.db.query("communityOpportunities").withIndex("by_interaction", (builder) => builder.eq("interactionId", message._id)).unique();
+      if (communityOpportunity) {
+        const suggestion = await ctx.db.query("knowledgeSuggestions").withIndex("by_interaction", (builder) => builder.eq("interactionId", message._id)).unique();
+        if (suggestion) await ctx.db.delete(suggestion._id);
+        const handoffEvents = await ctx.db.query("handoffEvents").withIndex("by_opportunity_time", (builder) => builder.eq("opportunityId", communityOpportunity._id)).take(10);
+        for (const handoffEvent of handoffEvents) await ctx.db.delete(handoffEvent._id);
+        await ctx.db.delete(communityOpportunity._id);
+      }
+      const dispatch = await ctx.db.query("assistantDispatches").withIndex("by_interaction", (builder) => builder.eq("interactionId", message._id)).unique();
+      if (dispatch) await ctx.db.delete(dispatch._id);
       const task = await ctx.db.query("followUpTasks").withIndex("by_trigger_interaction", (builder) => builder.eq("triggerInteractionId", message._id)).unique();
       if (task) await ctx.db.delete(task._id);
       await ctx.db.delete(message._id);

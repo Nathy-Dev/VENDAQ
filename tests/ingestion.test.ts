@@ -94,6 +94,60 @@ describe("authenticated WhatsApp ingestion", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it("captures only bounded audio metadata needed for Deepgram and never stores a provider media URL", async () => {
+    const harness = createHarness();
+    const source = await tenant(harness, "voice-note-metadata");
+    await webhook(harness, message(source, { id: "voice-1", content: { audioMessage: { url: "https://private-media.test/audio", mimetype: "audio/ogg; codecs=opus", mediaKey: "synthetic-key" } } }));
+    await drain(harness);
+    const [interaction] = await harness.run((ctx) => ctx.db.query("interactions").collect());
+    expect(interaction).toMatchObject({ messageType: "audio", transcriptionState: "failed" });
+    expect(JSON.stringify(interaction)).not.toContain("private-media.test");
+    expect(interaction.mediaUrl).toBeUndefined();
+  });
+
+  it("transcribes a one-to-one voice note and replies through the authorized assistant path", async () => {
+    const harness = createHarness();
+    const source = await tenant(harness, "voice-note-reply");
+    const prompt = "You represent Voice Note Reply, a Nigerian retail business. Answer only with verified facts, never invent prices, stock, delivery details, payment information, discounts, or policies, ask one short clarifying question when information is missing, and reply in concise friendly WhatsApp language.";
+    await source.owner.mutation(api.businessProfile.save, { businessId: source.businessId, systemPrompt: prompt, customerAutoReplyEnabled: true, groupAutoReplyEnabled: false });
+    vi.stubEnv("FOUNDATION_PROVIDER_ENABLED", "true");
+    vi.stubEnv("EVOLUTION_GO_URL", "https://provider.example.test");
+    vi.stubEnv("EVOLUTION_GO_API_KEY", "synthetic-provider-key");
+    vi.stubEnv("DEEPGRAM_API_KEY", "synthetic-deepgram-key");
+    vi.stubEnv("GROQ_API_KEY", "synthetic-groq-key");
+    vi.stubEnv("GROQ_LLM_MODEL", "synthetic-model");
+    const requests: Array<{ url: string; body: string }> = [];
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async (input, init?: RequestInit) => {
+      const url = String(input);
+      requests.push({ url, body: typeof init?.body === "string" ? init.body : "" });
+      if (url.endsWith("/message/downloadmedia")) return Response.json({ data: { base64: Buffer.from("synthetic-ogg-audio").toString("base64"), mimetype: "audio/ogg" } });
+      if (url.startsWith("https://api.deepgram.com/v1/listen")) return Response.json({ results: { channels: [{ detected_language: "en", alternatives: [{ transcript: "Do you have the blue shoes in size forty two?", confidence: 0.97 }] }] } });
+      if (url === "https://api.groq.com/openai/v1/chat/completions") return Response.json({ choices: [{ message: { content: "Yes, we can help with the blue shoes. Please confirm the style you want." } }] });
+      if (url.endsWith("/message/presence")) return Response.json({ message: "success" });
+      if (url.endsWith("/send/text")) return Response.json({ messageId: "provider-reply-1" });
+      return new Response(null, { status: 404 });
+    }));
+
+    await webhook(harness, message(source, { id: "voice-reply-1", content: { audioMessage: { url: "https://private-media.test/audio", mimetype: "audio/ogg; codecs=opus", mediaKey: "synthetic-key" } } }));
+    await drain(harness);
+
+    const interactions = await harness.run((ctx) => ctx.db.query("interactions").collect());
+    const inbound = interactions.find((interaction) => interaction.role === "customer");
+    const outbound = interactions.find((interaction) => interaction.role === "owner");
+    expect(inbound).toMatchObject({ messageType: "audio", transcriptionState: "completed", transcript: "Do you have the blue shoes in size forty two?", transcriptLanguage: "en", transcriptConfidence: 0.97, manualReviewRequired: false });
+    expect(outbound).toMatchObject({ content: "Yes, we can help with the blue shoes. Please confirm the style you want.", messageType: "text" });
+    expect(await harness.run((ctx) => ctx.db.query("assistantDispatches").collect())).toEqual([expect.objectContaining({ interactionId: inbound!._id, state: "accepted", attempts: 1, providerMessageId: "provider-reply-1" })]);
+    expect(requests.map((request) => request.url)).toEqual(expect.arrayContaining([
+      "https://provider.example.test/message/downloadmedia",
+      expect.stringMatching(/^https:\/\/api\.deepgram\.com\/v1\/listen/),
+      "https://api.groq.com/openai/v1/chat/completions",
+      "https://provider.example.test/message/presence",
+      "https://provider.example.test/send/text",
+    ]));
+    expect(JSON.parse(requests.find((request) => request.url.endsWith("/send/text"))!.body)).toMatchObject({ number: "2348000000001@s.whatsapp.net", text: outbound!.content, id: inbound!._id });
+    expect(JSON.stringify(interactions)).not.toContain("private-media.test");
+  });
+
   it("canonicalizes private LID messages and names group threads from group metadata", async () => {
     const harness = createHarness();
     const source = await tenant(harness);

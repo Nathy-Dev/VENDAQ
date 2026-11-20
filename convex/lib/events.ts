@@ -58,13 +58,22 @@ export function normalizeEvent(body: Record<string, unknown>, now: number): Norm
     const plain = text(message.conversation, foundationPolicy().maxTextLength) || text(object(message.extendedTextMessage).text, foundationPolicy().maxTextLength);
     const type = plain ? "text" : message.imageMessage ? "image" : message.videoMessage ? "video" : message.audioMessage ? "audio" : message.documentMessage ? "document" : message.locationMessage ? "location" : "unsupported";
     const caption = text(object(message.imageMessage ?? message.videoMessage ?? message.documentMessage).caption, foundationPolicy().maxTextLength);
+    const audio = object(message.audioMessage);
+    const mediaPayload = type === "audio" ? JSON.stringify({ audioMessage: audio }) : "";
+    const mediaMimeType = type === "audio" ? text(audio.mimetype ?? audio.mimeType, 120) : "";
     // Only trust an explicit provider signal that the connected account was
     // mentioned. A generic `mentionedJid` list could refer to somebody else.
     const mentioned = isGroup && (info.IsMention === true || info.IsBotMentioned === true || data.IsMentioned === true);
+    const participantJid = isGroup ? optionalIdentity(info.SenderAlt) || optionalIdentity(info.Sender) : "";
+    const participantName = isGroup ? text(info.PushName, 120) : "";
     return {
       kind: "message", messageId, chat, identityKey: "", fromMe, isGroup, mentioned,
       ...((isGroup ? groupName(data) : text(info.PushName, 120)) ? { name: isGroup ? groupName(data) : text(info.PushName, 120) } : {}),
+      ...(participantJid ? { participantJid } : {}),
+      ...(participantName ? { participantName } : {}),
       ...(aliasJids.length ? { aliasJids } : {}),
+      ...(mediaPayload && mediaPayload.length <= 20_000 ? { mediaPayload } : {}),
+      ...(mediaMimeType ? { mediaMimeType } : {}),
       // Large text is minimized, with an explicit manual-review signal rather
       // than presenting a truncated message as complete buyer context.
       text: plain || caption, mediaType: type, eventAt: eventTime(info.Timestamp, now), manualReview: type !== "text" || plain.length === foundationPolicy().maxTextLength || caption.length === foundationPolicy().maxTextLength,

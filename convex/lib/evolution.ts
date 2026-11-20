@@ -86,6 +86,50 @@ export async function showAuthorizedAssistantTyping(options: {
   });
 }
 
+export async function downloadAuthorizedInboundAudio(options: {
+  token: string;
+  instanceId: string;
+  message: Record<string, unknown>;
+}): Promise<{ bytes: Uint8Array; mimetype: string }> {
+  if (!options.instanceId || Object.keys(options.message).length === 0) throw new Error("INVALID_AUDIO_DOWNLOAD");
+  if (process.env.FOUNDATION_PROVIDER_ENABLED !== "true") throw new Error("PROVIDER_DISABLED");
+  const baseUrl = process.env.EVOLUTION_GO_URL;
+  const apiKey = process.env.EVOLUTION_GO_API_KEY;
+  if (!baseUrl || !apiKey) throw new Error("PROVIDER_NOT_CONFIGURED");
+  const url = new URL(baseUrl);
+  const local = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+  if (url.protocol !== "https:" && !(local && process.env.ALLOW_LOCAL_PROVIDER_HTTP === "true")) throw new Error("INSECURE_PROVIDER_URL");
+  const mode = process.env.EVOLUTION_GO_AUTH_MODE ?? "instance-token";
+  let lastError = "PROVIDER_AUDIO_DOWNLOAD_FAILED";
+  for (const path of ["/message/downloadmedia", "/message/download", "/message/downloadimage"]) {
+    const response = await fetch(`${url.toString().replace(/\/$/, "")}${path}`, {
+      method: "POST",
+      headers: { Accept: "application/json, audio/*, application/octet-stream", "Content-Type": "application/json", apikey: mode === "instance-token" ? options.token : apiKey, instanceId: options.instanceId },
+      body: JSON.stringify({ message: options.message }),
+      signal: AbortSignal.timeout(15_000),
+      redirect: "error",
+    });
+    if (response.status === 404 || response.status === 405) continue;
+    if (!response.ok) { lastError = response.status === 401 || response.status === 403 ? "PROVIDER_AUTH_FAILED" : "PROVIDER_AUDIO_DOWNLOAD_FAILED"; break; }
+    const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+    if (contentType.includes("application/json")) {
+      const root = object(await response.json());
+      const data = object(root.data);
+      let base64 = text(data.base64 ?? data.media ?? root.base64 ?? root.media, 20_000_000);
+      if (base64.includes(",")) base64 = base64.split(",").pop() ?? "";
+      if (!base64) throw new Error("PROVIDER_AUDIO_DOWNLOAD_FAILED");
+      const binary = atob(base64);
+      const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+      if (bytes.byteLength === 0 || bytes.byteLength > 25_000_000) throw new Error("AUDIO_SIZE_NOT_SUPPORTED");
+      return { bytes, mimetype: text(data.mimetype ?? data.mimeType ?? root.mimetype ?? root.mimeType, 120) || "audio/ogg" };
+    }
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (bytes.byteLength === 0 || bytes.byteLength > 25_000_000) throw new Error("AUDIO_SIZE_NOT_SUPPORTED");
+    return { bytes, mimetype: contentType.split(";")[0] || "audio/ogg" };
+  }
+  throw new Error(lastError);
+}
+
 export function providerInstanceId(result: unknown): string {
   const root = object(result);
   const data = object(root.data);

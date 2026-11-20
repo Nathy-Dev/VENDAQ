@@ -5,6 +5,7 @@ import { decryptSecret } from "./lib/crypto";
 import { assistantReplyDelayMs, BUSINESS_SYSTEM_PROMPT_MIN_LENGTH } from "./lib/launch";
 import { foundationPolicy } from "./lib/policy";
 import { providerSendResult, sendAuthorizedAssistantText, showAuthorizedAssistantTyping } from "./lib/evolution";
+import { groupMayAutoReply } from "./lib/groupGovernance";
 
 const candidate = v.object({
   businessId: v.id("businesses"),
@@ -25,7 +26,7 @@ export const candidateForInteraction = internalQuery({
   returns: v.union(v.null(), candidate),
   handler: async (ctx, args) => {
     const interaction = await ctx.db.get(args.interactionId);
-    if (!interaction || interaction.role !== "customer" || interaction.manualReviewRequired || interaction.messageType !== "text") return null;
+    if (!interaction || interaction.role !== "customer" || interaction.manualReviewRequired || !["text", "audio"].includes(interaction.messageType ?? "")) return null;
     const existing = await ctx.db.query("assistantDispatches").withIndex("by_interaction", (builder) => builder.eq("interactionId", interaction._id)).unique();
     if (existing) return null;
     const [business, customer, session] = await Promise.all([
@@ -34,13 +35,15 @@ export const candidateForInteraction = internalQuery({
       interaction.sessionId ? ctx.db.get(interaction.sessionId) : null,
     ]);
     if (!business || business.foundationVersion !== 1 || !customer || !session || session.state !== "connected" || !session.providerInstanceId) return null;
-    const systemPrompt = business.businessSystemPrompt?.trim() ?? "";
+    let systemPrompt = business.businessSystemPrompt?.trim() ?? "";
     if (systemPrompt.length < BUSINESS_SYSTEM_PROMPT_MIN_LENGTH || (business.killSwitch ?? true)) return null;
     const isGroup = interaction.isGroup ?? customer.isGroup ?? false;
     if (isGroup) {
       if (!(business.groupAutoReplyEnabled ?? false)) return null;
       const group = await ctx.db.query("managedGroups").withIndex("by_business_group", (builder) => builder.eq("businessId", business._id).eq("groupJid", customer.phone)).unique();
-      if (!group?.isEnabled || ((group.mentionOnly ?? true) && !(interaction.wasMentioned ?? false))) return null;
+      if (!group || !groupMayAutoReply(group, interaction)) return null;
+      if (group.customInstructions?.trim()) systemPrompt += `\n\nRules for this WhatsApp group:\n${group.customInstructions.trim()}`;
+      systemPrompt += "\n\nGroup privacy rule: Never message a participant privately, request private details, or claim a private handoff has happened unless the participant explicitly agrees in the group and the business owner completes that handoff.";
     } else if (!(business.customerAutoReplyEnabled ?? false)) {
       return null;
     }
@@ -74,7 +77,7 @@ export const reserve = internalMutation({
   returns: v.union(v.null(), v.id("assistantDispatches")),
   handler: async (ctx, args) => {
     const interaction = await ctx.db.get(args.interactionId);
-    if (!interaction || interaction.role !== "customer" || interaction.manualReviewRequired || interaction.messageType !== "text" || !interaction.sessionId) return null;
+    if (!interaction || interaction.role !== "customer" || interaction.manualReviewRequired || !["text", "audio"].includes(interaction.messageType ?? "") || !interaction.sessionId) return null;
     const existing = await ctx.db.query("assistantDispatches").withIndex("by_interaction", (builder) => builder.eq("interactionId", interaction._id)).unique();
     if (existing) return null;
     const customer = await ctx.db.get(interaction.customerId);
@@ -86,7 +89,7 @@ export const reserve = internalMutation({
     if (isGroup) {
       if (!(business.groupAutoReplyEnabled ?? false)) return null;
       const group = await ctx.db.query("managedGroups").withIndex("by_business_group", (builder) => builder.eq("businessId", business._id).eq("groupJid", customer.phone)).unique();
-      if (!group?.isEnabled || ((group.mentionOnly ?? true) && !(interaction.wasMentioned ?? false))) return null;
+      if (!group || !groupMayAutoReply(group, interaction)) return null;
     } else if (!(business.customerAutoReplyEnabled ?? false)) {
       return null;
     }
@@ -144,9 +147,21 @@ export const finish = internalMutation({
     await ctx.db.patch(dispatch._id, { state: args.state, providerMessageId: args.providerMessageId, errorCode: args.errorCode, updatedAt: Date.now() });
     if (args.state === "accepted") {
       const now = Date.now();
-      const interactionId = await ctx.db.insert("interactions", { businessId: dispatch.businessId, customerId: dispatch.customerId, sessionId: dispatch.sessionId, role: "owner", content: dispatch.content, timestamp: now, receivedAt: now, isGroup: dispatch.isGroup, messageType: "text", aiProcessedAt: now, expiresAt: now + foundationPolicy().messageRetentionDays * 86_400_000 });
+      const inbound = await ctx.db.get(dispatch.interactionId);
+      const interactionId = await ctx.db.insert("interactions", { businessId: dispatch.businessId, customerId: dispatch.customerId, ...(inbound?.conversationId ? { conversationId: inbound.conversationId } : {}), sessionId: dispatch.sessionId, role: "owner", content: dispatch.content, timestamp: now, receivedAt: now, isGroup: dispatch.isGroup, messageType: "text", aiProcessedAt: now, expiresAt: now + foundationPolicy().messageRetentionDays * 86_400_000 });
       const customer = await ctx.db.get(dispatch.customerId);
       if (customer) await ctx.db.patch(customer._id, { lastInteraction: Math.max(customer.lastInteraction, now), lastOutboundAt: now });
+      if (inbound?.conversationId) {
+        const conversation = await ctx.db.get(inbound.conversationId);
+        if (conversation) await ctx.db.patch(conversation._id, { revision: conversation.revision + 1, lastEventAt: Math.max(conversation.lastEventAt, now), lastOwnerAt: Math.max(conversation.lastOwnerAt ?? 0, now), messageCount: conversation.messageCount + 1 });
+      }
+      const missed = await ctx.db.query("missedRevenueOpportunities").withIndex("by_interaction", (builder) => builder.eq("interactionId", dispatch.interactionId)).unique();
+      if (missed && missed.state !== "answered") {
+        if (missed.scheduledId) { const scheduled = await ctx.db.system.get(missed.scheduledId); if (scheduled?.state.kind === "pending") await ctx.scheduler.cancel(missed.scheduledId); }
+        await ctx.db.patch(missed._id, { state: "answered", answeredAt: now });
+      }
+      const opportunity = await ctx.db.query("communityOpportunities").withIndex("by_interaction", (builder) => builder.eq("interactionId", dispatch.interactionId)).unique();
+      if (opportunity && opportunity.state === "open") await ctx.db.patch(opportunity._id, { state: "in_progress", updatedAt: now });
       await ctx.db.insert("aiActivityLog", { businessId: dispatch.businessId, type: "smart_reply", interactionId, customerId: dispatch.customerId, summary: dispatch.isGroup ? "Replied in an authorized WhatsApp group" : "Replied to a customer on WhatsApp", model: process.env.GROQ_LLM_MODEL?.trim() || "configured-model", timestamp: now });
     }
     return null;
@@ -263,7 +278,7 @@ export const dispatchForSubmit = internalQuery({
     if (isGroup) {
       if (!(business.groupAutoReplyEnabled ?? false)) return null;
       const group = await ctx.db.query("managedGroups").withIndex("by_business_group", (builder) => builder.eq("businessId", business._id).eq("groupJid", customer.phone)).unique();
-      if (!group?.isEnabled || ((group.mentionOnly ?? true) && !(interaction.wasMentioned ?? false))) return null;
+      if (!group || !groupMayAutoReply(group, interaction)) return null;
     } else if (!(business.customerAutoReplyEnabled ?? false)) {
       return null;
     }

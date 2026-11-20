@@ -27,12 +27,14 @@ export function titleCase(value: string): string {
   return value.replaceAll("_", " ").replace(/^./, (letter) => letter.toUpperCase());
 }
 
-export function displayIdentity(identity: string): string {
+export function displayIdentity(identity: string, isGroup = false): string {
+  if (isGroup) return "WhatsApp group";
   const phone = /^(\d+)@s\.whatsapp\.net$/.exec(identity)?.[1];
   return phone ? `+${phone}` : "Private WhatsApp identity";
 }
 
-export function whatsappLink(identity: string): string | null {
+export function whatsappLink(identity: string, isGroup = false): string | null {
+  if (isGroup) return null;
   const phone = /^(\d+)@s\.whatsapp\.net$/.exec(identity)?.[1];
   return phone ? `https://wa.me/${phone}` : null;
 }

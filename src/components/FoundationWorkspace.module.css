@@ -241,6 +241,7 @@
 .groupList { display: grid; align-content: start; flex: 1 1 auto; gap: 10px; min-height: 0; margin-top: 16px; padding-right: 6px; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
 .groupRow { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 15px 16px; border: 1px solid var(--dash-border); border-radius: 8px; background: #fff; }
 .groupInfo { min-width: 0; }
+.groupPolicy { display: grid; gap: 12px; margin-top: 14px; max-width: 440px; }
 .groupTitleRow { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .groupTitleRow strong { overflow-wrap: anywhere; font-size: 13px; }
 .groupInfo p { margin-top: 5px; color: var(--dash-text-muted); font-size: 11px; line-height: 1.6; }

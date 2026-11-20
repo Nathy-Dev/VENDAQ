@@ -38,11 +38,11 @@ export const createBusiness = mutation({
 
 export const customers = query({
   args: { businessId: v.id("businesses") },
-  returns: v.array(v.object({ customerId: v.id("customers"), name: v.string(), identity: v.string(), lastActivityAt: v.number(), firstInboundAt: v.union(v.number(), v.null()) })),
+  returns: v.array(v.object({ customerId: v.id("customers"), name: v.string(), identity: v.string(), isGroup: v.boolean(), lastActivityAt: v.number(), firstInboundAt: v.union(v.number(), v.null()) })),
   handler: async (ctx, args) => {
     await requireBusiness(ctx, args.businessId);
     const conversations = await ctx.db.query("conversations").withIndex("by_business_activity", (builder) => builder.eq("businessId", args.businessId)).order("desc").take(50);
-    const output = new Map<string, { customerId: Id<"customers">; name: string; identity: string; lastActivityAt: number; firstInboundAt: number | null }>();
+    const output = new Map<string, { customerId: Id<"customers">; name: string; identity: string; isGroup: boolean; lastActivityAt: number; firstInboundAt: number | null }>();
     for (const conversation of conversations) {
       const customer = await ctx.db.get(conversation.customerId);
       if (!customer || customer.businessId !== args.businessId || customer.deletedAt !== undefined) continue;
@@ -56,6 +56,7 @@ export const customers = query({
         customerId,
         name: alias?.name || current?.name || candidateName,
         identity,
+        isGroup: customer.isGroup ?? false,
         lastActivityAt: Math.max(current?.lastActivityAt ?? 0, conversation.lastEventAt),
         firstInboundAt: current?.firstInboundAt === null || current?.firstInboundAt === undefined || customer.firstInboundAt === undefined ? current?.firstInboundAt ?? customer.firstInboundAt ?? null : Math.min(current.firstInboundAt, customer.firstInboundAt),
       });
@@ -66,7 +67,7 @@ export const customers = query({
 
 export const messages = query({
   args: { businessId: v.id("businesses"), customerId: v.id("customers") },
-  returns: v.array(v.object({ messageId: v.id("interactions"), role: v.union(v.literal("customer"), v.literal("owner"), v.literal("system")), text: v.string(), timestamp: v.number(), manualReview: v.boolean(), type: v.string() })),
+  returns: v.array(v.object({ messageId: v.id("interactions"), role: v.union(v.literal("customer"), v.literal("owner"), v.literal("system")), text: v.string(), timestamp: v.number(), manualReview: v.boolean(), type: v.string(), transcript: v.union(v.string(), v.null()), transcriptionState: v.union(v.literal("pending"), v.literal("completed"), v.literal("failed"), v.null()) })),
   handler: async (ctx, args) => {
     await requireBusiness(ctx, args.businessId);
     const customer = await ctx.db.get(args.customerId);
@@ -81,7 +82,7 @@ export const messages = query({
       }
     }
     const batches = await Promise.all(linkedCustomers.map((linked) => ctx.db.query("interactions").withIndex("by_customer", (builder) => builder.eq("customerId", linked._id)).order("desc").take(100)));
-    return batches.flat().filter((message) => message.businessId === args.businessId).sort((a, b) => b.timestamp - a.timestamp).slice(0, 100).map((message) => ({ messageId: message._id, role: message.role, text: message.content, timestamp: message.timestamp, manualReview: message.manualReviewRequired ?? false, type: message.messageType ?? "unsupported" }));
+    return batches.flat().filter((message) => message.businessId === args.businessId).sort((a, b) => b.timestamp - a.timestamp).slice(0, 100).map((message) => ({ messageId: message._id, role: message.role, text: message.content, timestamp: message.timestamp, manualReview: message.manualReviewRequired ?? false, type: message.messageType ?? "unsupported", transcript: message.transcript ?? null, transcriptionState: message.transcriptionState ?? null }));
   },
 });
 

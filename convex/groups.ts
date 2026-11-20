@@ -5,8 +5,10 @@ import { requireBusiness, requireIdentity } from "./lib/authorization";
 import { decryptSecret, encryptSecret, sha256 } from "./lib/crypto";
 import { providerAccountAliases, providerGroups, providerInstances, providerRequest } from "./lib/evolution";
 import { BUSINESS_SYSTEM_PROMPT_MIN_LENGTH } from "./lib/launch";
+import { groupGovernanceMode } from "./lib/groupGovernance";
 
 const groupRole = v.union(v.literal("owner"), v.literal("admin"), v.literal("member"));
+const governanceMode = v.union(v.literal("watch"), v.literal("suggest"), v.literal("mentions"), v.literal("common_questions"), v.literal("custom"));
 const groupItem = v.object({
   groupJid: v.string(),
   groupName: v.string(),
@@ -14,6 +16,9 @@ const groupItem = v.object({
   role: groupRole,
   isEnabled: v.boolean(),
   mentionOnly: v.boolean(),
+  governanceMode,
+  allowPrivateHandoff: v.boolean(),
+  customInstructions: v.string(),
   lastRefreshedAt: v.union(v.number(), v.null()),
 });
 
@@ -30,6 +35,9 @@ export const list = query({
       role: group.role ?? "member",
       isEnabled: group.isEnabled,
       mentionOnly: group.mentionOnly ?? true,
+      governanceMode: groupGovernanceMode(group),
+      allowPrivateHandoff: group.allowPrivateHandoff ?? false,
+      customInstructions: group.customInstructions ?? "",
       lastRefreshedAt: group.lastRefreshedAt ?? null,
     })).sort((a, b) => Number(b.isEnabled) - Number(a.isEnabled) || ({ owner: 0, admin: 1, member: 2 }[a.role] - { owner: 0, admin: 1, member: 2 }[b.role]) || a.groupName.localeCompare(b.groupName));
   },
@@ -63,6 +71,26 @@ export const setMentionOnly = mutation({
   },
 });
 
+export const setGovernance = mutation({
+  args: { businessId: v.id("businesses"), groupJid: v.string(), mode: governanceMode, allowPrivateHandoff: v.boolean(), customInstructions: v.optional(v.string()) },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await requireBusiness(ctx, args.businessId);
+    const group = await ctx.db.query("managedGroups").withIndex("by_business_group", (builder) => builder.eq("businessId", args.businessId).eq("groupJid", args.groupJid)).unique();
+    if (!group) throw new ConvexError({ code: "GROUP_NOT_FOUND" });
+    const customInstructions = args.customInstructions?.replaceAll("\u0000", "").trim() ?? "";
+    if (customInstructions.length > 1_000 || (args.mode === "custom" && customInstructions.length < 10)) throw new ConvexError({ code: "INVALID_GROUP_INSTRUCTIONS" });
+    await ctx.db.patch(group._id, {
+      governanceMode: args.mode,
+      mentionOnly: args.mode === "mentions" || args.mode === "suggest" || args.mode === "watch",
+      allowPrivateHandoff: args.allowPrivateHandoff,
+      customInstructions: customInstructions || undefined,
+      updatedAt: Date.now(),
+    });
+    return null;
+  },
+});
+
 export const authorizeRefresh = internalQuery({
   args: { businessId: v.id("businesses"), ownerId: v.string() },
   returns: v.object({ sessionId: v.id("whatsappSessions"), generation: v.number(), tokenCiphertext: v.string(), tokenHash: v.string(), providerInstanceId: v.string() }),
@@ -85,7 +113,7 @@ export const upsertFromProvider = internalMutation({
       if (existing) {
         await ctx.db.patch(existing._id, { groupName: group.name, memberCount: group.memberCount, role: group.role, lastRefreshedAt: now, updatedAt: now });
       } else {
-        await ctx.db.insert("managedGroups", { businessId: args.businessId, groupJid: group.jid, groupName: group.name, memberCount: group.memberCount, role: group.role, isEnabled: false, mentionOnly: true, lastRefreshedAt: now, addedAt: now, updatedAt: now });
+        await ctx.db.insert("managedGroups", { businessId: args.businessId, groupJid: group.jid, groupName: group.name, memberCount: group.memberCount, role: group.role, isEnabled: false, mentionOnly: true, governanceMode: "mentions", allowPrivateHandoff: false, lastRefreshedAt: now, addedAt: now, updatedAt: now });
       }
     }
     return args.groups.length;
@@ -97,7 +125,7 @@ export const upsertDiscovered = internalMutation({
   returns: v.null(),
   handler: async (ctx, args) => {
     const existing = await ctx.db.query("managedGroups").withIndex("by_business_group", (builder) => builder.eq("businessId", args.businessId).eq("groupJid", args.groupJid)).unique();
-    if (!existing) await ctx.db.insert("managedGroups", { businessId: args.businessId, groupJid: args.groupJid, groupName: args.groupName, role: "member", isEnabled: false, mentionOnly: true, addedAt: Date.now(), updatedAt: Date.now() });
+    if (!existing) await ctx.db.insert("managedGroups", { businessId: args.businessId, groupJid: args.groupJid, groupName: args.groupName, role: "member", isEnabled: false, mentionOnly: true, governanceMode: "mentions", allowPrivateHandoff: false, addedAt: Date.now(), updatedAt: Date.now() });
     return null;
   },
 });

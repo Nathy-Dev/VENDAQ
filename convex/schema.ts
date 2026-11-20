@@ -164,11 +164,14 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.optional(v.number()),
     sourceTaskId: v.optional(v.id("followUpTasks")),
+    sourceOpportunityId: v.optional(v.id("communityOpportunities")),
+    sourceGroupJid: v.optional(v.string()),
     paidAt: v.optional(v.number()),
     lostAt: v.optional(v.number()),
   }).index("by_business", ["businessId"])
     .index("by_customer", ["customerId"])
-    .index("by_source_task", ["sourceTaskId"]),
+    .index("by_source_task", ["sourceTaskId"])
+    .index("by_source_opportunity", ["sourceOpportunityId"]),
 
   inventory: defineTable({
     businessId: v.id("businesses"),
@@ -189,6 +192,8 @@ export default defineSchema({
     manualReviewRequired: v.optional(v.boolean()),
     isGroup: v.optional(v.boolean()),
     wasMentioned: v.optional(v.boolean()),
+    participantJid: v.optional(v.string()),
+    participantName: v.optional(v.string()),
     classifierLabel: v.optional(v.union(v.literal("buying_signal"), v.literal("inquiry"), v.literal("payment_related"), v.literal("casual_noise"), v.literal("manual_review"))),
     classifierVersion: v.optional(v.string()),
     classifierConfidence: v.optional(v.number()),
@@ -214,6 +219,12 @@ export default defineSchema({
     matchedKeywords: v.optional(v.array(v.string())), // Keywords that triggered the classification
     whatsappMessageId: v.optional(v.string()), // Unique ID from Baileys
     isEdited: v.optional(v.boolean()),
+    transcriptionState: v.optional(v.union(v.literal("pending"), v.literal("completed"), v.literal("failed"))),
+    transcript: v.optional(v.string()),
+    transcriptLanguage: v.optional(v.string()),
+    transcriptConfidence: v.optional(v.number()),
+    transcribedAt: v.optional(v.number()),
+    transcriptionErrorCode: v.optional(v.string()),
   }).index("by_business", ["businessId"])
     .index("by_customer", ["customerId"])
     .index("by_whatsapp_id", ["whatsappMessageId"])
@@ -444,6 +455,15 @@ export default defineSchema({
     // If true, assistant only replies when it's tagged/mentioned (safer default
     // for community groups). If false, assistant replies to any buying signal.
     mentionOnly: v.optional(v.boolean()),
+    governanceMode: v.optional(v.union(
+      v.literal("watch"),
+      v.literal("suggest"),
+      v.literal("mentions"),
+      v.literal("common_questions"),
+      v.literal("custom"),
+    )),
+    allowPrivateHandoff: v.optional(v.boolean()),
+    customInstructions: v.optional(v.string()),
     // Metadata refresh
     lastRefreshedAt: v.optional(v.number()),
     enabledAt: v.optional(v.number()),
@@ -564,6 +584,61 @@ export default defineSchema({
   }).index("by_business_identity", ["businessId", "identityKey"])
     .index("by_business_activity", ["businessId", "lastEventAt"])
     .index("by_customer", ["customerId"]),
+  communityOpportunities: defineTable({
+    businessId: v.id("businesses"),
+    customerId: v.id("customers"),
+    conversationId: v.id("conversations"),
+    interactionId: v.id("interactions"),
+    sourceType: v.union(v.literal("group"), v.literal("direct")),
+    sourceGroupJid: v.optional(v.string()),
+    sourceGroupName: v.optional(v.string()),
+    participantJid: v.optional(v.string()),
+    participantName: v.optional(v.string()),
+    category: v.union(v.literal("opportunity"), v.literal("question"), v.literal("complaint"), v.literal("commitment")),
+    state: v.union(v.literal("open"), v.literal("in_progress"), v.literal("won"), v.literal("lost"), v.literal("dismissed")),
+    urgency: v.union(v.literal("low"), v.literal("normal"), v.literal("high")),
+    confidence: v.number(),
+    evidenceText: v.string(),
+    reason: v.string(),
+    suggestedNextStep: v.string(),
+    demandTopic: v.optional(v.string()),
+    privateHandoffState: v.optional(v.union(v.literal("not_needed"), v.literal("suggested"), v.literal("consented"), v.literal("declined"), v.literal("completed"))),
+    privateHandoffConsentAt: v.optional(v.number()),
+    privateHandoffConsentInteractionId: v.optional(v.id("interactions")),
+    assignedTo: v.optional(v.string()),
+    dueAt: v.optional(v.number()),
+    outcomeValue: v.optional(v.number()),
+    orderId: v.optional(v.id("orders")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    closedAt: v.optional(v.number()),
+  }).index("by_interaction", ["interactionId"])
+    .index("by_business_state_updated", ["businessId", "state", "updatedAt"])
+    .index("by_business_source_created", ["businessId", "sourceType", "createdAt"])
+    .index("by_business_group_created", ["businessId", "sourceGroupJid", "createdAt"])
+    .index("by_customer_state", ["customerId", "state", "updatedAt"])
+    .index("by_order", ["orderId"]),
+  handoffEvents: defineTable({
+    businessId: v.id("businesses"),
+    opportunityId: v.id("communityOpportunities"),
+    interactionId: v.id("interactions"),
+    state: v.union(v.literal("consented"), v.literal("declined"), v.literal("completed")),
+    evidenceText: v.string(),
+    recordedAt: v.number(),
+  }).index("by_opportunity_time", ["opportunityId", "recordedAt"])
+    .index("by_business_time", ["businessId", "recordedAt"]),
+  knowledgeSuggestions: defineTable({
+    businessId: v.id("businesses"),
+    interactionId: v.id("interactions"),
+    opportunityId: v.optional(v.id("communityOpportunities")),
+    question: v.string(),
+    suggestedFact: v.string(),
+    evidenceText: v.string(),
+    state: v.union(v.literal("pending"), v.literal("approved"), v.literal("rejected")),
+    createdAt: v.number(),
+    reviewedAt: v.optional(v.number()),
+  }).index("by_business_state_created", ["businessId", "state", "createdAt"])
+    .index("by_interaction", ["interactionId"]),
   privacySuppressions: defineTable({
     businessId: v.id("businesses"), identityKey: v.string(), createdAt: v.number(),
   }).index("by_business_identity", ["businessId", "identityKey"]),
