@@ -1,5 +1,5 @@
 import { ConvexError, v } from "convex/values";
-import { internalAction, internalMutation, internalQuery, mutation, query } from "./_generated/server";
+import { internalAction, internalMutation, mutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { MutationCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
@@ -7,6 +7,7 @@ import { requireBusiness } from "./lib/authorization";
 import { sha256 } from "./lib/crypto";
 import { foundationPolicy } from "./lib/policy";
 import { DEFAULT_FOLLOW_UP_TEMPLATE, SUGGESTION_VERSION, localDayBounds, nextAllowedSuggestionAt, renderSafeSuggestion, validateSuggestion, type SuggestionPolicy } from "./lib/suggestions";
+import { reserveAssistedConversation } from "./lib/billingAccess";
 
 const journeyStage = v.union(v.literal("viewer"), v.literal("engaged"), v.literal("intent"), v.literal("order_created"), v.literal("awaiting_payment"), v.literal("paid"), v.literal("lost"));
 type QueueRow = {
@@ -175,14 +176,18 @@ async function closeTask(ctx: MutationCtx, businessId: Id<"businesses">, taskId:
 export const markHandled = mutation({ args: { businessId: v.id("businesses"), taskId: v.id("followUpTasks") }, returns: v.null(), handler: async (ctx, args) => { await closeTask(ctx, args.businessId, args.taskId, "done"); return null; } });
 export const skip = mutation({ args: { businessId: v.id("businesses"), taskId: v.id("followUpTasks") }, returns: v.null(), handler: async (ctx, args) => { await closeTask(ctx, args.businessId, args.taskId, "skipped"); return null; } });
 
-export const aiContext = internalQuery({
+export const reserveAiContext = internalMutation({
   args: { taskId: v.id("followUpTasks") },
   returns: v.union(v.null(), v.object({ taskId: v.id("followUpTasks"), businessContext: v.string(), tone: v.string(), language: v.string() })),
   handler: async (ctx, args) => {
     const task = await ctx.db.get(args.taskId);
-    if (!task || task.status !== "pending" || task.aiState !== "pending" || !task.opportunityId) return null;
+    if (!task || task.status !== "pending" || task.aiState !== "pending" || !task.opportunityId || !task.conversationId) return null;
     const business = await ctx.db.get(task.businessId);
     if (!business || business.followUpAiEnabled !== true || process.env.PHASE3_AI_SUGGESTIONS_ENABLED !== "true") return null;
+    if (!(await reserveAssistedConversation(ctx, { business, conversationId: task.conversationId }))) {
+      await ctx.db.patch(task._id, { aiState: "fallback", guardrailCode: "BILLING_LIMIT_REACHED" });
+      return null;
+    }
     return { taskId: task._id, businessContext: business.aiBusinessContext?.slice(0, 300) ?? "small retail business", tone: business.aiTone ?? "friendly", language: business.aiLanguageStyle ?? "english" };
   },
 });
@@ -208,7 +213,7 @@ export const generateAiSuggestion = internalAction({
   args: { taskId: v.id("followUpTasks") },
   returns: v.null(),
   handler: async (ctx, args) => {
-    const context = await ctx.runQuery(internal.followUps.aiContext, args);
+    const context = await ctx.runMutation(internal.followUps.reserveAiContext, args);
     if (!context) return null;
     const key = process.env.GROQ_API_KEY?.trim();
     const model = process.env.GROQ_LLM_MODEL?.trim();

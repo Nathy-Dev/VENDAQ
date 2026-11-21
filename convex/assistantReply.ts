@@ -539,7 +539,8 @@ export const dispatchForSubmit = internalQuery({
       ctx.db.get(dispatch.customerId),
     ]);
     if (!business || business.foundationVersion !== 1 || !session || session.businessId !== business._id || session.state !== "connected" || !session.providerInstanceId || (business.killSwitch ?? true)) return null;
-    if (!(await billingAccess(ctx, business)).canUsePaidFeatures) return null;
+    const access = await billingAccess(ctx, business);
+    if (!access.canUsePaidFeatures || !access.automation) return null;
     if (!interaction || interaction.businessId !== business._id || interaction.customerId !== dispatch.customerId || interaction.sessionId !== session._id || interaction.role !== "customer") return null;
     const kind = dispatch.kind ?? "assistant_reply";
     if (kind === "assistant_reply" && interaction.manualReviewRequired) return null;

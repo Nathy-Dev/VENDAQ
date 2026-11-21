@@ -62,7 +62,7 @@ export async function billingAccess(ctx: DbCtx, business: Doc<"businesses">, now
 export async function reserveAssistedConversation(ctx: MutationCtx, args: { business: Doc<"businesses">; conversationId: Id<"conversations">; now?: number }): Promise<boolean> {
   const now = args.now ?? Date.now();
   const access = await billingAccess(ctx, args.business, now);
-  if (!access.canUsePaidFeatures || !access.automation) return false;
+  if (!access.canUsePaidFeatures) return false;
   const existing = await ctx.db.query("billingUsageConversations").withIndex("by_business_period_conversation", (q) => q.eq("businessId", args.business._id).eq("periodStart", access.periodStart).eq("conversationId", args.conversationId)).unique();
   if (existing) return true;
   if (access.assistedConversationsUsed >= access.assistedConversationLimit) return false;

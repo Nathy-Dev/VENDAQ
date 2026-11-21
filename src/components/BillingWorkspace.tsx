@@ -83,7 +83,7 @@ export default function BillingWorkspace() {
     {overview.readOnly && <div className={styles.warning} role="alert"><ShieldCheck size={18} /><div><strong>Your workspace is read-only.</strong><p>Choose a plan to resume AI processing and automation. Your existing records remain available.</p></div></div>}
     <StatGrid>
       <Stat label="Current plan" value={currentLabel} hint={overview.cancelAtPeriodEnd ? "Renewal cancelled" : overview.status.replaceAll("_", " ")} icon={CreditCard} tone={overview.readOnly ? "warning" : "positive"} />
-      <Stat label="Assisted conversations" value={`${overview.assistedConversationsUsed} / ${overview.assistedConversationLimit || 0}`} hint={`${usagePercent}% used this period`} />
+      <Stat label="AI-assisted customer chats" value={`${overview.assistedConversationsUsed} / ${overview.assistedConversationLimit || 0}`} hint={`${usagePercent}% used this period`} />
       <Stat label="Period ends" value={date(periodEnd)} hint={overview.plan === "trial" ? "Trial expiry" : "Billing period"} />
       <Stat label="Automation" value={overview.automation ? "Included" : "Not included"} hint={overview.automation ? `Up to ${overview.enabledGroupLimit} enabled groups` : "Upgrade to Growth"} />
     </StatGrid>
@@ -97,7 +97,7 @@ export default function BillingWorkspace() {
           <div className={styles.price}>{money(amount)}<span>/{interval === "annual" ? "year" : "month"}</span></div>
           <ul className={styles.features}>
             <li><Check size={15} />1 connected WhatsApp number</li>
-            <li><Check size={15} />{plan.conversations.toLocaleString()} assisted conversations/month</li>
+            <li><Check size={15} />{plan.conversations.toLocaleString()} AI-assisted customer chats</li>
             <li><Check size={15} />Lead capture, pipeline and revenue reporting</li>
             <li><Check size={15} />{plan.automation ? "Automated replies, qualification and follow-ups" : "AI-assisted reply drafts"}</li>
             <li><Check size={15} />{plan.groups ? `${plan.groups} enabled groups` : "One-to-one conversations"}</li>
@@ -107,7 +107,7 @@ export default function BillingWorkspace() {
       })}
       <Panel title="Scale" description="For multi-number businesses that need higher limits, onboarding and operational support." action={<Pill>Custom</Pill>}>
         <div className={styles.price}>From {money(59_900)}<span>/month</span></div>
-        <ul className={styles.features}><li><Check size={15} />3 WhatsApp numbers</li><li><Check size={15} />5,000 assisted conversations</li><li><Check size={15} />Advanced attribution and priority support</li><li><Check size={15} />Assisted onboarding</li></ul>
+        <ul className={styles.features}><li><Check size={15} />3 WhatsApp numbers</li><li><Check size={15} />5,000 AI-assisted customer chats</li><li><Check size={15} />Advanced attribution and priority support</li><li><Check size={15} />Assisted onboarding</li></ul>
         <a className={buttonClass.secondary} href="mailto:sales@pipelixr.com?subject=Pipelixr%20Scale"><ExternalLink size={14} />Contact sales</a>
       </Panel>
     </div>

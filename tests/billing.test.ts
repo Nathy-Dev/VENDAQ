@@ -31,7 +31,7 @@ describe("production billing", () => {
     expect(await harness.run((ctx) => ctx.db.query("businessSubscriptions").collect())).toHaveLength(1);
   });
 
-  it("counts an assisted conversation once and stops at the trial limit", async () => {
+  it("counts an AI-assisted customer chat once and stops at the trial limit", async () => {
     const harness = createHarness();
     const source = await tenant(harness, "usage-metering");
     const first = await conversation(harness, source.businessId, "001");
@@ -49,6 +49,17 @@ describe("production billing", () => {
     });
     const second = await conversation(harness, source.businessId, "002");
     expect(await harness.run((ctx) => reserveAssistedConversation(ctx, { business: business!, conversationId: second }))).toBe(false);
+  });
+
+  it("allows Starter AI drafts while keeping automated replies disabled", async () => {
+    const harness = createHarness();
+    const source = await tenant(harness, "starter-drafts");
+    await harness.mutation(internal.billing.prepareCheckout, { ownerId: "google:starter-drafts", reference: "px_starter_drafts", plan: "starter", billingInterval: "monthly", providerPlanCode: "PLN_starter", amountKobo: BILLING_PLANS.starter.monthlyAmountKobo });
+    await harness.mutation(internal.billing.reconcileVerifiedPayment, { reference: "px_starter_drafts", amountKobo: BILLING_PLANS.starter.monthlyAmountKobo, currency: "NGN", paidAt: Date.now() });
+    const chat = await conversation(harness, source.businessId, "starter");
+    const business = await harness.run((ctx) => ctx.db.get(source.businessId));
+    expect(await harness.run((ctx) => reserveAssistedConversation(ctx, { business: business!, conversationId: chat }))).toBe(true);
+    expect(await source.owner.query(api.billing.overview, { now: Date.now() })).toMatchObject({ plan: "starter", automation: false, assistedConversationsUsed: 1, assistedConversationLimit: 300 });
   });
 
   it("rejects a verified payment when the amount is tampered with", async () => {

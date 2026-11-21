@@ -102,6 +102,20 @@ describe("Phase 3 suggest-first follow-ups", () => {
     expect(await harness.run((ctx) => ctx.db.query("followUpTasks").collect())).toHaveLength(1);
   });
 
+  it("meters an AI follow-up draft once per customer chat", async () => {
+    vi.stubEnv("PHASE3_AI_SUGGESTIONS_ENABLED", "true");
+    const harness = createHarness();
+    const source = await tenant(harness, "metered-drafts");
+    await harness.run((ctx) => ctx.db.patch(source.businessId, { followUpAiEnabled: true, responseWindowMinutes: 15 }));
+    await createMissedTask(harness, source, { id: "metered-draft" });
+    const [task] = await harness.run((ctx) => ctx.db.query("followUpTasks").collect());
+    expect(await harness.mutation(internal.followUps.reserveAiContext, { taskId: task._id })).not.toBeNull();
+    expect(await harness.mutation(internal.followUps.reserveAiContext, { taskId: task._id })).not.toBeNull();
+    const usage = await harness.run((ctx) => ctx.db.query("billingUsagePeriods").collect());
+    expect(usage).toHaveLength(1);
+    expect(usage[0].quantity).toBe(1);
+  });
+
   it("isolates queue mutations by tenant and purges drafts during customer deletion", async () => {
     const harness = createHarness();
     const source = await tenant(harness);

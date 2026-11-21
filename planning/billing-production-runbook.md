@@ -4,13 +4,13 @@ This runbook activates the implemented Paystack subscription system. It does not
 
 ## Commercial model
 
-| Plan | Monthly | Annual | Assisted conversations | Automation | Enabled groups |
+| Plan | Monthly | Annual | AI-assisted customer chats | Automation | Enabled groups |
 | --- | ---: | ---: | ---: | --- | ---: |
-| Starter | NGN 9,900 | NGN 99,000 | 300/month | No | 0 |
-| Growth | NGN 24,900 | NGN 249,000 | 1,500/month | Yes | 5 |
-| Scale | From NGN 59,900 | Contract | 5,000/month baseline | Yes | 25 baseline |
+| Starter | NGN 9,900 | NGN 99,000 | 300 | No | 0 |
+| Growth | NGN 24,900 | NGN 249,000 | 1,500 | Yes | 5 |
+| Scale | From NGN 59,900 | Contract | 5,000 baseline | Yes | 25 baseline |
 
-New businesses receive one 14-day Growth trial capped at 100 assisted conversations. Failed renewals receive one fixed seven-day grace period. The system blocks further paid-feature use at the allowance; it never creates an unapproved overage charge. Scale is sales-assisted and is not self-serve.
+New businesses receive one 14-day Growth trial capped at 100 AI-assisted customer chats. A chat is counted once per allowance period when Pipelixr first generates an AI draft or automated reply for it, regardless of how many messages follow in that chat. Failed renewals receive one fixed seven-day grace period. The system blocks further paid-feature use at the allowance; it never creates an unapproved overage charge. Scale is sales-assisted and is not self-serve.
 
 ## 1. Create Paystack plans
 
