@@ -75,6 +75,33 @@
 .inlineForm .input { width: 180px; }
 .textarea { min-height: 110px; resize: vertical; }
 .promptTextarea { min-height: 280px; font-family: var(--font-geist-mono), ui-monospace, SFMono-Regular, Consolas, monospace; line-height: 1.65; }
+.voiceComposer { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 14px; padding: 14px; border: 1px solid var(--dash-border); border-radius: 10px; background: linear-gradient(135deg, #fbfdfc, #f6faf8); transition: border-color 160ms, box-shadow 160ms, background 160ms; }
+.voiceComposer[data-recording="true"] { grid-template-columns: minmax(0, 1fr) minmax(110px, .42fr) auto; border-color: #efcaca; background: linear-gradient(135deg, #fffafa, #fff5f5); box-shadow: 0 8px 24px rgb(153 27 27 / 6%); }
+.voiceComposerMain { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.voiceComposerMain > div { min-width: 0; }
+.voiceComposerMain strong { display: block; font-size: 12px; font-weight: 600; }
+.voiceComposerMain p { margin-top: 3px; color: var(--dash-text-muted); font-size: 11px; line-height: 1.6; }
+.voiceIcon { display: inline-flex; align-items: center; justify-content: center; width: 38px; height: 38px; flex: 0 0 auto; border: 1px solid var(--accent-border); border-radius: 50%; color: var(--dash-accent); background: #fff; }
+.voiceComposer[data-recording="true"] .voiceIcon { color: var(--dash-danger); border-color: #efcaca; animation: recordingPulse 1.6s ease-in-out infinite; }
+.voiceWave { display: flex; align-items: center; justify-content: center; gap: 3px; height: 32px; overflow: hidden; }
+.voiceWave span { width: 3px; height: 40%; border-radius: 999px; background: #d55b5b; animation: voiceWave 850ms ease-in-out infinite alternate; }
+.voiceWave span:nth-child(3n) { height: 80%; }
+.voiceWave span:nth-child(4n) { height: 58%; }
+.generatorRow { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.generatorRow > span { color: var(--dash-text-muted); font-size: 11px; }
+.promptField { display: grid; gap: 9px; }
+.promptHeader { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.promptHeader > div { display: grid; gap: 3px; min-width: 0; }
+.promptHeader span { font-size: 12px; font-weight: 500; }
+.promptHeader small { color: var(--dash-text-muted); font-size: 10px; font-weight: 400; line-height: 1.5; }
+.promptViewer { position: relative; min-height: 280px; max-height: 460px; overflow-y: auto; padding: 15px 16px; border: 1px solid var(--dash-border-strong); border-radius: 8px; background: #fbfcfb; scrollbar-gutter: stable; }
+.promptViewer[data-streaming="true"] { border-color: var(--dash-accent); box-shadow: 0 0 0 3px var(--accent-ring); background: #fff; }
+.promptViewer[data-empty="true"] { display: flex; align-items: center; justify-content: center; color: var(--dash-text-muted); }
+.promptViewer pre { margin: 0; color: #202020; font-family: var(--font-geist-mono), ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; line-height: 1.75; white-space: pre-wrap; overflow-wrap: anywhere; }
+.promptViewer[data-empty="true"] pre { color: inherit; font-family: inherit; font-size: 12px; }
+.streamingCursor { display: inline-block; width: 7px; height: 16px; margin-left: 2px; vertical-align: -3px; border-radius: 1px; background: var(--dash-accent); animation: cursorBlink 900ms steps(1) infinite; }
+.promptMeta { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--dash-text-muted); font-size: 10px; }
+.promptMeta span:last-child { color: var(--dash-accent); font-weight: 600; }
 .form { display: grid; gap: 18px; }
 .fieldset { display: grid; gap: 16px; border: 0; padding: 18px 0 0; margin: 0; min-width: 0; border-top: 1px solid var(--dash-border); }
 .fieldset legend { float: left; width: 100%; font-size: 12px; font-weight: 600; margin-bottom: 2px; }
@@ -191,8 +218,13 @@
 .conversationIntelligence { border-top: 1px solid var(--dash-border); padding: 10px 20px; background: #fff; max-height: 220px; overflow-y: auto; }
 .conversationIntelligence summary { display: flex; align-items: center; gap: 7px; cursor: pointer; font-size: 11px; font-weight: 600; color: var(--dash-accent); }
 .conversationIntelligence .detailsBody { margin-top: 12px; }
-.conversationOutcome { max-height: 330px; }
-.conversationOutcome summary > span { margin-left: auto; }
+.conversationOutcome { max-height: none; overflow-y: visible; }
+.conversationOutcome[open] { max-height: min(460px, calc(100% - 100px)); overflow-y: auto; }
+.conversationOutcome summary { list-style: none; }
+.conversationOutcome summary::-webkit-details-marker { display: none; }
+.disclosureLabel { flex: 1; }
+.disclosureChevron { flex-shrink: 0; transition: transform 160ms ease; }
+.conversationOutcome[open] .disclosureChevron { transform: rotate(180deg); }
 .outcomeForm { margin-top: 14px; }
 .conversationQualification summary > span { margin-left: auto; }
 .qualificationGap { margin-top: 16px; padding: 13px 15px; border: 1px solid var(--dash-border); border-radius: 8px; background: #fafafa; font-size: 12px; }
@@ -206,6 +238,9 @@
 .viewerKey { display: inline-block; max-width: 220px; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; font-family: var(--font-geist-mono), monospace; font-size: 11px; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes fade { 50% { opacity: .55; } }
+@keyframes cursorBlink { 50% { opacity: 0; } }
+@keyframes recordingPulse { 50% { box-shadow: 0 0 0 7px rgb(184 50 50 / 8%); } }
+@keyframes voiceWave { from { transform: scaleY(.45); opacity: .55; } to { transform: scaleY(1.15); opacity: 1; } }
 @media (max-width: 1050px) {
   .overviewGrid, .reviewGrid { grid-template-columns: minmax(0, 1fr); }
   .summaryRail { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -244,7 +279,16 @@
   .inlineForm label { flex: 1 1 100%; }
   .formFooter { flex-wrap: wrap; }
   .formFooter > button { width: 100%; }
+.voiceComposer, .voiceComposer[data-recording="true"] { grid-template-columns: 1fr; align-items: stretch; }
+.voiceComposer > button { width: 100%; }
+.voiceWave { order: 3; }
+.promptHeader { align-items: flex-start; }
+.promptHeader > button { flex-shrink: 0; }
 .toolbar { align-items: flex-start; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .voiceIcon, .voiceWave span, .streamingCursor { animation: none !important; }
 }
 
 .groupsCard { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; }

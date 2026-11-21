@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useMutation, useQuery } from "convex/react";
-import { ArrowLeft, Brain, CheckCheck, ExternalLink, ImageIcon, Lightbulb, MessageCircle, Mic, Search, ShieldCheck, Tags, Trash2, TrendingUp, UsersRound } from "lucide-react";
+import { ArrowLeft, Brain, CheckCheck, ChevronDown, ExternalLink, ImageIcon, Lightbulb, MessageCircle, Mic, Search, ShieldCheck, Tags, Trash2, TrendingUp, UsersRound } from "lucide-react";
 import { api } from "../../convex/_generated/api";
 import { displayIdentity, formatDate, initials, titleCase, whatsappLink } from "@/lib/workspace-ui";
 import type { LabelEntry, MessageClass, Workspace, WorkspaceContact } from "@/types/workspace";
@@ -93,6 +93,7 @@ type SaveConversationOutcome = ReturnType<typeof useMutation<typeof api.commerce
 
 function ConversationOutcomeEditor({ workspace, contact, intelligence, save }: { workspace: Workspace; contact: WorkspaceContact; intelligence: ConversationIntelligence; save: SaveConversationOutcome }) {
   const current = intelligence.latestOutcome;
+  const detailsRef = useRef<HTMLDetailsElement>(null);
   const [outcome, setOutcome] = useState<ConversationOutcome | "">(current?.outcome ?? "");
   const [value, setValue] = useState(current?.value ? String(current.value) : "");
   const [objection, setObjection] = useState(current?.objection ?? "");
@@ -123,13 +124,14 @@ function ConversationOutcomeEditor({ workspace, contact, intelligence, save }: {
       setResultFeedback({ text: current ? "Result updated." : "Result recorded." });
     } catch {
       setResultFeedback({ text: "We couldn't save this result. Please try again.", error: true });
+      if (detailsRef.current) detailsRef.current.open = true;
     } finally {
       setBusy(false);
     }
   }
 
-  return <details className={`${styles.conversationIntelligence} ${styles.conversationOutcome}`} open={!current}>
-    <summary><TrendingUp size={14} />Record result {current && <Pill tone={current.outcome === "paid" ? "positive" : "neutral"}>{outcomeLabel(current.outcome)}</Pill>}</summary>
+  return <details ref={detailsRef} className={`${styles.conversationIntelligence} ${styles.conversationOutcome}`}>
+    <summary><TrendingUp size={14} /><span className={styles.disclosureLabel}>Record result</span>{current && <Pill tone={current.outcome === "paid" ? "positive" : "neutral"}>{outcomeLabel(current.outcome)}</Pill>}<ChevronDown className={styles.disclosureChevron} size={15} aria-hidden="true" /></summary>
     <form className={`${styles.form} ${styles.outcomeForm}`} onSubmit={submit}>
       <div className={styles.formGrid}>
         <label className={styles.field}>Result<select className={styles.input} value={outcome} disabled={busy} onChange={(event) => setOutcome(event.target.value as ConversationOutcome | "")}><option value="">Choose what happened</option>{conversationOutcomes.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select><span className={styles.fieldHelp}>Qualified means your business has personally confirmed the lead is a real fit.</span></label>

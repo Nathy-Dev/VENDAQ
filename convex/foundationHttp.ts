@@ -5,6 +5,7 @@ import { encryptSecret, identityDigest, secretMatches, sha256 } from "./lib/cryp
 import { normalizeEvent, readBoundedJson, semanticEventKey, text } from "./lib/events";
 import { logEvent } from "./lib/policy";
 import type { NormalizedEvent } from "./lib/validators";
+import { businessAiOptions, streamBusinessSystemPrompt, transcribeBusinessDescription } from "./businessProfileHttp";
 
 // This is the only active HTTP router during the foundation phase.
 const http = httpRouter();
@@ -50,5 +51,9 @@ http.route({
 
 http.route({ path: "/api/worker", method: "POST", handler: httpAction(async () => Response.json({ error: "LEGACY_WORKER_DISABLED" }, { status: 410 })) });
 http.route({ path: "/api/health", method: "GET", handler: httpAction(async () => Response.json({ status: "ok", phase: 1, assistantRepliesAvailable: true, statusToCashEnabled: false })) });
+http.route({ path: "/api/business-ai/transcribe", method: "POST", handler: transcribeBusinessDescription });
+http.route({ path: "/api/business-ai/generate", method: "POST", handler: streamBusinessSystemPrompt });
+http.route({ path: "/api/business-ai/transcribe", method: "OPTIONS", handler: businessAiOptions });
+http.route({ path: "/api/business-ai/generate", method: "OPTIONS", handler: businessAiOptions });
 
 export default http;

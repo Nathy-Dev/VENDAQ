@@ -687,6 +687,12 @@ export default defineSchema({
   authAttempts: defineTable({
     key: v.string(), windowStart: v.number(), count: v.number(),
   }).index("by_key", ["key"]).index("by_window", ["windowStart"]),
+  businessAiUsage: defineTable({
+    businessId: v.id("businesses"),
+    kind: v.union(v.literal("prompt_generation"), v.literal("voice_transcription")),
+    windowStart: v.number(),
+    count: v.number(),
+  }).index("by_business_kind", ["businessId", "kind"]),
   foundationMigrations: defineTable({
     version: v.number(), state: v.union(v.literal("running"), v.literal("done")),
     cursor: v.optional(v.string()), processed: v.number(), updatedAt: v.number(),
