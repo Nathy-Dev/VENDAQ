@@ -242,6 +242,12 @@
 .groupRow { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 15px 16px; border: 1px solid var(--dash-border); border-radius: 8px; background: #fff; }
 .groupInfo { min-width: 0; }
 .groupPolicy { display: grid; gap: 12px; margin-top: 14px; max-width: 440px; }
+.customSafeguardEditor { display: grid; gap: 12px; padding: 12px; border: 1px solid var(--dash-border); border-radius: 8px; background: #fafafa; }
+.customSafeguardEditor textarea.input { min-height: 86px; resize: vertical; line-height: 1.5; }
+.customSafeguardActions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
+.savedSafeguards { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 12px; border: 1px solid var(--dash-border); border-radius: 8px; background: #fafafa; }
+.savedSafeguards strong { font-size: 11px; }
+.savedSafeguards p { margin-top: 4px; overflow-wrap: anywhere; }
 .groupTitleRow { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .groupTitleRow strong { overflow-wrap: anywhere; font-size: 13px; }
 .groupInfo p { margin-top: 5px; color: var(--dash-text-muted); font-size: 11px; line-height: 1.6; }

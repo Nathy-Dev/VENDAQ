@@ -31,6 +31,7 @@ import type * as groups from "../groups.js";
 import type * as http from "../http.js";
 import type * as ingestion from "../ingestion.js";
 import type * as interactions from "../interactions.js";
+import type * as lib_assistantStyle from "../lib/assistantStyle.js";
 import type * as lib_authentication from "../lib/authentication.js";
 import type * as lib_authorization from "../lib/authorization.js";
 import type * as lib_classifier from "../lib/classifier.js";
@@ -88,6 +89,7 @@ declare const fullApi: ApiFromModules<{
   http: typeof http;
   ingestion: typeof ingestion;
   interactions: typeof interactions;
+  "lib/assistantStyle": typeof lib_assistantStyle;
   "lib/authentication": typeof lib_authentication;
   "lib/authorization": typeof lib_authorization;
   "lib/classifier": typeof lib_classifier;
