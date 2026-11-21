@@ -6,6 +6,8 @@ Revenue recovery for solo WhatsApp sellers in Nigeria. This repository is an exi
 
 Start with the [Phase 0 discovery packet](planning/phase-0-discovery.md), [source audit](planning/repository-audit.md), accepted [architecture](planning/adr/0001-stack-and-queues.md), [send-safety](planning/adr/0002-send-safety-and-evidence.md), [Phase 1 foundation handoff](planning/phase-1-foundation.md), [Phase 2 read-only handoff](planning/phase-2-read-only.md), [Phase 3 suggest-first handoff](planning/phase-3-suggest-first.md), [Phase 4 seller actions](planning/phase-4-seller-actions.md), [Phase 5 measurement](planning/phase-5-measurement.md), and [Phase 6 extensions and hardening](planning/phase-6-extensions-and-hardening.md).
 
+The production billing subsystem is documented in the [billing production runbook](planning/billing-production-runbook.md). Activation remains gated on live Paystack credentials, a reviewed data migration, and an explicit production deployment approval.
+
 Phases 4 through 6 add a ranked seller action queue, seller-recorded orders and outcomes, payment reminders, stalled-inquiry actions, conservative revenue measurement, a manual Status viewer list, and connection-risk readiness. Existing broad legacy modules remain fail-closed. No read marking, reactions, presence, customer messaging, automatic outreach, provider-confirmed sends, or independently confirmed recovered revenue is enabled.
 
 No deployment or migration was performed. Evolution Go dispatch remains blocked because provider-side repeat-send idempotency and timeout reconciliation are not qualified. Configure and qualify the non-production target using [planning/phase-1-runbook.md](planning/phase-1-runbook.md) before connecting WhatsApp.

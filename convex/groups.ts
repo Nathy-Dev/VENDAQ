@@ -6,6 +6,7 @@ import { decryptSecret, encryptSecret, sha256 } from "./lib/crypto";
 import { providerAccountAliases, providerGroups, providerInstances, providerRequest } from "./lib/evolution";
 import { BUSINESS_SYSTEM_PROMPT_MIN_LENGTH } from "./lib/launch";
 import { groupGovernanceMode } from "./lib/groupGovernance";
+import { billingAccess } from "./lib/billingAccess";
 
 const groupRole = v.union(v.literal("owner"), v.literal("admin"), v.literal("member"));
 const governanceMode = v.union(v.literal("watch"), v.literal("suggest"), v.literal("mentions"), v.literal("common_questions"), v.literal("custom"));
@@ -51,6 +52,12 @@ export const setEnabled = mutation({
     if (!args.groupJid.endsWith("@g.us")) throw new ConvexError({ code: "INVALID_GROUP" });
     if (args.isEnabled && (!(business.groupAutoReplyEnabled ?? false) || (business.businessSystemPrompt?.trim().length ?? 0) < BUSINESS_SYSTEM_PROMPT_MIN_LENGTH)) {
       throw new ConvexError({ code: "GROUP_ASSISTANT_NOT_READY" });
+    }
+    if (args.isEnabled) {
+      const access = await billingAccess(ctx, business);
+      if (!access.canUsePaidFeatures || !access.automation) throw new ConvexError({ code: "BILLING_UPGRADE_REQUIRED" });
+      const enabled = await ctx.db.query("managedGroups").withIndex("by_business_enabled", (builder) => builder.eq("businessId", args.businessId).eq("isEnabled", true)).take(access.enabledGroupLimit + 1);
+      if (!enabled.some((entry) => entry.groupJid === args.groupJid) && enabled.length >= access.enabledGroupLimit) throw new ConvexError({ code: "GROUP_LIMIT_REACHED" });
     }
     const group = await ctx.db.query("managedGroups").withIndex("by_business_group", (builder) => builder.eq("businessId", args.businessId).eq("groupJid", args.groupJid)).unique();
     if (!group) throw new ConvexError({ code: "GROUP_NOT_FOUND" });
@@ -135,6 +142,8 @@ export const refresh = action({
   returns: v.object({ refreshed: v.number() }),
   handler: async (ctx, args) => {
     const identity = await requireIdentity(ctx);
+    const access = await ctx.runQuery(internal.billing.accessForOwner, { ownerId: identity.subject });
+    if (!access?.canUsePaidFeatures || !access.automation) throw new ConvexError({ code: "BILLING_UPGRADE_REQUIRED" });
     const session = await ctx.runQuery(internal.groups.authorizeRefresh, { businessId: args.businessId, ownerId: identity.subject });
     const storedToken = await decryptSecret(session.tokenCiphertext, `business:${args.businessId}:session-token`);
     const instancesResult = await providerRequest("GET", "/instance/all");

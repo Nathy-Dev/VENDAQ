@@ -1,6 +1,7 @@
 import { ConvexError, v } from "convex/values";
 import { internalMutation } from "./_generated/server";
 import { foundationPolicy } from "./lib/policy";
+import { TRIAL_DAYS } from "./lib/billingPlans";
 
 export const foundationV1 = internalMutation({
   args: { dryRun: v.boolean(), cursor: v.optional(v.string()), scrubLegacyCredentials: v.optional(v.boolean()) },
@@ -59,6 +60,26 @@ export const phase3SuggestFirst = internalMutation({
     // Only opportunities promoted after this checkpoint create suggestions; old
     // evidence is not converted into unexpected seller actions.
     return { complete: true, historicalTasksBackfilled: false };
+  },
+});
+
+export const billingV1 = internalMutation({
+  args: { dryRun: v.boolean(), cursor: v.optional(v.string()) },
+  returns: v.object({ processed: v.number(), created: v.number(), complete: v.boolean(), cursor: v.union(v.string(), v.null()) }),
+  handler: async (ctx, args) => {
+    const page = await ctx.db.query("businesses").withIndex("by_owner").paginate({ cursor: args.cursor ?? null, numItems: foundationPolicy().batchSize });
+    let created = 0;
+    if (!args.dryRun) {
+      for (const business of page.page) {
+        if (business.foundationVersion !== 1) continue;
+        const existing = await ctx.db.query("businessSubscriptions").withIndex("by_business", (q) => q.eq("businessId", business._id)).unique();
+        if (existing) continue;
+        const now = Date.now();
+        await ctx.db.insert("businessSubscriptions", { businessId: business._id, provider: "paystack", plan: "growth", billingInterval: "monthly", status: "trialing", currency: "NGN", amountKobo: 0, currentPeriodStart: now, currentPeriodEnd: now + TRIAL_DAYS * 86_400_000, trialStartedAt: now, trialEndsAt: now + TRIAL_DAYS * 86_400_000, cancelAtPeriodEnd: false, createdAt: now, updatedAt: now });
+        created += 1;
+      }
+    }
+    return { processed: page.page.length, created, complete: page.isDone, cursor: page.isDone ? null : page.continueCursor };
   },
 });
 

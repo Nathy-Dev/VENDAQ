@@ -5,6 +5,7 @@ import { requireBusiness, requireIdentity } from "./lib/authorization";
 import { DISCLOSURE_VERSION, foundationPolicy } from "./lib/policy";
 import { connectionState, sessionDocument } from "./lib/validators";
 import type { Id } from "./_generated/dataModel";
+import { TRIAL_DAYS } from "./lib/billingPlans";
 
 export const workspace = query({
   args: {},
@@ -32,7 +33,10 @@ export const createBusiness = mutation({
       if (existing.foundationVersion !== 1) throw new ConvexError({ code: "OWNER_MIGRATION_REQUIRED" });
       return existing._id;
     }
-    return await ctx.db.insert("businesses", { name, ownerId: identity.subject, whatsappStatus: "disconnected", whatsappMode: "unofficial", onboardingStep: 1, foundationVersion: 1, timezone: "Africa/Lagos", messageRetentionDays: foundationPolicy().messageRetentionDays, killSwitch: true, aiEnabled: false, customerAutoReplyEnabled: false, groupAutoReplyEnabled: false, statusViewerListEnabled: false });
+    const businessId = await ctx.db.insert("businesses", { name, ownerId: identity.subject, whatsappStatus: "disconnected", whatsappMode: "unofficial", onboardingStep: 1, foundationVersion: 1, timezone: "Africa/Lagos", messageRetentionDays: foundationPolicy().messageRetentionDays, killSwitch: true, aiEnabled: false, customerAutoReplyEnabled: false, groupAutoReplyEnabled: false, statusViewerListEnabled: false });
+    const now = Date.now();
+    await ctx.db.insert("businessSubscriptions", { businessId, provider: "paystack", plan: "growth", billingInterval: "monthly", status: "trialing", currency: "NGN", amountKobo: 0, trialStartedAt: now, trialEndsAt: now + TRIAL_DAYS * 86_400_000, currentPeriodStart: now, currentPeriodEnd: now + TRIAL_DAYS * 86_400_000, cancelAtPeriodEnd: false, createdAt: now, updatedAt: now });
+    return businessId;
   },
 });
 

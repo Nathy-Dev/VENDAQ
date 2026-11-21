@@ -4,6 +4,7 @@ import { internal } from "./_generated/api";
 import { requireBusiness, requireIdentity } from "./lib/authorization";
 import { BUSINESS_SYSTEM_PROMPT_MAX_LENGTH, BUSINESS_SYSTEM_PROMPT_MIN_LENGTH } from "./lib/launch";
 import { businessSystemPromptMessages, cleanBusinessText, promptSourceMaximum, promptSourceMinimum } from "./lib/businessPrompt";
+import { billingAccess } from "./lib/billingAccess";
 
 const qualificationField = v.union(v.literal("need"), v.literal("budget"), v.literal("location"), v.literal("timeline"), v.literal("readiness"));
 const businessAiUsageKind = v.union(v.literal("prompt_generation"), v.literal("voice_transcription"));
@@ -61,7 +62,9 @@ export const save = mutation({
   },
   returns: v.null(),
   handler: async (ctx, args) => {
-    await requireBusiness(ctx, args.businessId);
+    const business = await requireBusiness(ctx, args.businessId);
+    const access = await billingAccess(ctx, business);
+    if ((args.customerAutoReplyEnabled || args.groupAutoReplyEnabled) && (!access.canUsePaidFeatures || !access.automation)) throw new ConvexError({ code: "BILLING_UPGRADE_REQUIRED" });
     const systemPrompt = validateSystemPrompt(args.systemPrompt);
     const now = Date.now();
     await ctx.db.patch(args.businessId, {
@@ -120,6 +123,8 @@ export const generateSystemPrompt = action({
       ownerId: identity.subject,
     });
     if (!business) throw new ConvexError({ code: "NOT_FOUND" });
+    const source = await ctx.runQuery(internal.billing.accessForOwner, { ownerId: identity.subject });
+    if (!source?.canUsePaidFeatures) throw new ConvexError({ code: "BILLING_UPGRADE_REQUIRED" });
     const description = cleanPrompt(args.businessDescription);
     if (description.length < promptSourceMinimum || description.length > promptSourceMaximum) {
       throw new ConvexError({ code: "INVALID_BUSINESS_DESCRIPTION" });

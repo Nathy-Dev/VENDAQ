@@ -9,7 +9,7 @@ export async function GET(request: Request) {
   const session = await auth();
   if (!session?.user?.id) return Response.json({ error: "UNAUTHENTICATED" }, { status: 401, headers });
   try {
-    return Response.json({ token: await mintConvexToken(session.user.id) }, { headers });
+    return Response.json({ token: await mintConvexToken(session.user.id, { email: session.user.email, name: session.user.name }) }, { headers });
   } catch {
     return Response.json({ error: "AUTH_BRIDGE_NOT_CONFIGURED" }, { status: 503, headers });
   }

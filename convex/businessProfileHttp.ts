@@ -32,7 +32,11 @@ function noStoreHeaders(request?: Request, extra?: HeadersInit): Headers {
 
 async function authorize(ctx: Parameters<Parameters<typeof httpAction>[0]>[0], businessId: Id<"businesses">) {
   const identity = await requireIdentity(ctx);
-  return await ctx.runQuery(internal.businessProfile.authorizeForGeneration, { businessId, ownerId: identity.subject });
+  const business = await ctx.runQuery(internal.businessProfile.authorizeForGeneration, { businessId, ownerId: identity.subject });
+  if (!business) return null;
+  const access = await ctx.runQuery(internal.billing.accessForOwner, { ownerId: identity.subject });
+  if (!access?.canUsePaidFeatures) throw new ConvexError({ code: "BILLING_UPGRADE_REQUIRED" });
+  return business;
 }
 
 function errorResponse(request: Request, error: unknown, fallback: string): Response {
@@ -40,6 +44,7 @@ function errorResponse(request: Request, error: unknown, fallback: string): Resp
     const code = String((error.data as { code: unknown }).code);
     if (code === "UNAUTHENTICATED") return Response.json({ error: code }, { status: 401, headers: noStoreHeaders(request) });
     if (code === "NOT_FOUND") return Response.json({ error: code }, { status: 404, headers: noStoreHeaders(request) });
+    if (code === "BILLING_UPGRADE_REQUIRED") return Response.json({ error: code }, { status: 402, headers: noStoreHeaders(request) });
   }
   return Response.json({ error: fallback }, { status: 502, headers: noStoreHeaders(request) });
 }

@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import { useQuery } from "convex/react";
 import { useEffect, useSyncExternalStore } from "react";
-import { Home, MessageCircle, ListTodo, Radio, Settings, UserRound, LogOut, PanelLeftClose, PanelLeftOpen, type LucideIcon } from "lucide-react";
+import { Home, MessageCircle, ListTodo, Radio, Settings, UserRound, LogOut, PanelLeftClose, PanelLeftOpen, CreditCard, type LucideIcon } from "lucide-react";
 import { api } from "../../convex/_generated/api";
 import { initials } from "@/lib/workspace-ui";
 import Brand from "./Brand";
@@ -19,6 +19,7 @@ const mainNavigation = [
   ...(STATUS_TO_CASH_ENABLED ? [{ href: "/status", icon: Radio, label: "Viewers" }] : []),
 ];
 const accountNavigation = [
+  { href: "/billing", icon: CreditCard, label: "Billing" },
   { href: "/profile", icon: UserRound, label: "Profile" },
   { href: "/settings", icon: Settings, label: "Settings" },
 ];

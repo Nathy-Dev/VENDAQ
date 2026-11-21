@@ -5,6 +5,7 @@ import { decryptSecret } from "./lib/crypto";
 import { keywordClassifier } from "./lib/classifier";
 import { downloadAuthorizedInboundAudio } from "./lib/evolution";
 import { audioExtension, resolveTranscriptionModel, transcribeWithOpenAI, transcriptionErrorCode } from "./lib/openaiTranscription";
+import { billingAccess } from "./lib/billingAccess";
 
 const candidate = v.object({
   interactionId: v.id("interactions"), businessId: v.id("businesses"), customerId: v.id("customers"),
@@ -19,6 +20,7 @@ export const prepare = internalQuery({
     if (!interaction || interaction.role !== "customer" || interaction.messageType !== "audio" || !interaction.sessionId || interaction.transcriptionState === "completed" || interaction.transcriptionState !== "pending") return null;
     const [session, business, customer] = await Promise.all([ctx.db.get(interaction.sessionId), ctx.db.get(interaction.businessId), ctx.db.get(interaction.customerId)]);
     if (!session || session.state !== "connected" || !session.providerInstanceId || !business || business.foundationVersion !== 1 || !customer || customer.deletedAt !== undefined) return null;
+    if (!(await billingAccess(ctx, business)).canUsePaidFeatures) return null;
     return { interactionId: interaction._id, businessId: business._id, customerId: customer._id, sessionId: session._id, providerInstanceId: session.providerInstanceId, tokenCiphertext: session.tokenCiphertext, mediaPayload: args.mediaPayload, mediaMimeType: args.mediaMimeType ?? "audio/ogg" };
   },
 });

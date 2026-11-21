@@ -1,4 +1,4 @@
-export type WorkspaceScreen = "overview" | "inbox" | "actions" | "viewers" | "settings" | "profile" | "setup" | "connect";
+export type WorkspaceScreen = "overview" | "inbox" | "actions" | "viewers" | "settings" | "profile" | "billing" | "setup" | "connect";
 export type LaunchOnboardingStage = "connection" | "business_ai" | "groups";
 
 export function launchOnboardingStage(workspace: { state: string; hasBusinessSystemPrompt: boolean }): LaunchOnboardingStage {
@@ -10,7 +10,7 @@ export function workspaceScreen(pathname: string): WorkspaceScreen {
   if (pathname === "/onboarding/connect" || pathname.startsWith("/onboarding/connect/")) return "connect";
   const roots: [string, WorkspaceScreen][] = [
     ["/pipeline", "inbox"], ["/revenue", "actions"], ["/status", "viewers"],
-    ["/settings", "settings"], ["/profile", "profile"], ["/onboarding", "setup"],
+    ["/settings", "settings"], ["/profile", "profile"], ["/billing", "billing"], ["/onboarding", "setup"],
   ];
   return roots.find(([root]) => pathname === root || pathname.startsWith(`${root}/`))?.[1] ?? "overview";
 }

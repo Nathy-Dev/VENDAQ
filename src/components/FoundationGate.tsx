@@ -11,7 +11,7 @@ import Loader from "./Loader";
 import { buttonClass } from "./dashboard-ui";
 import styles from "./FoundationWorkspace.module.css";
 
-const protectedRoots = ["/dashboard", "/onboarding", "/pipeline", "/status", "/revenue", "/settings", "/profile"];
+const protectedRoots = ["/dashboard", "/onboarding", "/pipeline", "/status", "/revenue", "/settings", "/profile", "/billing"];
 
 export function isFoundationRoute(pathname: string): boolean {
   return protectedRoots.some((root) => pathname === root || pathname.startsWith(`${root}/`));

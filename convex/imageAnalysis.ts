@@ -6,6 +6,7 @@ import { keywordClassifier } from "./lib/classifier";
 import { downloadAuthorizedInboundImage } from "./lib/evolution";
 import { groupMayAutoReply } from "./lib/groupGovernance";
 import { journeyAfterInbound, type JourneyStage } from "./lib/journey";
+import { billingAccess } from "./lib/billingAccess";
 
 const MAX_ANALYSIS_LENGTH = 4_000;
 
@@ -70,6 +71,7 @@ export const prepare = internalQuery({
     if (!interaction || interaction.role !== "customer" || interaction.messageType !== "image" || !interaction.sessionId || interaction.imageAnalysisState !== "pending") return null;
     const [session, business, customer] = await Promise.all([ctx.db.get(interaction.sessionId), ctx.db.get(interaction.businessId), ctx.db.get(interaction.customerId)]);
     if (!session || session.state !== "connected" || !session.providerInstanceId || !business || business.foundationVersion !== 1 || !customer || customer.deletedAt !== undefined) return null;
+    if (!(await billingAccess(ctx, business)).canUsePaidFeatures) return null;
     if (interaction.isGroup ?? customer.isGroup ?? false) {
       if (!(business.groupAutoReplyEnabled ?? false)) return null;
       const group = await ctx.db.query("managedGroups").withIndex("by_business_group", (builder) => builder.eq("businessId", business._id).eq("groupJid", customer.phone)).unique();

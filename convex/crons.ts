@@ -38,4 +38,5 @@ crons.interval(
 // Keep the original schedules for later phases without registering them.
 const foundationCrons = cronJobs();
 foundationCrons.interval("foundation-maintenance", { minutes: 1 }, internal.maintenance.sweep, {});
+foundationCrons.interval("billing-maintenance", { minutes: 15 }, internal.billing.sweep, {});
 export default foundationCrons;

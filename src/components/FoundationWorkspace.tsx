@@ -17,6 +17,7 @@ import { buttonClass, PageHeader } from "./dashboard-ui";
 import { Notice, type Feedback } from "./WorkspaceFeedback";
 import BusinessAssistantSettings from "./BusinessAssistantSettings";
 import WorkspaceGroups from "./WorkspaceGroups";
+import BillingWorkspace from "./BillingWorkspace";
 import styles from "./FoundationWorkspace.module.css";
 
 export default function FoundationWorkspace() {
@@ -36,6 +37,7 @@ export default function FoundationWorkspace() {
         {screen === "viewers" && <><PageHeader title="Coming in a later phase" description="Status-to-Cash is preserved in the codebase but blocked for the first launch." /><section className={styles.card}><h2>Status-to-Cash is not part of Launch 1</h2><p className={styles.helper}>This route cannot collect viewers, create leads, or trigger outreach. It will be reintroduced behind a deliberate rollout later.</p></section></>}
         {screen === "settings" && <WorkspaceSettings workspace={workspace} />}
         {screen === "profile" && <ProfilePanel workspace={workspace} />}
+        {screen === "billing" && <BillingWorkspace />}
         {(screen === "setup" || screen === "connect") && (() => {
           const stage = launchOnboardingStage(workspace);
           return (

@@ -9,6 +9,8 @@ import { foundationPolicy } from "./lib/policy";
 import { providerSendResult, sendAuthorizedAssistantText, showAuthorizedAssistantTyping } from "./lib/evolution";
 import { groupMayAutoReply } from "./lib/groupGovernance";
 import { CUSTOMER_SPEECH_STYLE_RULES, normalizeAssistantReply } from "./lib/assistantStyle";
+import { reserveAssistedConversation } from "./lib/billingAccess";
+import { billingAccess } from "./lib/billingAccess";
 
 const candidate = v.object({
   businessId: v.id("businesses"),
@@ -42,6 +44,8 @@ export const candidateForInteraction = internalQuery({
     ]);
     const conversation = interaction.conversationId ? await ctx.db.get(interaction.conversationId) : null;
     if (!business || business.foundationVersion !== 1 || !customer || !session || session.state !== "connected" || !session.providerInstanceId) return null;
+    const access = await billingAccess(ctx, business);
+    if (!access.canUsePaidFeatures || !access.automation) return null;
     if (conversation && (conversation.businessId !== business._id || conversation.customerId !== customer._id)) return null;
     let systemPrompt = business.businessSystemPrompt?.trim() ?? "";
     if (systemPrompt.length < BUSINESS_SYSTEM_PROMPT_MIN_LENGTH || (business.killSwitch ?? true)) return null;
@@ -118,6 +122,14 @@ export const reserve = internalMutation({
     } else if (!(business.customerAutoReplyEnabled ?? false)) {
       return null;
     }
+    let conversationId = interaction.conversationId ?? (await ctx.db.query("conversations").withIndex("by_customer", (builder) => builder.eq("customerId", interaction.customerId)).order("desc").first())?._id;
+    if (!conversationId) {
+      const identityKey = customer.identityKey ?? customer.phone;
+      const linked = await ctx.db.query("conversations").withIndex("by_business_identity", (builder) => builder.eq("businessId", business._id).eq("identityKey", identityKey)).unique();
+      conversationId = linked?._id ?? await ctx.db.insert("conversations", { businessId: business._id, customerId: customer._id, identityKey, revision: 1, lastEventAt: interaction.timestamp, lastInboundAt: interaction.timestamp, messageCount: 1 });
+      await ctx.db.patch(interaction._id, { conversationId });
+    }
+    if (!conversationId || !(await reserveAssistedConversation(ctx, { business, conversationId }))) return null;
     const now = Date.now();
     const since = now - 86_400_000;
     const daily = await ctx.db.query("assistantDispatches").withIndex("by_business_time", (builder) => builder.eq("businessId", business._id).gte("createdAt", since)).take(foundationPolicy().assistantDailySendCap);
@@ -375,9 +387,19 @@ export const reserveOwnerRescue = internalMutation({
     if (!rescue || rescue.state !== "sending" || !rescue.ownerAnswer?.trim() || rescue.expiresAt <= Date.now()) return null;
     const [business, customer, interaction] = await Promise.all([ctx.db.get(rescue.businessId), ctx.db.get(rescue.customerId), ctx.db.get(rescue.interactionId)]);
     if (!business || business.foundationVersion !== 1 || (business.killSwitch ?? true) || !(business.customerAutoReplyEnabled ?? false) || (business.businessSystemPrompt?.trim().length ?? 0) < BUSINESS_SYSTEM_PROMPT_MIN_LENGTH) return null;
+    const access = await billingAccess(ctx, business);
+    if (!access.canUsePaidFeatures || !access.automation) return null;
     if (!customer || customer.businessId !== business._id || customer.isGroup || customer.deletedAt !== undefined || !interaction || interaction.businessId !== business._id || interaction.customerId !== customer._id || interaction.role !== "customer" || !interaction.sessionId) return null;
     const session = await ctx.db.get(interaction.sessionId);
     if (!session || session.businessId !== business._id || session.state !== "connected" || !session.providerInstanceId) return null;
+    let conversationId = interaction.conversationId ?? (await ctx.db.query("conversations").withIndex("by_customer", (builder) => builder.eq("customerId", interaction.customerId)).order("desc").first())?._id;
+    if (!conversationId) {
+      const identityKey = customer.identityKey ?? customer.phone;
+      const linked = await ctx.db.query("conversations").withIndex("by_business_identity", (builder) => builder.eq("businessId", business._id).eq("identityKey", identityKey)).unique();
+      conversationId = linked?._id ?? await ctx.db.insert("conversations", { businessId: business._id, customerId: customer._id, identityKey, revision: 1, lastEventAt: interaction.timestamp, lastInboundAt: interaction.timestamp, messageCount: 1 });
+      await ctx.db.patch(interaction._id, { conversationId });
+    }
+    if (!conversationId || !(await reserveAssistedConversation(ctx, { business, conversationId }))) return null;
     const previous = await ctx.db.query("assistantDispatches").withIndex("by_owner_rescue", (builder) => builder.eq("ownerRescueId", rescue._id)).order("desc").take(10);
     if (previous.some((dispatch) => ["reserved", "submitting", "accepted", "unknown"].includes(dispatch.state))) return null;
     const since = Date.now() - 86_400_000;
@@ -517,6 +539,7 @@ export const dispatchForSubmit = internalQuery({
       ctx.db.get(dispatch.customerId),
     ]);
     if (!business || business.foundationVersion !== 1 || !session || session.businessId !== business._id || session.state !== "connected" || !session.providerInstanceId || (business.killSwitch ?? true)) return null;
+    if (!(await billingAccess(ctx, business)).canUsePaidFeatures) return null;
     if (!interaction || interaction.businessId !== business._id || interaction.customerId !== dispatch.customerId || interaction.sessionId !== session._id || interaction.role !== "customer") return null;
     const kind = dispatch.kind ?? "assistant_reply";
     if (kind === "assistant_reply" && interaction.manualReviewRequired) return null;
