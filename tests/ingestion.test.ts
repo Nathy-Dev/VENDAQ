@@ -114,7 +114,7 @@ describe("authenticated WhatsApp ingestion", () => {
     vi.stubEnv("EVOLUTION_GO_URL", "https://provider.example.test");
     vi.stubEnv("EVOLUTION_GO_API_KEY", "synthetic-provider-key");
     vi.stubEnv("OPENAI_API_KEY", "synthetic-openai-key");
-    vi.stubEnv("OPENAI_TRANSCRIPTION_MODEL", "whisper-1");
+    vi.stubEnv("OPENAI_TRANSCRIPTION_MODEL", "gpt-transcribe");
     vi.stubEnv("GROQ_API_KEY", "synthetic-groq-key");
     vi.stubEnv("GROQ_LLM_MODEL", "synthetic-model");
     const requests: Array<{ url: string; body: BodyInit | null | undefined; headers: Headers }> = [];
@@ -122,7 +122,7 @@ describe("authenticated WhatsApp ingestion", () => {
       const url = String(input);
       requests.push({ url, body: init?.body, headers: new Headers(init?.headers) });
       if (url.endsWith("/message/downloadmedia")) return Response.json({ data: { base64: Buffer.from("synthetic-ogg-audio").toString("base64"), mimetype: "audio/ogg" } });
-      if (url === "https://api.openai.com/v1/audio/transcriptions") return Response.json({ text: "You get the blue shoes for size forty two? Abeg confirm.", language: "english", duration: 4.2 });
+      if (url === "https://api.openai.com/v1/audio/transcriptions") return Response.json({ text: "You get the blue shoes for size forty two? Abeg confirm.", languages: [{ code: "en" }] });
       if (url === "https://api.groq.com/openai/v1/chat/completions") return Response.json({ choices: [{ message: { content: "Yes, we can help with the blue shoes. Please confirm the style you want." } }] });
       if (url.endsWith("/message/presence")) return Response.json({ message: "success" });
       if (url.endsWith("/send/text")) return Response.json({ messageId: "provider-reply-1" });
@@ -135,7 +135,7 @@ describe("authenticated WhatsApp ingestion", () => {
     const interactions = await harness.run((ctx) => ctx.db.query("interactions").collect());
     const inbound = interactions.find((interaction) => interaction.role === "customer");
     const outbound = interactions.find((interaction) => interaction.role === "owner");
-    expect(inbound).toMatchObject({ messageType: "audio", transcriptionState: "completed", transcript: "You get the blue shoes for size forty two? Abeg confirm.", transcriptLanguage: "english", manualReviewRequired: false });
+    expect(inbound).toMatchObject({ messageType: "audio", transcriptionState: "completed", transcript: "You get the blue shoes for size forty two? Abeg confirm.", transcriptLanguage: "en", manualReviewRequired: false });
     expect(inbound?.transcriptConfidence).toBeUndefined();
     expect(outbound).toMatchObject({ content: "Yes, we can help with the blue shoes. Please confirm the style you want.", messageType: "text" });
     expect(await harness.run((ctx) => ctx.db.query("assistantDispatches").collect())).toEqual([expect.objectContaining({ interactionId: inbound!._id, state: "accepted", attempts: 1, providerMessageId: "provider-reply-1" })]);
@@ -151,13 +151,53 @@ describe("authenticated WhatsApp ingestion", () => {
     const transcriptionFile = transcriptionForm.get("file") as File;
     expect(transcriptionRequest.headers.get("authorization")).toBe("Bearer synthetic-openai-key");
     expect(transcriptionRequest.headers.has("content-type")).toBe(false);
-    expect(transcriptionForm.get("model")).toBe("whisper-1");
-    expect(transcriptionForm.get("response_format")).toBe("verbose_json");
-    expect(transcriptionForm.get("temperature")).toBe("0");
+    expect(transcriptionForm.get("model")).toBe("gpt-transcribe");
+    expect(transcriptionForm.has("response_format")).toBe(false);
+    expect(transcriptionForm.has("temperature")).toBe(false);
     expect(transcriptionForm.get("prompt")).toContain("Nigerian Pidgin");
     expect(transcriptionFile).toMatchObject({ name: "voice-note.ogg", type: "audio/ogg", size: Buffer.byteLength("synthetic-ogg-audio") });
     expect(JSON.parse(requests.find((request) => request.url.endsWith("/send/text"))!.body as string)).toMatchObject({ number: "2348000000001@s.whatsapp.net", text: outbound!.content, id: inbound!._id });
     expect(JSON.stringify(interactions)).not.toContain("private-media.test");
+  });
+
+  it("records a safe OpenAI status code and never guesses a reply when transcription fails", async () => {
+    const harness = createHarness();
+    const source = await tenant(harness, "voice-note-provider-error");
+    await source.owner.mutation(api.businessProfile.save, {
+      businessId: source.businessId,
+      systemPrompt: "You represent Voice Note Provider Error, a Nigerian retail business. Only answer from verified business facts, never invent prices, stock, delivery details, discounts, payment information, or policies, and ask one short clarifying question when required information is missing.",
+      customerAutoReplyEnabled: true,
+      groupAutoReplyEnabled: false,
+    });
+    vi.stubEnv("FOUNDATION_PROVIDER_ENABLED", "true");
+    vi.stubEnv("EVOLUTION_GO_URL", "https://provider.example.test");
+    vi.stubEnv("EVOLUTION_GO_API_KEY", "synthetic-provider-key");
+    vi.stubEnv("OPENAI_API_KEY", "synthetic-openai-key");
+    vi.stubEnv("OPENAI_TRANSCRIPTION_MODEL", "gpt-transcribe");
+    vi.stubEnv("GROQ_API_KEY", "synthetic-groq-key");
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/message/downloadmedia")) return Response.json({ data: { base64: Buffer.from("synthetic-ogg-audio").toString("base64"), mimetype: "audio/ogg" } });
+      if (url === "https://api.openai.com/v1/audio/transcriptions") return Response.json({ error: { message: "private provider detail" } }, { status: 400 });
+      return new Response(null, { status: 404 });
+    }));
+
+    await webhook(harness, message(source, { id: "voice-provider-error", content: { audioMessage: { url: "https://private-media.test/audio", mimetype: "audio/ogg; codecs=opus", mediaKey: "synthetic-key" } } }));
+    await drain(harness);
+
+    const interactions = await harness.run((ctx) => ctx.db.query("interactions").collect());
+    expect(interactions).toHaveLength(1);
+    expect(interactions[0]).toMatchObject({
+      role: "customer",
+      messageType: "audio",
+      transcriptionState: "failed",
+      transcriptionErrorCode: "OPENAI_TRANSCRIPTION_HTTP_400",
+      manualReviewRequired: true,
+    });
+    expect(interactions[0].transcript).toBeUndefined();
+    expect(JSON.stringify(interactions)).not.toContain("private provider detail");
+    expect(await harness.run((ctx) => ctx.db.query("assistantDispatches").collect())).toHaveLength(0);
+    expect(vi.mocked(fetch).mock.calls.map(([input]) => String(input))).not.toContain("https://provider.example.test/send/text");
   });
 
   it("canonicalizes private LID messages and names group threads from group metadata", async () => {

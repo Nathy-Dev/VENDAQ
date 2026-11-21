@@ -7,6 +7,23 @@ import { downloadAuthorizedInboundAudio } from "./lib/evolution";
 
 const NIGERIAN_SPEECH_PROMPT = "Na Nigerian WhatsApp voice note be this. Write wetin the person talk exactly as dem talk am. Keep Nigerian Pidgin, Nigerian English, names, and any code-switching as spoken. No translate and no correct the grammar. Common words fit include abeg, dey, no wahala, una, wetin, na, e, sabi, sha, abi, and oga.";
 
+function transcriptionLanguage(result: { language?: unknown; languages?: unknown }): string | undefined {
+  if (Array.isArray(result.languages)) {
+    const detected = result.languages.find((language): language is { code: string } =>
+      typeof language === "object" && language !== null && typeof (language as { code?: unknown }).code === "string"
+    );
+    if (detected?.code.trim()) return detected.code.trim();
+  }
+  return typeof result.language === "string" && result.language.trim() ? result.language.trim() : undefined;
+}
+
+function transcriptionHttpError(status: number): string {
+  if (status === 401 || status === 403) return "OPENAI_TRANSCRIPTION_AUTH_FAILED";
+  if (status === 413) return "AUDIO_SIZE_NOT_SUPPORTED";
+  if (status === 429) return "OPENAI_TRANSCRIPTION_RATE_LIMITED";
+  return `OPENAI_TRANSCRIPTION_HTTP_${status}`;
+}
+
 function audioExtension(mimeType: string): string {
   const normalized = mimeType.split(";")[0].trim().toLowerCase();
   if (normalized === "audio/flac") return "flac";
@@ -84,7 +101,7 @@ export const transcribe = internalAction({
       if (!current) throw new Error("TRANSCRIPTION_NOT_ELIGIBLE");
       const apiKey = process.env.OPENAI_API_KEY;
       if (!apiKey) throw new Error("OPENAI_TRANSCRIPTION_NOT_CONFIGURED");
-      const model = process.env.OPENAI_TRANSCRIPTION_MODEL?.trim() || "whisper-1";
+      const model = process.env.OPENAI_TRANSCRIPTION_MODEL?.trim() || "gpt-transcribe";
       const token = await decryptSecret(current.tokenCiphertext, `business:${current.businessId}:session-token`);
       const message = JSON.parse(current.mediaPayload) as Record<string, unknown>;
       const audio = await downloadAuthorizedInboundAudio({ token, instanceId: current.providerInstanceId, message });
@@ -92,8 +109,6 @@ export const transcribe = internalAction({
       const form = new FormData();
       form.append("file", new Blob([audio.bytes.slice().buffer], { type: mimeType }), `voice-note.${audioExtension(mimeType)}`);
       form.append("model", model);
-      form.append("response_format", "verbose_json");
-      form.append("temperature", "0");
       form.append("prompt", NIGERIAN_SPEECH_PROMPT);
       const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
         method: "POST",
@@ -102,13 +117,15 @@ export const transcribe = internalAction({
         signal: AbortSignal.timeout(45_000),
       });
       if (!response.ok) {
-        if (response.status === 401 || response.status === 403) throw new Error("OPENAI_TRANSCRIPTION_AUTH_FAILED");
-        if (response.status === 413) throw new Error("AUDIO_SIZE_NOT_SUPPORTED");
-        if (response.status === 429) throw new Error("OPENAI_TRANSCRIPTION_RATE_LIMITED");
-        throw new Error("OPENAI_TRANSCRIPTION_FAILED");
+        throw new Error(transcriptionHttpError(response.status));
       }
-      const result = await response.json() as { text?: string; language?: string };
-      await ctx.runMutation(internal.transcription.finish, { interactionId: current.interactionId, transcript: result.text ?? "", ...(result.language ? { language: result.language } : {}) });
+      const result = await response.json() as { text?: unknown; language?: unknown; languages?: unknown };
+      const language = transcriptionLanguage(result);
+      await ctx.runMutation(internal.transcription.finish, {
+        interactionId: current.interactionId,
+        transcript: typeof result.text === "string" ? result.text : "",
+        ...(language ? { language } : {}),
+      });
     } catch (error) {
       await ctx.runMutation(internal.transcription.fail, { interactionId: args.interactionId, code: error instanceof Error ? error.message : "TRANSCRIPTION_FAILED" });
     }
