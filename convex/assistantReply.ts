@@ -6,6 +6,7 @@ import { assistantReplyDelayMs, BUSINESS_SYSTEM_PROMPT_MIN_LENGTH } from "./lib/
 import { foundationPolicy } from "./lib/policy";
 import { providerSendResult, sendAuthorizedAssistantText, showAuthorizedAssistantTyping } from "./lib/evolution";
 import { groupMayAutoReply } from "./lib/groupGovernance";
+import { CUSTOMER_SPEECH_STYLE_RULES, normalizeAssistantReply } from "./lib/assistantStyle";
 
 const candidate = v.object({
   businessId: v.id("businesses"),
@@ -76,6 +77,8 @@ export const reserve = internalMutation({
   args: { interactionId: v.id("interactions"), content: v.string() },
   returns: v.union(v.null(), v.id("assistantDispatches")),
   handler: async (ctx, args) => {
+    const content = normalizeAssistantReply(args.content);
+    if (content.length < 2 || content.length > 1_000) return null;
     const interaction = await ctx.db.get(args.interactionId);
     if (!interaction || interaction.role !== "customer" || interaction.manualReviewRequired || !["text", "audio"].includes(interaction.messageType ?? "") || !interaction.sessionId) return null;
     const existing = await ctx.db.query("assistantDispatches").withIndex("by_interaction", (builder) => builder.eq("interactionId", interaction._id)).unique();
@@ -107,7 +110,7 @@ export const reserve = internalMutation({
       sessionId: session._id,
       target: customer.phone,
       isGroup,
-      content: args.content,
+      content,
       state: "reserved",
       attempts: 0,
       createdAt: now,
@@ -183,7 +186,7 @@ async function generateReply(systemPrompt: string, customerName: string, inbound
         temperature: 0.35,
         max_tokens: 260,
         messages: [
-          { role: "system", content: `${systemPrompt}\n\nChannel rules: Reply as the business on WhatsApp. Use plain text only. Keep the reply concise and accurate. Never claim you completed an action you cannot verify. Never invent prices, stock, delivery times, policies, or payment details. If the business prompt does not contain the answer, ask one short clarifying question or say a human will confirm.` },
+          { role: "system", content: `${systemPrompt}\n\nChannel rules: Reply as the business on WhatsApp. Use plain text only. Keep the reply concise and accurate. Never claim you completed an action you cannot verify. Never invent prices, stock, delivery times, policies, or payment details. If the business prompt does not contain the answer, ask one short clarifying question or say a human will confirm.\n\n${CUSTOMER_SPEECH_STYLE_RULES}` },
           ...history.map((message) => ({ role: message.role === "owner" ? "assistant" as const : message.role === "customer" ? "user" as const : "system" as const, content: message.content })),
           { role: "user", content: `${customerName} just sent: ${inboundContent}\nReturn only the WhatsApp reply.` },
         ],
@@ -192,7 +195,7 @@ async function generateReply(systemPrompt: string, customerName: string, inbound
     });
     if (!response.ok) throw new Error("AI_GENERATION_FAILED");
     const result = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
-    const reply = result.choices?.[0]?.message?.content?.trim().replace(/^['\"]|['\"]$/g, "") ?? "";
+    const reply = normalizeAssistantReply(result.choices?.[0]?.message?.content ?? "");
     if (reply.length < 2 || reply.length > 1_000) throw new Error("AI_GENERATION_FAILED");
     return reply;
   } finally {

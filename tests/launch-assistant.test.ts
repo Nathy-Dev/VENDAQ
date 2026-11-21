@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api, internal } from "../convex/_generated/api";
 import { assistantReplyDelayMs } from "../convex/lib/launch";
+import { normalizeAssistantReply } from "../convex/lib/assistantStyle";
 import { createHarness, tenant } from "./harness";
 
 const directPrompt = "You represent Launch Safety, a Nigerian retail business. Answer only with verified facts from this system prompt, never invent prices, stock, delivery dates, policies, discounts, or payment details, ask one short clarifying question when information is missing, and escalate complaints, refunds, and uncertain requests to the owner using concise friendly WhatsApp language.";
@@ -8,7 +9,7 @@ const directPrompt = "You represent Launch Safety, a Nigerian retail business. A
 async function inboundInteraction(
   harness: ReturnType<typeof createHarness>,
   source: Awaited<ReturnType<typeof tenant>>,
-  options: { isGroup?: boolean; wasMentioned?: boolean; target?: string; classifierLabel?: "buying_signal" | "inquiry" | "payment_related" | "casual_noise" | "manual_review" } = {},
+  options: { content?: string; isGroup?: boolean; wasMentioned?: boolean; target?: string; classifierLabel?: "buying_signal" | "inquiry" | "payment_related" | "casual_noise" | "manual_review" } = {},
 ) {
   const now = Date.now();
   return await harness.run(async (ctx) => {
@@ -29,7 +30,7 @@ async function inboundInteraction(
       customerId,
       sessionId: source.sessionId,
       role: "customer",
-      content: "Is this available?",
+      content: options.content ?? "Is this available?",
       timestamp: now,
       receivedAt: now,
       messageType: "text",
@@ -54,6 +55,78 @@ describe("Launch 1 assistant authorization", () => {
     expect(short).toBeGreaterThanOrEqual(3_000);
     expect(long).toBeLessThanOrEqual(15_000);
     expect(long).toBeGreaterThan(short);
+  });
+
+  it("removes em and en dashes from assistant replies", () => {
+    expect(normalizeAssistantReply("Yes o — e dey available – send your size."))
+      .toBe("Yes o, e dey available, send your size.");
+    expect(normalizeAssistantReply("Delivery takes 2–3 days."))
+      .toBe("Delivery takes 2 to 3 days.");
+  });
+
+  it("uses the customer's speech pattern and stores a dash-free reply", async () => {
+    const harness = createHarness();
+    const source = await tenant(harness, "speech-pattern");
+    await source.owner.mutation(api.businessProfile.save, {
+      businessId: source.businessId,
+      systemPrompt: directPrompt,
+      customerAutoReplyEnabled: true,
+      groupAutoReplyEnabled: false,
+    });
+    const interactionId = await inboundInteraction(harness, source, { content: "Abeg, una get this shoe for size 42?" });
+    vi.stubEnv("GROQ_API_KEY", "synthetic-groq-key");
+    vi.stubEnv("GROQ_LLM_MODEL", "synthetic-model");
+    let requestBody: { messages?: Array<{ role?: string; content?: string }> } | undefined;
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async (input, init?: RequestInit) => {
+      if (String(input) === "https://api.groq.com/openai/v1/chat/completions") {
+        requestBody = JSON.parse(String(init?.body));
+        return Response.json({ choices: [{ message: { content: "Yes o — e dey available. Abeg confirm the colour." } }] });
+      }
+      return new Response(null, { status: 404 });
+    }));
+
+    await harness.action(internal.assistantReply.prepareForInteraction, { interactionId });
+
+    const systemMessage = requestBody?.messages?.find((message) => message.role === "system")?.content ?? "";
+    expect(systemMessage).toContain("business system prompt has priority");
+    expect(systemMessage).toContain("Within the style allowed by the business system prompt");
+    expect(systemMessage).toContain("English, Nigerian Pidgin, or a natural mix");
+    expect(systemMessage).toContain("Never use an em dash or en dash");
+    expect(requestBody?.messages?.at(-1)?.content).toContain("Abeg, una get this shoe for size 42?");
+    const [dispatch] = await harness.run((ctx) => ctx.db.query("assistantDispatches").collect());
+    expect(dispatch.content).toBe("Yes o, e dey available. Abeg confirm the colour.");
+    expect(dispatch.content).not.toMatch(/[—–]/);
+  });
+
+  it("keeps the business response pattern above customer style matching", async () => {
+    const harness = createHarness();
+    const source = await tenant(harness, "business-style-priority");
+    const formalPrompt = "You represent Business Style Priority, a Nigerian professional-services business. Always reply in formal English, address the customer politely, use complete sentences, and never use slang or Pidgin. Answer only with verified business facts, never invent prices, availability, timing, payment details, or policies, and ask one concise clarifying question when required information is missing.";
+    await source.owner.mutation(api.businessProfile.save, {
+      businessId: source.businessId,
+      systemPrompt: formalPrompt,
+      customerAutoReplyEnabled: true,
+      groupAutoReplyEnabled: false,
+    });
+    const interactionId = await inboundInteraction(harness, source, { content: "Abeg una fit help me sharp sharp?" });
+    vi.stubEnv("GROQ_API_KEY", "synthetic-groq-key");
+    vi.stubEnv("GROQ_LLM_MODEL", "synthetic-model");
+    let systemMessage = "";
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async (input, init?: RequestInit) => {
+      if (String(input) === "https://api.groq.com/openai/v1/chat/completions") {
+        const body = JSON.parse(String(init?.body)) as { messages: Array<{ role: string; content: string }> };
+        systemMessage = body.messages.find((message) => message.role === "system")?.content ?? "";
+        return Response.json({ choices: [{ message: { content: "Certainly. Please tell us which service you require." } }] });
+      }
+      return new Response(null, { status: 404 });
+    }));
+
+    await harness.action(internal.assistantReply.prepareForInteraction, { interactionId });
+
+    expect(systemMessage.startsWith(formalPrompt)).toBe(true);
+    expect(systemMessage).toContain("business system prompt has priority for tone, language, wording, formatting, and response pattern");
+    const [dispatch] = await harness.run((ctx) => ctx.db.query("assistantDispatches").collect());
+    expect(dispatch.content).toBe("Certainly. Please tell us which service you require.");
   });
 
   it("requires a comprehensive system prompt before replies can be authorized", async () => {
