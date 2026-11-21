@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { api, internal } from "../convex/_generated/api";
 import { createHarness, tenant, type Harness } from "./harness";
 
@@ -89,7 +89,66 @@ describe("one-to-one commerce intelligence", () => {
     const [rescue] = await harness.run((ctx) => ctx.db.query("ownerRescueRequests").collect());
     await expect(second.owner.mutation(api.commerceIntelligence.answerRescue, { businessId: first.businessId, rescueId: rescue._id, answer: "Give 10 percent" })).rejects.toThrow();
     await first.owner.mutation(api.commerceIntelligence.answerRescue, { businessId: first.businessId, rescueId: rescue._id, answer: "Offer no more than 5 percent." });
-    expect((await harness.run((ctx) => ctx.db.get(rescue._id)))?.state).toBe("answered");
+    expect((await harness.run((ctx) => ctx.db.get(rescue._id)))?.state).toBe("sending");
+  });
+
+  it("delivers an owner's approved rescue answer through the authorized dispatch path", async () => {
+    const harness = createHarness();
+    const source = await tenant(harness, "owner-rescue-delivery");
+    const systemPrompt = "You represent Owner Rescue Delivery, a Nigerian retail business. Answer only with verified business facts, never invent prices, availability, delivery promises, discounts, payment confirmation, or policies, and write concise natural WhatsApp replies.";
+    await source.owner.mutation(api.businessProfile.save, { businessId: source.businessId, systemPrompt, customerAutoReplyEnabled: true, groupAutoReplyEnabled: false });
+    const request = await directInteraction(harness, source, "Can you give me your last price?");
+    await harness.mutation(internal.commerceIntelligence.createGenerationRescue, { interactionId: request.interactionId, reason: "discount_approval", question: "What discount can Pipelixr offer?", holdingReply: "Let me confirm the best approved price for you." });
+    const [rescue] = await harness.run((ctx) => ctx.db.query("ownerRescueRequests").collect());
+    vi.stubEnv("FOUNDATION_PROVIDER_ENABLED", "true");
+    vi.stubEnv("EVOLUTION_GO_URL", "https://provider.example.test");
+    vi.stubEnv("EVOLUTION_GO_API_KEY", "synthetic-provider-key");
+    vi.stubEnv("GROQ_API_KEY", "synthetic-groq-key");
+    vi.stubEnv("GROQ_LLM_MODEL", "synthetic-model");
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === "https://api.groq.com/openai/v1/chat/completions") return Response.json({ choices: [{ message: { content: "I can offer up to 5 percent off for you." } }] });
+      if (url.endsWith("/message/presence")) return Response.json({ message: "success" });
+      if (url.endsWith("/send/text")) return Response.json({ message: { id: "owner-rescue-message" } });
+      throw new Error(`Unexpected request: ${url}`);
+    }));
+
+    await source.owner.mutation(api.commerceIntelligence.answerRescue, { businessId: source.businessId, rescueId: rescue._id, answer: "Offer no more than 5 percent." });
+    await harness.finishAllScheduledFunctions(() => vi.runAllTimers());
+
+    expect(await harness.run((ctx) => ctx.db.get(rescue._id))).toMatchObject({ state: "answered", ownerAnswer: "Offer no more than 5 percent." });
+    const dispatches = await harness.run((ctx) => ctx.db.query("assistantDispatches").collect());
+    expect(dispatches).toEqual([expect.objectContaining({ state: "accepted", kind: "owner_rescue", ownerRescueId: rescue._id, content: "I can offer up to 5 percent off for you." })]);
+    expect(fetch).toHaveBeenCalledTimes(3);
+  });
+
+  it("reopens an owner rescue when customer-reply consent is revoked before delivery", async () => {
+    const harness = createHarness();
+    const source = await tenant(harness, "owner-rescue-revoked");
+    const systemPrompt = "You represent Owner Rescue Revoked, a Nigerian retail business. Answer only with verified business facts, never invent prices, availability, delivery promises, discounts, payment confirmation, or policies, and write concise natural WhatsApp replies.";
+    await source.owner.mutation(api.businessProfile.save, { businessId: source.businessId, systemPrompt, customerAutoReplyEnabled: true, groupAutoReplyEnabled: false });
+    const request = await directInteraction(harness, source, "Is delivery available tomorrow?");
+    await harness.mutation(internal.commerceIntelligence.createGenerationRescue, { interactionId: request.interactionId, reason: "missing_fact", question: "What delivery promise is approved?", holdingReply: "Let me confirm delivery for you." });
+    const [rescue] = await harness.run((ctx) => ctx.db.query("ownerRescueRequests").collect());
+    await source.owner.mutation(api.commerceIntelligence.answerRescue, { businessId: source.businessId, rescueId: rescue._id, answer: "Delivery is available on Friday only." });
+    await source.owner.mutation(api.businessProfile.save, { businessId: source.businessId, systemPrompt, customerAutoReplyEnabled: false, groupAutoReplyEnabled: false });
+    await harness.finishAllScheduledFunctions(() => vi.runAllTimers());
+    expect(await harness.run((ctx) => ctx.db.get(rescue._id))).toMatchObject({ state: "open", ownerAnswer: "Delivery is available on Friday only.", deliveryError: expect.stringContaining("authorization") });
+    expect(await harness.run((ctx) => ctx.db.query("assistantDispatches").collect())).toEqual([]);
+  });
+
+  it("lets the owner safely resolve an uncertain rescue delivery after checking WhatsApp", async () => {
+    const harness = createHarness();
+    const source = await tenant(harness, "owner-rescue-unknown");
+    const request = await directInteraction(harness, source, "Can this arrive today?");
+    await harness.mutation(internal.commerceIntelligence.createGenerationRescue, { interactionId: request.interactionId, reason: "missing_fact", question: "What delivery answer is approved?", holdingReply: "Let me confirm that for you." });
+    const [rescue] = await harness.run((ctx) => ctx.db.query("ownerRescueRequests").collect());
+    await harness.run((ctx) => ctx.db.patch(rescue._id, { state: "delivery_unknown", ownerAnswer: "Delivery is available tomorrow.", deliveryError: "Check WhatsApp.", updatedAt: Date.now() }));
+    await source.owner.mutation(api.commerceIntelligence.resolveRescueDelivery, { businessId: source.businessId, rescueId: rescue._id, decision: "not_delivered" });
+    expect(await harness.run((ctx) => ctx.db.get(rescue._id))).toMatchObject({ state: "open", ownerAnswer: "Delivery is available tomorrow.", deliveryError: expect.stringContaining("safely send it again") });
+    await harness.run((ctx) => ctx.db.patch(rescue._id, { state: "delivery_unknown", updatedAt: Date.now() }));
+    await source.owner.mutation(api.commerceIntelligence.resolveRescueDelivery, { businessId: source.businessId, rescueId: rescue._id, decision: "delivered" });
+    expect(await harness.run((ctx) => ctx.db.get(rescue._id))).toMatchObject({ state: "answered", answeredAt: expect.any(Number) });
   });
 
   it("aggregates conversation and ad outcomes", async () => {

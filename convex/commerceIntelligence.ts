@@ -288,7 +288,7 @@ export const dashboard = query({
   returns: v.object({ openCommitments: v.number(), overdueCommitments: v.number(), openExceptions: v.number(), urgentExceptions: v.number(), pendingPaymentProofs: v.number(), ownerQuestions: v.number(), verifiedMemories: v.number() }),
   handler: async (ctx, args) => {
     await requireBusiness(ctx, args.businessId);
-    const [openCommitments, overdueCommitments, openExceptions, waitingExceptions, notStartedProofs, pendingProofs, unavailableProofs, notFoundProofs, mismatchProofs, ownerQuestions, verifiedMemories] = await Promise.all([
+    const [openCommitments, overdueCommitments, openExceptions, waitingExceptions, notStartedProofs, pendingProofs, unavailableProofs, notFoundProofs, mismatchProofs, openOwnerQuestions, sendingOwnerQuestions, unknownOwnerQuestions, verifiedMemories] = await Promise.all([
       ctx.db.query("conversationCommitments").withIndex("by_business_state_due", (builder) => builder.eq("businessId", args.businessId).eq("state", "open")).take(500),
       ctx.db.query("conversationCommitments").withIndex("by_business_state_due", (builder) => builder.eq("businessId", args.businessId).eq("state", "overdue")).take(500),
       ctx.db.query("commerceExceptions").withIndex("by_business_state_severity", (builder) => builder.eq("businessId", args.businessId).eq("state", "open")).take(500),
@@ -299,9 +299,11 @@ export const dashboard = query({
       ctx.db.query("paymentProofs").withIndex("by_business_verification_updated", (builder) => builder.eq("businessId", args.businessId).eq("verificationState", "not_found")).take(500),
       ctx.db.query("paymentProofs").withIndex("by_business_verification_updated", (builder) => builder.eq("businessId", args.businessId).eq("verificationState", "mismatch")).take(500),
       ctx.db.query("ownerRescueRequests").withIndex("by_business_state_created", (builder) => builder.eq("businessId", args.businessId).eq("state", "open")).take(500),
+      ctx.db.query("ownerRescueRequests").withIndex("by_business_state_created", (builder) => builder.eq("businessId", args.businessId).eq("state", "sending")).take(500),
+      ctx.db.query("ownerRescueRequests").withIndex("by_business_state_created", (builder) => builder.eq("businessId", args.businessId).eq("state", "delivery_unknown")).take(500),
       ctx.db.query("customerMemories").withIndex("by_business_state_updated", (builder) => builder.eq("businessId", args.businessId).eq("state", "verified")).take(500),
     ]);
-    return { openCommitments: openCommitments.length, overdueCommitments: overdueCommitments.length, openExceptions: openExceptions.length + waitingExceptions.length, urgentExceptions: [...openExceptions, ...waitingExceptions].filter((entry) => entry.severity === "high" || entry.severity === "critical").length, pendingPaymentProofs: notStartedProofs.length + pendingProofs.length + unavailableProofs.length + notFoundProofs.length + mismatchProofs.length, ownerQuestions: ownerQuestions.length, verifiedMemories: verifiedMemories.length };
+    return { openCommitments: openCommitments.length, overdueCommitments: overdueCommitments.length, openExceptions: openExceptions.length + waitingExceptions.length, urgentExceptions: [...openExceptions, ...waitingExceptions].filter((entry) => entry.severity === "high" || entry.severity === "critical").length, pendingPaymentProofs: notStartedProofs.length + pendingProofs.length + unavailableProofs.length + notFoundProofs.length + mismatchProofs.length, ownerQuestions: openOwnerQuestions.length + sendingOwnerQuestions.length + unknownOwnerQuestions.length, verifiedMemories: verifiedMemories.length };
   },
 });
 
@@ -310,30 +312,33 @@ export const workQueue = query({
   returns: v.object({
     commitments: v.array(v.object({ id: v.id("conversationCommitments"), customerId: v.id("customers"), customerName: v.string(), summary: v.string(), kind: v.string(), dueAt: v.union(v.number(), v.null()), state: v.string() })),
     exceptions: v.array(v.object({ id: v.id("commerceExceptions"), customerId: v.id("customers"), customerName: v.string(), summary: v.string(), kind: v.string(), severity: v.string(), state: v.string(), ownerQuestion: v.union(v.string(), v.null()) })),
-    rescues: v.array(v.object({ id: v.id("ownerRescueRequests"), customerId: v.id("customers"), customerName: v.string(), question: v.string(), contextSummary: v.string(), createdAt: v.number() })),
+    rescues: v.array(v.object({ id: v.id("ownerRescueRequests"), customerId: v.id("customers"), customerName: v.string(), question: v.string(), contextSummary: v.string(), state: v.string(), ownerAnswer: v.union(v.string(), v.null()), deliveryError: v.union(v.string(), v.null()), createdAt: v.number() })),
     payments: v.array(v.object({ id: v.id("paymentProofs"), customerId: v.id("customers"), customerName: v.string(), receiptState: v.string(), verificationState: v.string(), amount: v.union(v.number(), v.null()), reason: v.union(v.string(), v.null()), createdAt: v.number() })),
   }),
   handler: async (ctx, args) => {
     await requireBusiness(ctx, args.businessId);
-    const [openCommitments, overdueCommitments, openExceptions, waitingExceptions, rescues, notStartedProofs, pendingProofs, unavailableProofs, notFoundProofs, mismatchProofs] = await Promise.all([
+    const [openCommitments, overdueCommitments, openExceptions, waitingExceptions, openRescues, sendingRescues, unknownRescues, notStartedProofs, pendingProofs, unavailableProofs, notFoundProofs, mismatchProofs] = await Promise.all([
       ctx.db.query("conversationCommitments").withIndex("by_business_state_due", (builder) => builder.eq("businessId", args.businessId).eq("state", "open")).order("asc").take(100),
       ctx.db.query("conversationCommitments").withIndex("by_business_state_due", (builder) => builder.eq("businessId", args.businessId).eq("state", "overdue")).order("asc").take(100),
       ctx.db.query("commerceExceptions").withIndex("by_business_state_severity", (builder) => builder.eq("businessId", args.businessId).eq("state", "open")).take(100),
       ctx.db.query("commerceExceptions").withIndex("by_business_state_severity", (builder) => builder.eq("businessId", args.businessId).eq("state", "waiting_on_business")).take(100),
       ctx.db.query("ownerRescueRequests").withIndex("by_business_state_created", (builder) => builder.eq("businessId", args.businessId).eq("state", "open")).order("desc").take(100),
+      ctx.db.query("ownerRescueRequests").withIndex("by_business_state_created", (builder) => builder.eq("businessId", args.businessId).eq("state", "sending")).order("desc").take(100),
+      ctx.db.query("ownerRescueRequests").withIndex("by_business_state_created", (builder) => builder.eq("businessId", args.businessId).eq("state", "delivery_unknown")).order("desc").take(100),
       ctx.db.query("paymentProofs").withIndex("by_business_verification_updated", (builder) => builder.eq("businessId", args.businessId).eq("verificationState", "not_started")).order("desc").take(100),
       ctx.db.query("paymentProofs").withIndex("by_business_verification_updated", (builder) => builder.eq("businessId", args.businessId).eq("verificationState", "pending")).order("desc").take(100),
       ctx.db.query("paymentProofs").withIndex("by_business_verification_updated", (builder) => builder.eq("businessId", args.businessId).eq("verificationState", "unavailable")).order("desc").take(100),
       ctx.db.query("paymentProofs").withIndex("by_business_verification_updated", (builder) => builder.eq("businessId", args.businessId).eq("verificationState", "not_found")).order("desc").take(100),
       ctx.db.query("paymentProofs").withIndex("by_business_verification_updated", (builder) => builder.eq("businessId", args.businessId).eq("verificationState", "mismatch")).order("desc").take(100),
     ]);
+    const rescues = [...unknownRescues, ...sendingRescues, ...openRescues];
     const customerIds = new Set([...openCommitments, ...overdueCommitments, ...openExceptions, ...waitingExceptions, ...rescues, ...notStartedProofs, ...pendingProofs, ...unavailableProofs, ...notFoundProofs, ...mismatchProofs].map((entry) => entry.customerId));
     const names = new Map<string, string>();
     for (const customerId of customerIds) { const customer = await ctx.db.get(customerId); names.set(customerId, customer?.name ?? "Customer"); }
     return {
       commitments: [...overdueCommitments, ...openCommitments].map((entry) => ({ id: entry._id, customerId: entry.customerId, customerName: names.get(entry.customerId) ?? "Customer", summary: entry.summary, kind: entry.kind, dueAt: entry.dueAt ?? null, state: entry.state })),
       exceptions: [...waitingExceptions, ...openExceptions].map((entry) => ({ id: entry._id, customerId: entry.customerId, customerName: names.get(entry.customerId) ?? "Customer", summary: entry.summary, kind: entry.kind, severity: entry.severity, state: entry.state, ownerQuestion: entry.ownerQuestion ?? null })),
-      rescues: rescues.map((entry) => ({ id: entry._id, customerId: entry.customerId, customerName: names.get(entry.customerId) ?? "Customer", question: entry.question, contextSummary: entry.contextSummary, createdAt: entry.createdAt })),
+      rescues: rescues.map((entry) => ({ id: entry._id, customerId: entry.customerId, customerName: names.get(entry.customerId) ?? "Customer", question: entry.question, contextSummary: entry.contextSummary, state: entry.state, ownerAnswer: entry.ownerAnswer ?? null, deliveryError: entry.deliveryError ?? null, createdAt: entry.createdAt })),
       payments: [...mismatchProofs, ...notFoundProofs, ...unavailableProofs, ...pendingProofs, ...notStartedProofs].map((entry) => ({ id: entry._id, customerId: entry.customerId, customerName: names.get(entry.customerId) ?? "Customer", receiptState: entry.receiptState, verificationState: entry.verificationState, amount: entry.extractedAmount ?? null, reason: entry.verificationReason ?? null, createdAt: entry.createdAt })),
     };
   },
@@ -441,7 +446,42 @@ export const reviewPaymentProof = mutation({
 
 export const answerRescue = mutation({
   args: { businessId: v.id("businesses"), rescueId: v.id("ownerRescueRequests"), answer: v.string() }, returns: v.null(),
-  handler: async (ctx, args) => { await requireBusiness(ctx, args.businessId); const item = await ctx.db.get(args.rescueId); if (!item || item.businessId !== args.businessId || item.state !== "open") throw new ConvexError({ code: "NOT_FOUND" }); const answer = clean(args.answer, 1_000); if (answer.length < 2) throw new ConvexError({ code: "INVALID_ANSWER" }); const now = Date.now(); await ctx.db.patch(item._id, { state: "answered", ownerAnswer: answer, answeredAt: now, updatedAt: now }); if (item.exceptionId) { const exception = await ctx.db.get(item.exceptionId); if (exception) await ctx.db.patch(exception._id, { state: "open", approvedResolution: answer, updatedAt: now }); } return null; },
+  handler: async (ctx, args) => { await requireBusiness(ctx, args.businessId); const item = await ctx.db.get(args.rescueId); if (!item || item.businessId !== args.businessId || item.state !== "open" || item.expiresAt <= Date.now()) throw new ConvexError({ code: "NOT_FOUND" }); const answer = clean(args.answer, 1_000); if (answer.length < 2) throw new ConvexError({ code: "INVALID_ANSWER" }); const now = Date.now(); await ctx.db.patch(item._id, { state: "sending", ownerAnswer: answer, answeredAt: undefined, deliveryError: undefined, updatedAt: now }); await ctx.scheduler.runAfter(0, internal.assistantReply.prepareOwnerRescue, { rescueId: item._id }); return null; },
+});
+
+export const resolveRescueDelivery = mutation({
+  args: { businessId: v.id("businesses"), rescueId: v.id("ownerRescueRequests"), decision: v.union(v.literal("delivered"), v.literal("not_delivered")) },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await requireBusiness(ctx, args.businessId);
+    const item = await ctx.db.get(args.rescueId);
+    if (!item || item.businessId !== args.businessId || item.state !== "delivery_unknown" || !item.ownerAnswer?.trim()) throw new ConvexError({ code: "NOT_FOUND" });
+    const now = Date.now();
+    if (args.decision === "not_delivered") {
+      await ctx.db.patch(item._id, { state: "open", deliveryError: "You confirmed the answer was not delivered. You can safely send it again.", updatedAt: now });
+      return null;
+    }
+    await ctx.db.patch(item._id, { state: "answered", answeredAt: now, deliveryError: undefined, updatedAt: now });
+    if (item.exceptionId) {
+      const exception = await ctx.db.get(item.exceptionId);
+      if (exception?.businessId === item.businessId) await ctx.db.patch(exception._id, { state: "open", approvedResolution: item.ownerAnswer, updatedAt: now });
+    }
+    return null;
+  },
+});
+
+export const productionOutcomeVerification = internalQuery({
+  args: {},
+  returns: v.object({ featureVersion: v.string(), hasRecordedOutcomes: v.boolean(), latestOutcomeAt: v.union(v.number(), v.null()), sampledBusinessOutcomes: v.number(), sampledPaidValue: v.number(), sampledAdSources: v.number() }),
+  handler: async (ctx) => {
+    const latest = await ctx.db.query("conversationOutcomes").withIndex("by_occurred").order("desc").first();
+    if (!latest) return { featureVersion: "private-outcomes-owner-rescue-v2", hasRecordedOutcomes: false, latestOutcomeAt: null, sampledBusinessOutcomes: 0, sampledPaidValue: 0, sampledAdSources: 0 };
+    const rows = await ctx.db.query("conversationOutcomes").withIndex("by_business_occurred", (builder) => builder.eq("businessId", latest.businessId)).order("desc").take(2_000);
+    const currentByConversation = new Map<string, (typeof rows)[number]>();
+    for (const row of rows) if (!currentByConversation.has(row.conversationId)) currentByConversation.set(row.conversationId, row);
+    const current = [...currentByConversation.values()];
+    return { featureVersion: "private-outcomes-owner-rescue-v2", hasRecordedOutcomes: true, latestOutcomeAt: latest.occurredAt, sampledBusinessOutcomes: current.length, sampledPaidValue: current.reduce((total, row) => total + (row.outcome === "paid" ? row.value ?? 0 : 0), 0), sampledAdSources: new Set(current.map((row) => row.sourceCampaignId ?? row.sourceAdId).filter(Boolean)).size };
+  },
 });
 
 export const saveNegotiationPolicy = mutation({

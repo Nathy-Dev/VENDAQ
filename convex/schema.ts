@@ -494,6 +494,8 @@ export default defineSchema({
     target: v.string(),
     isGroup: v.boolean(),
     content: v.string(),
+    kind: v.optional(v.union(v.literal("assistant_reply"), v.literal("owner_rescue"))),
+    ownerRescueId: v.optional(v.id("ownerRescueRequests")),
     qualificationQuestionField: v.optional(v.union(
       v.literal("need"),
       v.literal("budget"),
@@ -515,6 +517,7 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   }).index("by_interaction", ["interactionId"])
+    .index("by_owner_rescue", ["ownerRescueId", "createdAt"])
     .index("by_business_time", ["businessId", "createdAt"])
     .index("by_business_target_time", ["businessId", "target", "createdAt"]),
 
@@ -844,8 +847,9 @@ export default defineSchema({
     question: v.string(),
     customerHoldingReply: v.string(),
     contextSummary: v.string(),
-    state: v.union(v.literal("open"), v.literal("answered"), v.literal("expired"), v.literal("cancelled")),
+    state: v.union(v.literal("open"), v.literal("sending"), v.literal("answered"), v.literal("delivery_unknown"), v.literal("expired"), v.literal("cancelled")),
     ownerAnswer: v.optional(v.string()),
+    deliveryError: v.optional(v.string()),
     answeredAt: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
@@ -917,6 +921,7 @@ export default defineSchema({
     occurredAt: v.number(),
     createdAt: v.number(),
   }).index("by_business_occurred", ["businessId", "occurredAt"])
+    .index("by_occurred", ["occurredAt"])
     .index("by_business_outcome_occurred", ["businessId", "outcome", "occurredAt"])
     .index("by_conversation_occurred", ["conversationId", "occurredAt"])
     .index("by_ad_occurred", ["businessId", "sourceAdId", "occurredAt"]),

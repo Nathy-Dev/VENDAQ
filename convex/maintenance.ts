@@ -49,8 +49,8 @@ export const deleteCustomerBatch = internalMutation({
     const messages = await ctx.db.query("interactions").withIndex("by_customer", (builder) => builder.eq("customerId", job.customerId)).take(foundationPolicy().batchSize);
     for (const message of messages) {
       if (message.businessId !== job.businessId) throw new Error("CROSS_TENANT_DELETION_BLOCKED");
-      const dispatch = await ctx.db.query("assistantDispatches").withIndex("by_interaction", (builder) => builder.eq("interactionId", message._id)).unique();
-      if (dispatch) await ctx.db.delete(dispatch._id);
+      const dispatches = await ctx.db.query("assistantDispatches").withIndex("by_interaction", (builder) => builder.eq("interactionId", message._id)).take(20);
+      for (const dispatch of dispatches) await ctx.db.delete(dispatch._id);
       await ctx.db.delete(message._id);
     }
     const tasks = await ctx.db.query("followUpTasks").withIndex("by_customer", (builder) => builder.eq("customerId", job.customerId)).take(foundationPolicy().batchSize);
@@ -86,7 +86,7 @@ export const deleteCustomerBatch = internalMutation({
     for (const exception of exceptionBatches.flat()) await ctx.db.delete(exception._id);
     const proofs = await ctx.db.query("paymentProofs").withIndex("by_customer_created", (builder) => builder.eq("customerId", job.customerId)).take(foundationPolicy().batchSize);
     for (const proof of proofs) await ctx.db.delete(proof._id);
-    const rescueBatches = await Promise.all((["open", "answered", "expired", "cancelled"] as const).map((state) => ctx.db.query("ownerRescueRequests").withIndex("by_customer_state", (builder) => builder.eq("customerId", job.customerId).eq("state", state)).take(foundationPolicy().batchSize)));
+    const rescueBatches = await Promise.all((["open", "sending", "answered", "delivery_unknown", "expired", "cancelled"] as const).map((state) => ctx.db.query("ownerRescueRequests").withIndex("by_customer_state", (builder) => builder.eq("customerId", job.customerId).eq("state", state)).take(foundationPolicy().batchSize)));
     for (const rescue of rescueBatches.flat()) await ctx.db.delete(rescue._id);
     const actionEvents = await ctx.db.query("sellerActionEvents").withIndex("by_customer_time", (builder) => builder.eq("customerId", job.customerId)).take(foundationPolicy().batchSize);
     for (const actionEvent of actionEvents) await ctx.db.delete(actionEvent._id);
@@ -192,8 +192,8 @@ export const sweep = internalMutation({
         for (const handoffEvent of handoffEvents) await ctx.db.delete(handoffEvent._id);
         await ctx.db.delete(communityOpportunity._id);
       }
-      const dispatch = await ctx.db.query("assistantDispatches").withIndex("by_interaction", (builder) => builder.eq("interactionId", message._id)).unique();
-      if (dispatch) await ctx.db.delete(dispatch._id);
+      const dispatches = await ctx.db.query("assistantDispatches").withIndex("by_interaction", (builder) => builder.eq("interactionId", message._id)).take(20);
+      for (const dispatch of dispatches) await ctx.db.delete(dispatch._id);
       const commitment = await ctx.db.query("conversationCommitments").withIndex("by_source_interaction", (builder) => builder.eq("sourceInteractionId", message._id)).unique();
       if (commitment) await ctx.db.delete(commitment._id);
       const exception = await ctx.db.query("commerceExceptions").withIndex("by_interaction", (builder) => builder.eq("interactionId", message._id)).unique();
@@ -234,7 +234,7 @@ export const sweep = internalMutation({
       for (const exception of exceptionBatches.flat()) await ctx.db.delete(exception._id);
       const proofs = await ctx.db.query("paymentProofs").withIndex("by_customer_created", (builder) => builder.eq("customerId", customer._id)).take(batchSize);
       for (const proof of proofs) await ctx.db.delete(proof._id);
-      const rescueBatches = await Promise.all((["open", "answered", "expired", "cancelled"] as const).map((state) => ctx.db.query("ownerRescueRequests").withIndex("by_customer_state", (builder) => builder.eq("customerId", customer._id).eq("state", state)).take(batchSize)));
+      const rescueBatches = await Promise.all((["open", "sending", "answered", "delivery_unknown", "expired", "cancelled"] as const).map((state) => ctx.db.query("ownerRescueRequests").withIndex("by_customer_state", (builder) => builder.eq("customerId", customer._id).eq("state", state)).take(batchSize)));
       for (const rescue of rescueBatches.flat()) await ctx.db.delete(rescue._id);
       const qualifications = await ctx.db.query("leadQualifications").withIndex("by_customer_updated", (builder) => builder.eq("customerId", customer._id)).take(batchSize);
       for (const qualification of qualifications) await ctx.db.delete(qualification._id);

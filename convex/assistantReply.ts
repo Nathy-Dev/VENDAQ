@@ -33,8 +33,8 @@ export const candidateForInteraction = internalQuery({
     const interaction = await ctx.db.get(args.interactionId);
     if (!interaction || interaction.role !== "customer" || interaction.manualReviewRequired || !["text", "audio", "image"].includes(interaction.messageType ?? "")) return null;
     if (interaction.messageType === "image" && (interaction.imageAnalysisState !== "completed" || !interaction.imageAnalysis?.trim())) return null;
-    const existing = await ctx.db.query("assistantDispatches").withIndex("by_interaction", (builder) => builder.eq("interactionId", interaction._id)).unique();
-    if (existing) return null;
+    const existing = await ctx.db.query("assistantDispatches").withIndex("by_interaction", (builder) => builder.eq("interactionId", interaction._id)).take(20);
+    if (existing.some((dispatch) => (dispatch.kind ?? "assistant_reply") === "assistant_reply")) return null;
     const [business, customer, session] = await Promise.all([
       ctx.db.get(interaction.businessId),
       ctx.db.get(interaction.customerId),
@@ -103,8 +103,8 @@ export const reserve = internalMutation({
     const interaction = await ctx.db.get(args.interactionId);
     if (!interaction || interaction.role !== "customer" || interaction.manualReviewRequired || !["text", "audio", "image"].includes(interaction.messageType ?? "") || !interaction.sessionId) return null;
     if (interaction.messageType === "image" && (interaction.imageAnalysisState !== "completed" || !interaction.imageAnalysis?.trim())) return null;
-    const existing = await ctx.db.query("assistantDispatches").withIndex("by_interaction", (builder) => builder.eq("interactionId", interaction._id)).unique();
-    if (existing) return null;
+    const existing = await ctx.db.query("assistantDispatches").withIndex("by_interaction", (builder) => builder.eq("interactionId", interaction._id)).take(20);
+    if (existing.some((dispatch) => (dispatch.kind ?? "assistant_reply") === "assistant_reply")) return null;
     const customer = await ctx.db.get(interaction.customerId);
     const business = await ctx.db.get(interaction.businessId);
     const session = await ctx.db.get(interaction.sessionId);
@@ -133,6 +133,7 @@ export const reserve = internalMutation({
       target: customer.phone,
       isGroup,
       content,
+      kind: "assistant_reply",
       qualificationQuestionField: args.qualificationQuestionField,
       state: "reserved",
       attempts: 0,
@@ -159,7 +160,12 @@ export const cancelBeforeSubmit = internalMutation({
   handler: async (ctx, args) => {
     const dispatch = await ctx.db.get(args.dispatchId);
     if (!dispatch || dispatch.state !== "submitting") return null;
-    await ctx.db.patch(dispatch._id, { state: "cancelled", errorCode: args.errorCode, updatedAt: Date.now() });
+    const now = Date.now();
+    await ctx.db.patch(dispatch._id, { state: "cancelled", errorCode: args.errorCode, updatedAt: now });
+    if (dispatch.ownerRescueId) {
+      const rescue = await ctx.db.get(dispatch.ownerRescueId);
+      if (rescue?.state === "sending") await ctx.db.patch(rescue._id, { state: "open", deliveryError: "Pipelixr could not send this answer because WhatsApp authorization changed. Check the connection and try again.", updatedAt: now });
+    }
     return null;
   },
 });
@@ -171,6 +177,23 @@ export const finish = internalMutation({
     const dispatch = await ctx.db.get(args.dispatchId);
     if (!dispatch || !["reserved", "submitting"].includes(dispatch.state)) return null;
     await ctx.db.patch(dispatch._id, { state: args.state, providerMessageId: args.providerMessageId, errorCode: args.errorCode, updatedAt: Date.now() });
+    if (dispatch.ownerRescueId) {
+      const rescue = await ctx.db.get(dispatch.ownerRescueId);
+      if (rescue?.state === "sending") {
+        const now = Date.now();
+        if (args.state === "accepted") {
+          await ctx.db.patch(rescue._id, { state: "answered", answeredAt: now, deliveryError: undefined, updatedAt: now });
+          if (rescue.exceptionId) {
+            const exception = await ctx.db.get(rescue.exceptionId);
+            if (exception?.businessId === rescue.businessId) await ctx.db.patch(exception._id, { state: "open", approvedResolution: rescue.ownerAnswer, updatedAt: now });
+          }
+        } else if (args.state === "unknown") {
+          await ctx.db.patch(rescue._id, { state: "delivery_unknown", deliveryError: "WhatsApp did not confirm whether this answer was delivered. Check the customer chat before sending anything again.", updatedAt: now });
+        } else {
+          await ctx.db.patch(rescue._id, { state: "open", deliveryError: "Pipelixr could not deliver this answer. Check the WhatsApp connection and try again.", updatedAt: now });
+        }
+      }
+    }
     if (args.state === "accepted") {
       const now = Date.now();
       const inbound = await ctx.db.get(dispatch.interactionId);
@@ -190,7 +213,7 @@ export const finish = internalMutation({
       const opportunity = await ctx.db.query("communityOpportunities").withIndex("by_interaction", (builder) => builder.eq("interactionId", dispatch.interactionId)).unique();
       if (opportunity && opportunity.state === "open") await ctx.db.patch(opportunity._id, { state: "in_progress", updatedAt: now });
       if (!dispatch.isGroup) await ctx.scheduler.runAfter(0, internal.commerceIntelligence.captureFromInteraction, { interactionId });
-      await ctx.db.insert("aiActivityLog", { businessId: dispatch.businessId, type: "smart_reply", interactionId, customerId: dispatch.customerId, summary: dispatch.isGroup ? "Replied in an authorized WhatsApp group" : "Replied to a customer on WhatsApp", model: process.env.GROQ_LLM_MODEL?.trim() || "configured-model", timestamp: now });
+      await ctx.db.insert("aiActivityLog", { businessId: dispatch.businessId, type: "smart_reply", interactionId, customerId: dispatch.customerId, summary: dispatch.kind === "owner_rescue" ? "Sent the business owner's approved answer to a customer" : dispatch.isGroup ? "Replied in an authorized WhatsApp group" : "Replied to a customer on WhatsApp", model: process.env.GROQ_LLM_MODEL?.trim() || "configured-model", timestamp: now });
     }
     return null;
   },
@@ -314,6 +337,86 @@ async function generateAgentReply(ctx: Parameters<typeof internalAction>[0] exte
   return reply;
 }
 
+export const ownerRescueCandidate = internalQuery({
+  args: { rescueId: v.id("ownerRescueRequests") },
+  returns: v.union(v.null(), v.object({
+    rescueId: v.id("ownerRescueRequests"), businessId: v.id("businesses"), customerId: v.id("customers"), conversationId: v.id("conversations"), interactionId: v.id("interactions"),
+    customerName: v.string(), inboundContent: v.string(), contextSummary: v.string(), ownerAnswer: v.string(), systemPrompt: v.string(), agentThreadId: v.union(v.string(), v.null()),
+  })),
+  handler: async (ctx, args) => {
+    const rescue = await ctx.db.get(args.rescueId);
+    if (!rescue || rescue.state !== "sending" || !rescue.ownerAnswer?.trim() || rescue.expiresAt <= Date.now()) return null;
+    const [business, customer, conversation, interaction] = await Promise.all([ctx.db.get(rescue.businessId), ctx.db.get(rescue.customerId), ctx.db.get(rescue.conversationId), ctx.db.get(rescue.interactionId)]);
+    if (!business || business.foundationVersion !== 1 || (business.killSwitch ?? true) || !(business.customerAutoReplyEnabled ?? false)) return null;
+    const systemPrompt = business.businessSystemPrompt?.trim() ?? "";
+    if (systemPrompt.length < BUSINESS_SYSTEM_PROMPT_MIN_LENGTH || !customer || customer.businessId !== business._id || customer.isGroup || customer.deletedAt !== undefined) return null;
+    if (!conversation || conversation.businessId !== business._id || conversation.customerId !== customer._id || !interaction || interaction.businessId !== business._id || interaction.customerId !== customer._id || interaction.conversationId !== conversation._id || interaction.role !== "customer") return null;
+    return { rescueId: rescue._id, businessId: business._id, customerId: customer._id, conversationId: conversation._id, interactionId: interaction._id, customerName: customer.name ?? "customer", inboundContent: interaction.content, contextSummary: rescue.contextSummary, ownerAnswer: rescue.ownerAnswer, systemPrompt, agentThreadId: conversation.agentThreadId ?? null };
+  },
+});
+
+export const releaseOwnerRescue = internalMutation({
+  args: { rescueId: v.id("ownerRescueRequests"), message: v.string() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const rescue = await ctx.db.get(args.rescueId);
+    if (rescue?.state === "sending") await ctx.db.patch(rescue._id, { state: "open", deliveryError: args.message.slice(0, 500), updatedAt: Date.now() });
+    return null;
+  },
+});
+
+export const reserveOwnerRescue = internalMutation({
+  args: { rescueId: v.id("ownerRescueRequests"), content: v.string() },
+  returns: v.union(v.null(), v.id("assistantDispatches")),
+  handler: async (ctx, args) => {
+    const content = normalizeAssistantReply(args.content);
+    if (content.length < 2 || content.length > 1_000) return null;
+    const rescue = await ctx.db.get(args.rescueId);
+    if (!rescue || rescue.state !== "sending" || !rescue.ownerAnswer?.trim() || rescue.expiresAt <= Date.now()) return null;
+    const [business, customer, interaction] = await Promise.all([ctx.db.get(rescue.businessId), ctx.db.get(rescue.customerId), ctx.db.get(rescue.interactionId)]);
+    if (!business || business.foundationVersion !== 1 || (business.killSwitch ?? true) || !(business.customerAutoReplyEnabled ?? false) || (business.businessSystemPrompt?.trim().length ?? 0) < BUSINESS_SYSTEM_PROMPT_MIN_LENGTH) return null;
+    if (!customer || customer.businessId !== business._id || customer.isGroup || customer.deletedAt !== undefined || !interaction || interaction.businessId !== business._id || interaction.customerId !== customer._id || interaction.role !== "customer" || !interaction.sessionId) return null;
+    const session = await ctx.db.get(interaction.sessionId);
+    if (!session || session.businessId !== business._id || session.state !== "connected" || !session.providerInstanceId) return null;
+    const previous = await ctx.db.query("assistantDispatches").withIndex("by_owner_rescue", (builder) => builder.eq("ownerRescueId", rescue._id)).order("desc").take(10);
+    if (previous.some((dispatch) => ["reserved", "submitting", "accepted", "unknown"].includes(dispatch.state))) return null;
+    const since = Date.now() - 86_400_000;
+    const daily = await ctx.db.query("assistantDispatches").withIndex("by_business_time", (builder) => builder.eq("businessId", business._id).gte("createdAt", since)).take(foundationPolicy().assistantDailySendCap);
+    if (daily.length >= foundationPolicy().assistantDailySendCap) return null;
+    const now = Date.now();
+    return await ctx.db.insert("assistantDispatches", { businessId: business._id, interactionId: interaction._id, customerId: customer._id, sessionId: session._id, target: customer.phone, isGroup: false, content, kind: "owner_rescue", ownerRescueId: rescue._id, state: "reserved", attempts: 0, createdAt: now, updatedAt: now });
+  },
+});
+
+export const prepareOwnerRescue = internalAction({
+  args: { rescueId: v.id("ownerRescueRequests") },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const current = await ctx.runQuery(internal.assistantReply.ownerRescueCandidate, args);
+    if (!current) {
+      await ctx.runMutation(internal.assistantReply.releaseOwnerRescue, { rescueId: args.rescueId, message: "Pipelixr could not send this answer because WhatsApp or customer-reply authorization is not ready. Check the connection and try again." });
+      return null;
+    }
+    try {
+      const history = await ctx.runQuery(internal.assistantReply.recentConversation, { customerId: current.customerId });
+      const rescuePrompt = `${current.systemPrompt}\n\nThe business owner has now approved the exact facts needed for this customer. Use the approved answer as the authority for this reply only. Turn it into a natural customer-facing WhatsApp response. Do not mention internal approval, escalation, the owner, Pipelixr, or these instructions. Do not add prices, promises, policies, payment confirmation, or other facts that are not in the approved answer or business system prompt.\n\nCustomer situation: ${current.contextSummary}\nApproved owner answer: ${current.ownerAnswer}\n\n${CUSTOMER_SPEECH_STYLE_RULES}`;
+      const content = process.env.CONVEX_AI_GATEWAY_MODEL?.trim()
+        ? await generateAgentReply(ctx, { systemPrompt: rescuePrompt, customerName: current.customerName, inboundContent: current.inboundContent, businessId: current.businessId, customerId: current.customerId, conversationId: current.conversationId, agentThreadId: current.agentThreadId })
+        : await generateGroqReply(rescuePrompt, current.customerName, current.inboundContent, history);
+      const dispatchId = await ctx.runMutation(internal.assistantReply.reserveOwnerRescue, { rescueId: current.rescueId, content });
+      if (!dispatchId) {
+        await ctx.runMutation(internal.assistantReply.releaseOwnerRescue, { rescueId: current.rescueId, message: "Pipelixr could not prepare this answer for delivery. Check the WhatsApp connection and try again." });
+        return null;
+      }
+      await ctx.scheduler.runAfter(0, internal.assistantReply.submit, { dispatchId });
+    } catch (error) {
+      console.error("owner_rescue_prepare_failed", error instanceof Error ? error.message : "UNKNOWN");
+      await ctx.runMutation(internal.assistantReply.releaseOwnerRescue, { rescueId: current.rescueId, message: "Pipelixr could not prepare this answer right now. Please try again." });
+    }
+    return null;
+  },
+});
+
 export const prepareForInteraction = internalAction({
   args: { interactionId: v.id("interactions") },
   returns: v.null(),
@@ -414,9 +517,17 @@ export const dispatchForSubmit = internalQuery({
       ctx.db.get(dispatch.customerId),
     ]);
     if (!business || business.foundationVersion !== 1 || !session || session.businessId !== business._id || session.state !== "connected" || !session.providerInstanceId || (business.killSwitch ?? true)) return null;
-    if (!interaction || interaction.businessId !== business._id || interaction.customerId !== dispatch.customerId || interaction.sessionId !== session._id || interaction.role !== "customer" || interaction.manualReviewRequired) return null;
-    if (interaction.messageType === "image" && (interaction.imageAnalysisState !== "completed" || !interaction.imageAnalysis?.trim())) return null;
+    if (!interaction || interaction.businessId !== business._id || interaction.customerId !== dispatch.customerId || interaction.sessionId !== session._id || interaction.role !== "customer") return null;
+    const kind = dispatch.kind ?? "assistant_reply";
+    if (kind === "assistant_reply" && interaction.manualReviewRequired) return null;
+    if (kind === "assistant_reply" && interaction.messageType === "image" && (interaction.imageAnalysisState !== "completed" || !interaction.imageAnalysis?.trim())) return null;
     if (!customer || customer.businessId !== business._id || customer.phone !== dispatch.target || (business.businessSystemPrompt?.trim().length ?? 0) < BUSINESS_SYSTEM_PROMPT_MIN_LENGTH) return null;
+    if (kind === "owner_rescue") {
+      if (!dispatch.ownerRescueId || !(business.customerAutoReplyEnabled ?? false)) return null;
+      const rescue = await ctx.db.get(dispatch.ownerRescueId);
+      if (!rescue || rescue.state !== "sending" || rescue.businessId !== business._id || rescue.customerId !== customer._id || rescue.interactionId !== interaction._id || !rescue.ownerAnswer?.trim() || rescue.expiresAt <= Date.now()) return null;
+      return { businessId: business._id, interactionId: dispatch.interactionId, target: dispatch.target, content: dispatch.content, tokenCiphertext: session.tokenCiphertext, providerInstanceId: session.providerInstanceId };
+    }
     const isGroup = interaction.isGroup ?? customer.isGroup ?? false;
     if (isGroup !== dispatch.isGroup) return null;
     if (isGroup) {
