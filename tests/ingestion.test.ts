@@ -200,6 +200,51 @@ describe("authenticated WhatsApp ingestion", () => {
     expect(vi.mocked(fetch).mock.calls.map(([input]) => String(input))).not.toContain("https://provider.example.test/send/text");
   });
 
+  it("automatically retries a temporarily rate-limited voice note and sends the reply", async () => {
+    const harness = createHarness();
+    const source = await tenant(harness, "voice-note-rate-limit-retry");
+    await source.owner.mutation(api.businessProfile.save, {
+      businessId: source.businessId,
+      systemPrompt: "You represent Voice Retry, a Nigerian retail business. Only answer from verified business facts, never invent prices, stock, delivery details, discounts, payment information, or policies, and ask one short clarifying question when required information is missing.",
+      customerAutoReplyEnabled: true,
+      groupAutoReplyEnabled: false,
+    });
+    vi.stubEnv("FOUNDATION_PROVIDER_ENABLED", "true");
+    vi.stubEnv("EVOLUTION_GO_URL", "https://provider.example.test");
+    vi.stubEnv("EVOLUTION_GO_API_KEY", "synthetic-provider-key");
+    vi.stubEnv("OPENAI_API_KEY", "synthetic-openai-key");
+    vi.stubEnv("OPENAI_TRANSCRIPTION_MODEL", "gpt-transcribe");
+    vi.stubEnv("GROQ_API_KEY", "synthetic-groq-key");
+    vi.stubEnv("GROQ_LLM_MODEL", "synthetic-model");
+    let transcriptionAttempts = 0;
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/message/downloadmedia")) return Response.json({ data: { base64: Buffer.from("synthetic-ogg-audio").toString("base64"), mimetype: "audio/ogg" } });
+      if (url === "https://api.openai.com/v1/audio/transcriptions") {
+        transcriptionAttempts += 1;
+        if (transcriptionAttempts === 1) return Response.json({ error: { type: "rate_limit_error", message: "private provider detail" } }, { status: 429 });
+        return Response.json({ text: "Abeg, do you deliver to Abuja?", language: "en" });
+      }
+      if (url === "https://api.groq.com/openai/v1/chat/completions") return Response.json({ choices: [{ message: { content: "Yes, we can help. Please share your exact Abuja location so we can confirm delivery." } }] });
+      if (url.endsWith("/message/presence")) return Response.json({ message: "success" });
+      if (url.endsWith("/send/text")) return Response.json({ messageId: "provider-reply-rate-retry" });
+      return new Response(null, { status: 404 });
+    }));
+
+    await webhook(harness, message(source, { id: "voice-rate-retry", content: { audioMessage: { url: "https://private-media.test/audio", mimetype: "audio/ogg; codecs=opus", mediaKey: "synthetic-key" } } }));
+    await drain(harness);
+
+    const interactions = await harness.run((ctx) => ctx.db.query("interactions").collect());
+    expect(transcriptionAttempts).toBe(2);
+    expect(interactions.find((interaction) => interaction.role === "customer")).toMatchObject({
+      transcriptionState: "completed",
+      transcript: "Abeg, do you deliver to Abuja?",
+    });
+    expect(interactions.find((interaction) => interaction.role === "owner")).toMatchObject({
+      content: "Yes, we can help. Please share your exact Abuja location so we can confirm delivery.",
+    });
+  });
+
   it("analyzes a one-to-one image privately and replies through the authorized assistant path", async () => {
     const harness = createHarness();
     const source = await tenant(harness, "image-reply");

@@ -82,6 +82,48 @@ describe("Business AI brief HTTP flows", () => {
     expect(fetch).toHaveBeenCalledTimes(3);
   });
 
+  it("does not amplify an upstream transcription rate limit with immediate retries", async () => {
+    const harness = createHarness();
+    const source = await tenant(harness, "voice-business-brief-rate-limit");
+    vi.stubEnv("OPENAI_API_KEY", "synthetic-openai-key");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ error: { type: "rate_limit_error", message: "private detail" } }, { status: 429 })));
+    const form = new FormData();
+    form.append("businessId", source.businessId);
+    form.append("recording", new Blob([new Uint8Array(1_024)], { type: "audio/webm" }), "business-description.webm");
+
+    const response = await source.owner.fetch("/api/business-ai/transcribe", {
+      method: "POST",
+      headers: { Origin: "https://auth.example.test" },
+      body: form,
+    });
+
+    expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBe("60");
+    expect(await response.json()).toEqual({ error: "OPENAI_TRANSCRIPTION_RATE_LIMITED" });
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("distinguishes exhausted OpenAI quota without exposing provider details", async () => {
+    const harness = createHarness();
+    const source = await tenant(harness, "voice-business-brief-quota");
+    vi.stubEnv("OPENAI_API_KEY", "synthetic-openai-key");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ error: { code: "insufficient_quota", message: "private billing detail" } }, { status: 429 })));
+    const form = new FormData();
+    form.append("businessId", source.businessId);
+    form.append("recording", new Blob([new Uint8Array(1_024)], { type: "audio/webm" }), "business-description.webm");
+
+    const response = await source.owner.fetch("/api/business-ai/transcribe", {
+      method: "POST",
+      headers: { Origin: "https://auth.example.test" },
+      body: form,
+    });
+
+    expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBe("300");
+    expect(await response.json()).toEqual({ error: "OPENAI_TRANSCRIPTION_QUOTA_EXHAUSTED" });
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
   it("streams only the generated prompt text from the provider response", async () => {
     const harness = createHarness();
     const source = await tenant(harness, "stream-business-brief");

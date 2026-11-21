@@ -44,6 +44,25 @@ function errorResponse(request: Request, error: unknown, fallback: string): Resp
   return Response.json({ error: fallback }, { status: 502, headers: noStoreHeaders(request) });
 }
 
+function transcriptionErrorResponse(request: Request, code: string): Response {
+  if (code === "OPENAI_TRANSCRIPTION_RATE_LIMITED") {
+    return Response.json({ error: code }, { status: 429, headers: noStoreHeaders(request, { "Retry-After": "60" }) });
+  }
+  if (code === "OPENAI_TRANSCRIPTION_QUOTA_EXHAUSTED") {
+    return Response.json({ error: code }, { status: 429, headers: noStoreHeaders(request, { "Retry-After": "300" }) });
+  }
+  if (code === "OPENAI_TRANSCRIPTION_TIMEOUT") {
+    return Response.json({ error: code }, { status: 504, headers: noStoreHeaders(request) });
+  }
+  if (code === "AUDIO_SIZE_NOT_SUPPORTED") {
+    return Response.json({ error: code }, { status: 422, headers: noStoreHeaders(request) });
+  }
+  if (["OPENAI_TRANSCRIPTION_AUTH_FAILED", "OPENAI_TRANSCRIPTION_NOT_CONFIGURED"].includes(code)) {
+    return Response.json({ error: code }, { status: 503, headers: noStoreHeaders(request) });
+  }
+  return Response.json({ error: code }, { status: 502, headers: noStoreHeaders(request) });
+}
+
 function completionTextStream(source: ReadableStream<Uint8Array>): ReadableStream<Uint8Array> {
   const reader = source.getReader();
   const decoder = new TextDecoder();
@@ -144,7 +163,7 @@ export const transcribeBusinessDescription = httpAction(async (ctx, request) => 
     if (error instanceof ConvexError) return errorResponse(request, error, "TRANSCRIPTION_FAILED");
     const code = transcriptionErrorCode(error);
     console.warn("Business-description transcription failed", { code });
-    return Response.json({ error: code }, { status: 502, headers: noStoreHeaders(request) });
+    return transcriptionErrorResponse(request, code);
   }
 });
 

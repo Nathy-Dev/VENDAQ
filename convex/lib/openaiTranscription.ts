@@ -17,10 +17,16 @@ export function transcriptionLanguage(result: { language?: unknown; languages?: 
   return typeof result.language === "string" && result.language.trim() ? result.language.trim() : undefined;
 }
 
-export function transcriptionHttpError(status: number): string {
+export function transcriptionHttpError(status: number, providerCode?: string): string {
   if (status === 401 || status === 403) return "OPENAI_TRANSCRIPTION_AUTH_FAILED";
   if (status === 413) return "AUDIO_SIZE_NOT_SUPPORTED";
-  if (status === 429) return "OPENAI_TRANSCRIPTION_RATE_LIMITED";
+  if (status === 429) {
+    const normalizedCode = providerCode?.trim().toLowerCase();
+    if (["billing_hard_limit_reached", "billing_not_active", "insufficient_quota", "quota_exceeded"].includes(normalizedCode ?? "")) {
+      return "OPENAI_TRANSCRIPTION_QUOTA_EXHAUSTED";
+    }
+    return "OPENAI_TRANSCRIPTION_RATE_LIMITED";
+  }
   return `OPENAI_TRANSCRIPTION_HTTP_${status}`;
 }
 
@@ -49,7 +55,18 @@ export function transcriptionErrorCode(error: unknown): string {
 }
 
 function retryableStatus(status: number): boolean {
-  return status === 408 || status === 409 || status === 429 || status >= 500;
+  return status === 408 || status === 409 || status >= 500;
+}
+
+async function providerErrorCode(response: Response): Promise<string | undefined> {
+  try {
+    const payload = await response.json() as { error?: { code?: unknown; type?: unknown } };
+    if (typeof payload.error?.code === "string" && payload.error.code.trim()) return payload.error.code;
+    if (typeof payload.error?.type === "string" && payload.error.type.trim()) return payload.error.type;
+  } catch {
+    // Provider bodies are not trusted and never need to be retained or logged.
+  }
+  return undefined;
 }
 
 export function audioExtension(mimeType: string): string {
@@ -88,7 +105,7 @@ export async function transcribeWithOpenAI(args: {
         signal: AbortSignal.timeout(args.timeoutMs ?? 45_000),
       });
       if (!response.ok) {
-        const error = new Error(transcriptionHttpError(response.status));
+        const error = new Error(transcriptionHttpError(response.status, await providerErrorCode(response)));
         if (!retryableStatus(response.status) || attempt === maximumAttempts) throw error;
         lastError = error;
       } else {

@@ -64,13 +64,28 @@ export const fail = internalMutation({
   },
 });
 
+export const defer = internalMutation({
+  args: { interactionId: v.id("interactions"), code: v.string() }, returns: v.boolean(),
+  handler: async (ctx, args) => {
+    const interaction = await ctx.db.get(args.interactionId);
+    if (!interaction || interaction.transcriptionState !== "pending") return false;
+    await ctx.db.patch(interaction._id, { transcriptionErrorCode: args.code.slice(0, 120) });
+    return true;
+  },
+});
+
 export const transcribe = internalAction({
-  args: { interactionId: v.id("interactions"), mediaPayload: v.string(), mediaMimeType: v.optional(v.string()) },
+  args: { interactionId: v.id("interactions"), mediaPayload: v.string(), mediaMimeType: v.optional(v.string()), retryAttempt: v.optional(v.number()) },
   returns: v.null(),
   handler: async (ctx, args) => {
-    if (!(await ctx.runMutation(internal.transcription.markPending, { interactionId: args.interactionId }))) return null;
+    const retryAttempt = Math.max(0, Math.floor(args.retryAttempt ?? 0));
+    if (retryAttempt === 0 && !(await ctx.runMutation(internal.transcription.markPending, { interactionId: args.interactionId }))) return null;
     try {
-      const current = await ctx.runQuery(internal.transcription.prepare, args);
+      const current = await ctx.runQuery(internal.transcription.prepare, {
+        interactionId: args.interactionId,
+        mediaPayload: args.mediaPayload,
+        ...(args.mediaMimeType ? { mediaMimeType: args.mediaMimeType } : {}),
+      });
       if (!current) throw new Error("TRANSCRIPTION_NOT_ELIGIBLE");
       const apiKey = process.env.OPENAI_API_KEY;
       if (!apiKey) throw new Error("OPENAI_TRANSCRIPTION_NOT_CONFIGURED");
@@ -92,6 +107,14 @@ export const transcribe = internalAction({
       });
     } catch (error) {
       const code = transcriptionErrorCode(error);
+      if (code === "OPENAI_TRANSCRIPTION_RATE_LIMITED" && retryAttempt < 2) {
+        if (await ctx.runMutation(internal.transcription.defer, { interactionId: args.interactionId, code })) {
+          const delayMs = retryAttempt === 0 ? 60_000 : 180_000;
+          console.warn("Voice-note transcription deferred", { interactionId: args.interactionId, code, retryAttempt: retryAttempt + 1, delayMs });
+          await ctx.scheduler.runAfter(delayMs, internal.transcription.transcribe, { ...args, retryAttempt: retryAttempt + 1 });
+        }
+        return null;
+      }
       console.warn("Voice-note transcription failed", { interactionId: args.interactionId, code });
       await ctx.runMutation(internal.transcription.fail, { interactionId: args.interactionId, code });
     }

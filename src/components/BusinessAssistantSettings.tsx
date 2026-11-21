@@ -82,15 +82,24 @@ function BusinessAssistantForm({ workspace, compact, profile, qualificationPolic
         body: form,
         signal: AbortSignal.timeout(60_000),
       });
-      if (response.status === 429) throw new Error("BUSINESS_AI_RATE_LIMITED");
-      if (!response.ok) throw new Error("TRANSCRIPTION_FAILED");
-      const result = await response.json() as { transcript?: string };
+      const result = await response.json().catch(() => ({})) as { transcript?: string; error?: string };
+      if (!response.ok) throw new Error(result.error || "TRANSCRIPTION_FAILED");
       const transcript = result.transcript?.trim();
       if (!transcript) throw new Error("EMPTY_TRANSCRIPT");
       setDescription((current) => [current.trim(), transcript].filter(Boolean).join("\n\n").slice(0, 4_000));
       setFeedback({ text: "Voice description added. You can correct the transcript or add more details before generating." });
     } catch (error) {
-      setFeedback({ text: error instanceof Error && error.message === "BUSINESS_AI_RATE_LIMITED" ? "You've used the voice helper several times this hour. Please try again later." : "We couldn't transcribe that recording. Check your connection and try again.", error: true });
+      const code = error instanceof Error ? error.message : "TRANSCRIPTION_FAILED";
+      const message = code === "BUSINESS_AI_RATE_LIMITED"
+        ? "You've used the voice helper several times this hour. Please try again later."
+        : code === "OPENAI_TRANSCRIPTION_RATE_LIMITED"
+          ? "The voice service is busy right now. Please wait a minute and try again."
+          : code === "OPENAI_TRANSCRIPTION_QUOTA_EXHAUSTED"
+            ? "Voice transcription is temporarily unavailable. You can still type your business description."
+            : code === "AUDIO_SIZE_NOT_SUPPORTED"
+              ? "That recording could not be processed. Please make a shorter recording and try again."
+              : "We couldn't transcribe that recording. Check your connection and try again.";
+      setFeedback({ text: message, error: true });
     } finally {
       setBusy(null);
     }
