@@ -34,6 +34,54 @@ describe("Business AI brief HTTP flows", () => {
     expect(response.headers.get("access-control-allow-origin")).toBe("https://auth.example.test");
   });
 
+  it("retries a transient transcription 502 and succeeds without another user recording", async () => {
+    const harness = createHarness();
+    const source = await tenant(harness, "voice-business-brief-retry");
+    vi.stubEnv("OPENAI_API_KEY", "synthetic-openai-key");
+    vi.stubEnv("OPENAI_TRANSCRIPTION_MODEL", "gpt-transcribe");
+    let attempts = 0;
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async (input) => {
+      if (String(input) !== "https://api.openai.com/v1/audio/transcriptions") return new Response(null, { status: 404 });
+      attempts += 1;
+      if (attempts === 1) return Response.json({ error: { message: "temporary upstream failure" } }, { status: 502 });
+      return Response.json({ text: "We sell ready to wear clothes and deliver across Nigeria.", language: "en" });
+    }));
+    const form = new FormData();
+    form.append("businessId", source.businessId);
+    form.append("recording", new Blob([new Uint8Array(1_024)], { type: "audio/webm" }), "business-description.webm");
+
+    const response = await source.owner.fetch("/api/business-ai/transcribe", {
+      method: "POST",
+      headers: { Origin: "https://auth.example.test" },
+      body: form,
+    });
+
+    expect(response.status).toBe(200);
+    expect(attempts).toBe(2);
+    expect(await response.json()).toMatchObject({ transcript: "We sell ready to wear clothes and deliver across Nigeria." });
+  });
+
+  it("returns a safe error code after bounded retries when transcription remains unavailable", async () => {
+    const harness = createHarness();
+    const source = await tenant(harness, "voice-business-brief-permanent-error");
+    vi.stubEnv("OPENAI_API_KEY", "synthetic-openai-key");
+    vi.stubEnv("OPENAI_TRANSCRIPTION_MODEL", "gpt-4o-transcribe");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ error: { message: "private upstream detail" } }, { status: 502 })));
+    const form = new FormData();
+    form.append("businessId", source.businessId);
+    form.append("recording", new Blob([new Uint8Array(1_024)], { type: "audio/webm" }), "business-description.webm");
+
+    const response = await source.owner.fetch("/api/business-ai/transcribe", {
+      method: "POST",
+      headers: { Origin: "https://auth.example.test" },
+      body: form,
+    });
+
+    expect(response.status).toBe(502);
+    expect(await response.json()).toEqual({ error: "OPENAI_TRANSCRIPTION_HTTP_502" });
+    expect(fetch).toHaveBeenCalledTimes(3);
+  });
+
   it("streams only the generated prompt text from the provider response", async () => {
     const harness = createHarness();
     const source = await tenant(harness, "stream-business-brief");

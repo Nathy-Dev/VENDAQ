@@ -4,7 +4,7 @@ import type { Id } from "./_generated/dataModel";
 import { ConvexError } from "convex/values";
 import { requireIdentity } from "./lib/authorization";
 import { businessSystemPromptMessages, cleanBusinessText, promptSourceMaximum, promptSourceMinimum } from "./lib/businessPrompt";
-import { audioExtension, transcribeWithOpenAI } from "./lib/openaiTranscription";
+import { audioExtension, resolveTranscriptionModel, transcribeWithOpenAI, transcriptionErrorCode } from "./lib/openaiTranscription";
 import { BUSINESS_SYSTEM_PROMPT_MAX_LENGTH } from "./lib/launch";
 
 const maximumRecordingBytes = 10 * 1024 * 1024;
@@ -134,14 +134,17 @@ export const transcribeBusinessDescription = httpAction(async (ctx, request) => 
     const result = await transcribeWithOpenAI({
       audio: recording,
       apiKey,
-      model: process.env.OPENAI_TRANSCRIPTION_MODEL?.trim() || "gpt-transcribe",
+      model: resolveTranscriptionModel(process.env.OPENAI_TRANSCRIPTION_MODEL),
       fileName: `business-description.${audioExtension(recording.type)}`,
     });
     const transcript = cleanBusinessText(result.text).slice(0, promptSourceMaximum);
     if (transcript.length < 2) return Response.json({ error: "EMPTY_TRANSCRIPT" }, { status: 422, headers: noStoreHeaders(request) });
     return Response.json({ transcript, language: result.language ?? null }, { headers: noStoreHeaders(request) });
   } catch (error) {
-    return errorResponse(request, error, "TRANSCRIPTION_FAILED");
+    if (error instanceof ConvexError) return errorResponse(request, error, "TRANSCRIPTION_FAILED");
+    const code = transcriptionErrorCode(error);
+    console.warn("Business-description transcription failed", { code });
+    return Response.json({ error: code }, { status: 502, headers: noStoreHeaders(request) });
   }
 });
 

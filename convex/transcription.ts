@@ -4,7 +4,7 @@ import { internal } from "./_generated/api";
 import { decryptSecret } from "./lib/crypto";
 import { keywordClassifier } from "./lib/classifier";
 import { downloadAuthorizedInboundAudio } from "./lib/evolution";
-import { audioExtension, transcribeWithOpenAI } from "./lib/openaiTranscription";
+import { audioExtension, resolveTranscriptionModel, transcribeWithOpenAI, transcriptionErrorCode } from "./lib/openaiTranscription";
 
 const candidate = v.object({
   interactionId: v.id("interactions"), businessId: v.id("businesses"), customerId: v.id("customers"),
@@ -74,7 +74,7 @@ export const transcribe = internalAction({
       if (!current) throw new Error("TRANSCRIPTION_NOT_ELIGIBLE");
       const apiKey = process.env.OPENAI_API_KEY;
       if (!apiKey) throw new Error("OPENAI_TRANSCRIPTION_NOT_CONFIGURED");
-      const model = process.env.OPENAI_TRANSCRIPTION_MODEL?.trim() || "gpt-transcribe";
+      const model = resolveTranscriptionModel(process.env.OPENAI_TRANSCRIPTION_MODEL);
       const token = await decryptSecret(current.tokenCiphertext, `business:${current.businessId}:session-token`);
       const message = JSON.parse(current.mediaPayload) as Record<string, unknown>;
       const audio = await downloadAuthorizedInboundAudio({ token, instanceId: current.providerInstanceId, message });
@@ -91,7 +91,9 @@ export const transcribe = internalAction({
         ...(result.language ? { language: result.language } : {}),
       });
     } catch (error) {
-      await ctx.runMutation(internal.transcription.fail, { interactionId: args.interactionId, code: error instanceof Error ? error.message : "TRANSCRIPTION_FAILED" });
+      const code = transcriptionErrorCode(error);
+      console.warn("Voice-note transcription failed", { interactionId: args.interactionId, code });
+      await ctx.runMutation(internal.transcription.fail, { interactionId: args.interactionId, code });
     }
     return null;
   },

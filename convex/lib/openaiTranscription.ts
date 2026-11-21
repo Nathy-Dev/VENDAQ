@@ -1,5 +1,12 @@
 export const NIGERIAN_SPEECH_PROMPT = "Na Nigerian WhatsApp voice note be this. Write wetin the person talk exactly as dem talk am. Keep Nigerian Pidgin, Nigerian English, names, and any code-switching as spoken. No translate and no correct the grammar. Common words fit include abeg, dey, no wahala, una, wetin, na, e, sabi, sha, abi, and oga.";
 
+export const DEFAULT_TRANSCRIPTION_MODEL = "gpt-transcribe";
+
+export function resolveTranscriptionModel(configuredModel?: string): string {
+  const model = configuredModel?.trim();
+  return model || DEFAULT_TRANSCRIPTION_MODEL;
+}
+
 export function transcriptionLanguage(result: { language?: unknown; languages?: unknown }): string | undefined {
   if (Array.isArray(result.languages)) {
     const detected = result.languages.find((language): language is { code: string } =>
@@ -15,6 +22,34 @@ export function transcriptionHttpError(status: number): string {
   if (status === 413) return "AUDIO_SIZE_NOT_SUPPORTED";
   if (status === 429) return "OPENAI_TRANSCRIPTION_RATE_LIMITED";
   return `OPENAI_TRANSCRIPTION_HTTP_${status}`;
+}
+
+export function transcriptionErrorCode(error: unknown): string {
+  if (error instanceof Error && /^OPENAI_TRANSCRIPTION_[A-Z0-9_]+$/.test(error.message)) return error.message;
+  if (error instanceof Error && new Set([
+    "AUDIO_SIZE_NOT_SUPPORTED",
+    "ENCRYPTION_NOT_CONFIGURED",
+    "INVALID_AUDIO_DOWNLOAD",
+    "INVALID_CIPHERTEXT",
+    "INVALID_ENCRYPTION_CONFIGURATION",
+    "INVALID_ENCRYPTION_KEY",
+    "INVALID_PROVIDER_AUTH_MODE",
+    "INVALID_PROVIDER_URL",
+    "INSECURE_PROVIDER_URL",
+    "OPENAI_TRANSCRIPTION_NOT_CONFIGURED",
+    "PROVIDER_AUDIO_DOWNLOAD_FAILED",
+    "PROVIDER_AUTH_FAILED",
+    "PROVIDER_DISABLED",
+    "PROVIDER_NOT_CONFIGURED",
+    "PROVIDER_REQUEST_FAILED",
+    "TRANSCRIPTION_NOT_ELIGIBLE",
+  ]).has(error.message)) return error.message;
+  if (error instanceof Error && ["AbortError", "TimeoutError"].includes(error.name)) return "OPENAI_TRANSCRIPTION_TIMEOUT";
+  return "OPENAI_TRANSCRIPTION_FAILED";
+}
+
+function retryableStatus(status: number): boolean {
+  return status === 408 || status === 409 || status === 429 || status >= 500;
 }
 
 export function audioExtension(mimeType: string): string {
@@ -33,22 +68,49 @@ export async function transcribeWithOpenAI(args: {
   model: string;
   fileName?: string;
   timeoutMs?: number;
+  maximumAttempts?: number;
 }): Promise<{ text: string; language?: string }> {
   const mimeType = args.audio.type.split(";")[0].trim().toLowerCase() || "audio/ogg";
-  const form = new FormData();
-  form.append("file", args.audio, args.fileName ?? `voice-note.${audioExtension(mimeType)}`);
-  form.append("model", args.model);
-  form.append("prompt", NIGERIAN_SPEECH_PROMPT);
-  const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${args.apiKey}` },
-    body: form,
-    signal: AbortSignal.timeout(args.timeoutMs ?? 45_000),
-  });
-  if (!response.ok) throw new Error(transcriptionHttpError(response.status));
-  const result = await response.json() as { text?: unknown; language?: unknown; languages?: unknown };
-  return {
-    text: typeof result.text === "string" ? result.text : "",
-    ...(transcriptionLanguage(result) ? { language: transcriptionLanguage(result) } : {}),
-  };
+  const model = resolveTranscriptionModel(args.model);
+  const maximumAttempts = Math.min(3, Math.max(1, args.maximumAttempts ?? 3));
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= maximumAttempts; attempt += 1) {
+    try {
+      const form = new FormData();
+      form.append("file", args.audio, args.fileName ?? `voice-note.${audioExtension(mimeType)}`);
+      form.append("model", model);
+      form.append("prompt", NIGERIAN_SPEECH_PROMPT);
+      const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${args.apiKey}` },
+        body: form,
+        signal: AbortSignal.timeout(args.timeoutMs ?? 45_000),
+      });
+      if (!response.ok) {
+        const error = new Error(transcriptionHttpError(response.status));
+        if (!retryableStatus(response.status) || attempt === maximumAttempts) throw error;
+        lastError = error;
+      } else {
+        let result: { text?: unknown; language?: unknown; languages?: unknown };
+        try {
+          result = await response.json() as typeof result;
+        } catch {
+          throw new Error("OPENAI_TRANSCRIPTION_INVALID_RESPONSE");
+        }
+        const language = transcriptionLanguage(result);
+        return {
+          text: typeof result.text === "string" ? result.text : "",
+          ...(language ? { language } : {}),
+        };
+      }
+    } catch (error) {
+      lastError = error;
+      const code = transcriptionErrorCode(error);
+      const retryableNetworkFailure = code === "OPENAI_TRANSCRIPTION_TIMEOUT" || code === "OPENAI_TRANSCRIPTION_FAILED";
+      if (!retryableNetworkFailure || attempt === maximumAttempts) throw new Error(code);
+    }
+  }
+
+  throw new Error(transcriptionErrorCode(lastError));
 }
