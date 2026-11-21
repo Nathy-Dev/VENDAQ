@@ -94,7 +94,7 @@ describe("authenticated WhatsApp ingestion", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it("captures only bounded audio metadata needed for Deepgram and never stores a provider media URL", async () => {
+  it("captures only bounded audio metadata needed for transcription and never stores a provider media URL", async () => {
     const harness = createHarness();
     const source = await tenant(harness, "voice-note-metadata");
     await webhook(harness, message(source, { id: "voice-1", content: { audioMessage: { url: "https://private-media.test/audio", mimetype: "audio/ogg; codecs=opus", mediaKey: "synthetic-key" } } }));
@@ -113,15 +113,16 @@ describe("authenticated WhatsApp ingestion", () => {
     vi.stubEnv("FOUNDATION_PROVIDER_ENABLED", "true");
     vi.stubEnv("EVOLUTION_GO_URL", "https://provider.example.test");
     vi.stubEnv("EVOLUTION_GO_API_KEY", "synthetic-provider-key");
-    vi.stubEnv("DEEPGRAM_API_KEY", "synthetic-deepgram-key");
+    vi.stubEnv("OPENAI_API_KEY", "synthetic-openai-key");
+    vi.stubEnv("OPENAI_TRANSCRIPTION_MODEL", "whisper-1");
     vi.stubEnv("GROQ_API_KEY", "synthetic-groq-key");
     vi.stubEnv("GROQ_LLM_MODEL", "synthetic-model");
-    const requests: Array<{ url: string; body: string }> = [];
+    const requests: Array<{ url: string; body: BodyInit | null | undefined; headers: Headers }> = [];
     vi.stubGlobal("fetch", vi.fn().mockImplementation(async (input, init?: RequestInit) => {
       const url = String(input);
-      requests.push({ url, body: typeof init?.body === "string" ? init.body : "" });
+      requests.push({ url, body: init?.body, headers: new Headers(init?.headers) });
       if (url.endsWith("/message/downloadmedia")) return Response.json({ data: { base64: Buffer.from("synthetic-ogg-audio").toString("base64"), mimetype: "audio/ogg" } });
-      if (url.startsWith("https://api.deepgram.com/v1/listen")) return Response.json({ results: { channels: [{ detected_language: "en", alternatives: [{ transcript: "Do you have the blue shoes in size forty two?", confidence: 0.97 }] }] } });
+      if (url === "https://api.openai.com/v1/audio/transcriptions") return Response.json({ text: "You get the blue shoes for size forty two? Abeg confirm.", language: "english", duration: 4.2 });
       if (url === "https://api.groq.com/openai/v1/chat/completions") return Response.json({ choices: [{ message: { content: "Yes, we can help with the blue shoes. Please confirm the style you want." } }] });
       if (url.endsWith("/message/presence")) return Response.json({ message: "success" });
       if (url.endsWith("/send/text")) return Response.json({ messageId: "provider-reply-1" });
@@ -134,17 +135,28 @@ describe("authenticated WhatsApp ingestion", () => {
     const interactions = await harness.run((ctx) => ctx.db.query("interactions").collect());
     const inbound = interactions.find((interaction) => interaction.role === "customer");
     const outbound = interactions.find((interaction) => interaction.role === "owner");
-    expect(inbound).toMatchObject({ messageType: "audio", transcriptionState: "completed", transcript: "Do you have the blue shoes in size forty two?", transcriptLanguage: "en", transcriptConfidence: 0.97, manualReviewRequired: false });
+    expect(inbound).toMatchObject({ messageType: "audio", transcriptionState: "completed", transcript: "You get the blue shoes for size forty two? Abeg confirm.", transcriptLanguage: "english", manualReviewRequired: false });
+    expect(inbound?.transcriptConfidence).toBeUndefined();
     expect(outbound).toMatchObject({ content: "Yes, we can help with the blue shoes. Please confirm the style you want.", messageType: "text" });
     expect(await harness.run((ctx) => ctx.db.query("assistantDispatches").collect())).toEqual([expect.objectContaining({ interactionId: inbound!._id, state: "accepted", attempts: 1, providerMessageId: "provider-reply-1" })]);
     expect(requests.map((request) => request.url)).toEqual(expect.arrayContaining([
       "https://provider.example.test/message/downloadmedia",
-      expect.stringMatching(/^https:\/\/api\.deepgram\.com\/v1\/listen/),
+      "https://api.openai.com/v1/audio/transcriptions",
       "https://api.groq.com/openai/v1/chat/completions",
       "https://provider.example.test/message/presence",
       "https://provider.example.test/send/text",
     ]));
-    expect(JSON.parse(requests.find((request) => request.url.endsWith("/send/text"))!.body)).toMatchObject({ number: "2348000000001@s.whatsapp.net", text: outbound!.content, id: inbound!._id });
+    const transcriptionRequest = requests.find((request) => request.url === "https://api.openai.com/v1/audio/transcriptions")!;
+    const transcriptionForm = transcriptionRequest.body as FormData;
+    const transcriptionFile = transcriptionForm.get("file") as File;
+    expect(transcriptionRequest.headers.get("authorization")).toBe("Bearer synthetic-openai-key");
+    expect(transcriptionRequest.headers.has("content-type")).toBe(false);
+    expect(transcriptionForm.get("model")).toBe("whisper-1");
+    expect(transcriptionForm.get("response_format")).toBe("verbose_json");
+    expect(transcriptionForm.get("temperature")).toBe("0");
+    expect(transcriptionForm.get("prompt")).toContain("Nigerian Pidgin");
+    expect(transcriptionFile).toMatchObject({ name: "voice-note.ogg", type: "audio/ogg", size: Buffer.byteLength("synthetic-ogg-audio") });
+    expect(JSON.parse(requests.find((request) => request.url.endsWith("/send/text"))!.body as string)).toMatchObject({ number: "2348000000001@s.whatsapp.net", text: outbound!.content, id: inbound!._id });
     expect(JSON.stringify(interactions)).not.toContain("private-media.test");
   });
 

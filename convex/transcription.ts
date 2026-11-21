@@ -5,6 +5,18 @@ import { decryptSecret } from "./lib/crypto";
 import { keywordClassifier } from "./lib/classifier";
 import { downloadAuthorizedInboundAudio } from "./lib/evolution";
 
+const NIGERIAN_SPEECH_PROMPT = "Na Nigerian WhatsApp voice note be this. Write wetin the person talk exactly as dem talk am. Keep Nigerian Pidgin, Nigerian English, names, and any code-switching as spoken. No translate and no correct the grammar. Common words fit include abeg, dey, no wahala, una, wetin, na, e, sabi, sha, abi, and oga.";
+
+function audioExtension(mimeType: string): string {
+  const normalized = mimeType.split(";")[0].trim().toLowerCase();
+  if (normalized === "audio/flac") return "flac";
+  if (["audio/mpeg", "audio/mp3"].includes(normalized)) return "mp3";
+  if (["audio/mp4", "audio/m4a", "audio/x-m4a"].includes(normalized)) return "m4a";
+  if (["audio/wav", "audio/x-wav", "audio/wave"].includes(normalized)) return "wav";
+  if (normalized === "audio/webm") return "webm";
+  return "ogg";
+}
+
 const candidate = v.object({
   interactionId: v.id("interactions"), businessId: v.id("businesses"), customerId: v.id("customers"),
   sessionId: v.id("whatsappSessions"), providerInstanceId: v.string(), tokenCiphertext: v.string(), mediaPayload: v.string(), mediaMimeType: v.string(),
@@ -70,22 +82,33 @@ export const transcribe = internalAction({
     try {
       const current = await ctx.runQuery(internal.transcription.prepare, args);
       if (!current) throw new Error("TRANSCRIPTION_NOT_ELIGIBLE");
-      const apiKey = process.env.DEEPGRAM_API_KEY;
-      if (!apiKey) throw new Error("DEEPGRAM_NOT_CONFIGURED");
+      const apiKey = process.env.OPENAI_API_KEY;
+      if (!apiKey) throw new Error("OPENAI_TRANSCRIPTION_NOT_CONFIGURED");
+      const model = process.env.OPENAI_TRANSCRIPTION_MODEL?.trim() || "whisper-1";
       const token = await decryptSecret(current.tokenCiphertext, `business:${current.businessId}:session-token`);
       const message = JSON.parse(current.mediaPayload) as Record<string, unknown>;
       const audio = await downloadAuthorizedInboundAudio({ token, instanceId: current.providerInstanceId, message });
-      const response = await fetch("https://api.deepgram.com/v1/listen?model=nova-3&smart_format=true&punctuate=true&detect_language=true&diarize=false", {
+      const mimeType = (audio.mimetype || current.mediaMimeType).split(";")[0].trim().toLowerCase() || "audio/ogg";
+      const form = new FormData();
+      form.append("file", new Blob([audio.bytes.slice().buffer], { type: mimeType }), `voice-note.${audioExtension(mimeType)}`);
+      form.append("model", model);
+      form.append("response_format", "verbose_json");
+      form.append("temperature", "0");
+      form.append("prompt", NIGERIAN_SPEECH_PROMPT);
+      const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
         method: "POST",
-        headers: { Authorization: `Token ${apiKey}`, "Content-Type": audio.mimetype || current.mediaMimeType },
-        body: new Blob([audio.bytes.slice().buffer], { type: audio.mimetype || current.mediaMimeType }),
-        signal: AbortSignal.timeout(35_000),
+        headers: { Authorization: `Bearer ${apiKey}` },
+        body: form,
+        signal: AbortSignal.timeout(45_000),
       });
-      if (!response.ok) throw new Error(response.status === 401 || response.status === 403 ? "DEEPGRAM_AUTH_FAILED" : "DEEPGRAM_TRANSCRIPTION_FAILED");
-      const result = await response.json() as { results?: { channels?: Array<{ detected_language?: string; alternatives?: Array<{ transcript?: string; confidence?: number }> }> } };
-      const channel = result.results?.channels?.[0];
-      const alternative = channel?.alternatives?.[0];
-      await ctx.runMutation(internal.transcription.finish, { interactionId: current.interactionId, transcript: alternative?.transcript ?? "", ...(channel?.detected_language ? { language: channel.detected_language } : {}), ...(typeof alternative?.confidence === "number" ? { confidence: alternative.confidence } : {}) });
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) throw new Error("OPENAI_TRANSCRIPTION_AUTH_FAILED");
+        if (response.status === 413) throw new Error("AUDIO_SIZE_NOT_SUPPORTED");
+        if (response.status === 429) throw new Error("OPENAI_TRANSCRIPTION_RATE_LIMITED");
+        throw new Error("OPENAI_TRANSCRIPTION_FAILED");
+      }
+      const result = await response.json() as { text?: string; language?: string };
+      await ctx.runMutation(internal.transcription.finish, { interactionId: current.interactionId, transcript: result.text ?? "", ...(result.language ? { language: result.language } : {}) });
     } catch (error) {
       await ctx.runMutation(internal.transcription.fail, { interactionId: args.interactionId, code: error instanceof Error ? error.message : "TRANSCRIPTION_FAILED" });
     }
