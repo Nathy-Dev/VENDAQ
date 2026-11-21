@@ -95,7 +95,8 @@ export default defineSchema({
     aiNeverQuotePrice: v.optional(v.boolean()),
     aiNeverSendPaymentLink: v.optional(v.boolean()),
     aiNeverOfferDiscount: v.optional(v.boolean()),
-  }).index("by_owner", ["ownerId"]),
+  }).index("by_owner", ["ownerId"])
+    .index("by_whatsapp_status", ["whatsappStatus"]),
 
 
   customers: defineTable({
@@ -771,7 +772,8 @@ export default defineSchema({
     paidAt: v.optional(v.number()),
     createdAt: v.number(),
   }).index("by_provider_reference", ["provider", "reference"])
-    .index("by_business_created", ["businessId", "createdAt"]),
+    .index("by_business_created", ["businessId", "createdAt"])
+    .index("by_status_created", ["status", "createdAt"]),
   billingUsagePeriods: defineTable({
     businessId: v.id("businesses"),
     periodStart: v.number(),

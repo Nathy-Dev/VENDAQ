@@ -12,6 +12,7 @@ import type * as adapters_evolutionGoAdapter from "../adapters/evolutionGoAdapte
 import type * as adapters_index from "../adapters/index.js";
 import type * as adapters_types from "../adapters/types.js";
 import type * as adapters_whatsappAdapter from "../adapters/whatsappAdapter.js";
+import type * as admin from "../admin.js";
 import type * as ai from "../ai.js";
 import type * as assistantReply from "../assistantReply.js";
 import type * as auth from "../auth.js";
@@ -36,6 +37,7 @@ import type * as imageAnalysis from "../imageAnalysis.js";
 import type * as ingestion from "../ingestion.js";
 import type * as interactions from "../interactions.js";
 import type * as leadQualification from "../leadQualification.js";
+import type * as lib_adminAuthorization from "../lib/adminAuthorization.js";
 import type * as lib_assistantStyle from "../lib/assistantStyle.js";
 import type * as lib_authentication from "../lib/authentication.js";
 import type * as lib_authorization from "../lib/authorization.js";
@@ -81,6 +83,7 @@ declare const fullApi: ApiFromModules<{
   "adapters/index": typeof adapters_index;
   "adapters/types": typeof adapters_types;
   "adapters/whatsappAdapter": typeof adapters_whatsappAdapter;
+  admin: typeof admin;
   ai: typeof ai;
   assistantReply: typeof assistantReply;
   auth: typeof auth;
@@ -105,6 +108,7 @@ declare const fullApi: ApiFromModules<{
   ingestion: typeof ingestion;
   interactions: typeof interactions;
   leadQualification: typeof leadQualification;
+  "lib/adminAuthorization": typeof lib_adminAuthorization;
   "lib/assistantStyle": typeof lib_assistantStyle;
   "lib/authentication": typeof lib_authentication;
   "lib/authorization": typeof lib_authorization;

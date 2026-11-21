@@ -10,8 +10,9 @@ import Brand from "./Brand";
 import Loader from "./Loader";
 import { buttonClass } from "./dashboard-ui";
 import styles from "./FoundationWorkspace.module.css";
+import AdminConsole from "./admin/AdminConsole";
 
-const protectedRoots = ["/dashboard", "/onboarding", "/pipeline", "/status", "/revenue", "/settings", "/profile", "/billing"];
+const protectedRoots = ["/dashboard", "/onboarding", "/pipeline", "/status", "/revenue", "/settings", "/profile", "/billing", "/admin"];
 
 export function isFoundationRoute(pathname: string): boolean {
   return protectedRoots.some((root) => pathname === root || pathname.startsWith(`${root}/`));
@@ -26,6 +27,7 @@ export default function FoundationGate({ children }: { children: ReactNode }) {
 }
 
 function FoundationAccess() {
+  const pathname = usePathname();
   const { status, data: session } = useSession();
   const { isAuthenticated } = useConvexAuth();
   const [timedOut, setTimedOut] = useState(false);
@@ -39,7 +41,7 @@ function FoundationAccess() {
   if (status === "unauthenticated") return <GateMessage title="Sign in to your workspace" description="Your conversations and business records are private. Sign in to pick up where you left off."><Link href="/login" className={buttonClass.primary}>Sign in</Link><Link href="/" className={buttonClass.secondary}>Back to home</Link></GateMessage>;
   if (status === "authenticated" && !session?.user?.id) return <GateMessage title="Please sign in again" description="Your session needs to be renewed to securely open this workspace."><button type="button" className={buttonClass.primary} onClick={() => void signOut({ callbackUrl: "/login" })}>Sign in again</button></GateMessage>;
   if (!isAuthenticated) return timedOut ? <GateMessage title="Workspace connection unavailable" description="Your secure connection couldn't be established. Reload to try again, or ask your administrator to check the authentication setup. No WhatsApp actions have been taken."><button type="button" className={buttonClass.primary} onClick={() => window.location.reload()}>Try again</button><button type="button" className={buttonClass.secondary} onClick={() => void signOut({ callbackUrl: "/login" })}>Sign out</button></GateMessage> : <Loader label="Opening your secure workspace…" />;
-  return <FoundationWorkspace />;
+  return pathname === "/admin" || pathname.startsWith("/admin/") ? <AdminConsole /> : <FoundationWorkspace />;
 }
 
 // Do not expose server error payloads, identifiers, or configuration values in UI.
