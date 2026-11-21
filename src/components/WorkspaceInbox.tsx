@@ -3,9 +3,9 @@
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useMutation, useQuery } from "convex/react";
-import { ArrowLeft, ExternalLink, ImageIcon, Lightbulb, MessageCircle, Mic, Search, ShieldCheck, Tags, Trash2, TrendingUp, UsersRound } from "lucide-react";
+import { ArrowLeft, Brain, CheckCheck, ExternalLink, ImageIcon, Lightbulb, MessageCircle, Mic, Search, ShieldCheck, Tags, Trash2, TrendingUp, UsersRound } from "lucide-react";
 import { api } from "../../convex/_generated/api";
-import { displayIdentity, formatDate, initials, whatsappLink } from "@/lib/workspace-ui";
+import { displayIdentity, formatDate, initials, titleCase, whatsappLink } from "@/lib/workspace-ui";
 import type { LabelEntry, MessageClass, Workspace, WorkspaceContact } from "@/types/workspace";
 import type { Id } from "../../convex/_generated/dataModel";
 import { buttonClass, EmptyState, PageHeader, Pill, Segmented } from "./dashboard-ui";
@@ -16,6 +16,24 @@ const messageLabels: { value: MessageClass; label: string }[] = [
   { value: "buying_signal", label: "Buying signal" }, { value: "inquiry", label: "Inquiry" },
   { value: "payment_related", label: "Payment related" }, { value: "casual_noise", label: "Casual / noise" }, { value: "manual_review", label: "Manual review" },
 ];
+
+const conversationOutcomes = [
+  { value: "paid", label: "Sale paid" },
+  { value: "booked", label: "Appointment booked" },
+  { value: "qualified", label: "Qualified lead, manually confirmed" },
+  { value: "abandoned", label: "Conversation abandoned" },
+  { value: "lost_price", label: "Lost because of price" },
+  { value: "lost_stock", label: "Lost because of stock" },
+  { value: "lost_delivery", label: "Lost because of delivery" },
+  { value: "resolved_support", label: "Support issue resolved" },
+  { value: "unresolved_support", label: "Support issue unresolved" },
+] as const;
+
+type ConversationOutcome = typeof conversationOutcomes[number]["value"];
+
+function outcomeLabel(value: ConversationOutcome): string {
+  return conversationOutcomes.find((option) => option.value === value)?.label ?? titleCase(value);
+}
 
 export default function WorkspaceInbox({ workspace }: { workspace: Workspace }) {
   const [tab, setTab] = useState<"conversations" | "opportunities" | "insights" | "review">("conversations");
@@ -46,7 +64,11 @@ function Conversations({ workspace }: { workspace: Workspace }) {
 
 function Conversation({ workspace, contact, onBack }: { workspace: Workspace; contact: WorkspaceContact; onBack: () => void }) {
   const messages = useQuery(api.foundation.messages, { businessId: workspace.businessId, customerId: contact.customerId });
+  const intelligence = useQuery(api.commerceIntelligence.conversationIntelligence, contact.isGroup ? "skip" : { businessId: workspace.businessId, customerId: contact.customerId });
   const deleteCustomer = useMutation(api.foundation.deleteCustomer);
+  const verifyMemory = useMutation(api.commerceIntelligence.verifyMemory);
+  const completeCommitment = useMutation(api.commerceIntelligence.completeCommitment);
+  const recordOutcome = useMutation(api.commerceIntelligence.recordOutcome);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [feedback, setFeedback] = useState<Feedback>(null);
@@ -58,9 +80,67 @@ function Conversation({ workspace, contact, onBack }: { workspace: Workspace; co
     <header className={styles.conversationHeader}><button className={styles.mobileBack} aria-label="Back to conversations" onClick={onBack}><ArrowLeft size={20} /></button><span className={styles.avatar}>{initials(contact.name)}</span><div><strong>{contact.name}</strong><p>{displayIdentity(contact.identity, contact.isGroup)}</p></div><button className={buttonClass.ghost} aria-label="Delete stored contact data" title="Delete stored contact data" onClick={() => setConfirmDelete(true)}><Trash2 size={16} /></button></header>
     <Notice feedback={feedback} />
     {messages === undefined ? <div className={styles.loading} role="status">Loading messages…</div> : messages.length === 0 ? <EmptyState icon={MessageCircle} title="No retained messages" description="Older messages may have been removed under your retention policy." /> : <ol ref={messagesRef} className={styles.messages} aria-label="Message history">{messages.slice().reverse().map((message) => <li key={message.messageId} className={styles.message} data-role={message.role}><p className={styles.messageBubble}>{message.text || `[${message.type} message - view in WhatsApp]`}</p><div className={styles.messageMeta}><span>{message.role === "owner" ? "You" : message.role === "customer" ? contact.name : "System"}</span><span aria-hidden="true">·</span><time dateTime={new Date(message.timestamp).toISOString()}>{formatDate(message.timestamp, workspace.timezone)}</time></div>{message.type === "audio" && <div style={{ marginTop: 5 }}><Pill><Mic size={11} />{message.transcriptionState === "pending" ? "Transcribing voice note" : message.transcriptionState === "completed" ? "Voice note transcribed" : message.transcriptionState === "failed" ? "Transcription needs review" : "Voice note"}</Pill></div>}{message.type === "image" && <div style={{ marginTop: 5 }}><Pill><ImageIcon size={11} />{message.imageAnalysisState === "pending" ? "Analyzing image" : message.imageAnalysisState === "completed" ? "Image analyzed" : message.imageAnalysisState === "failed" ? "Image needs review" : "Image"}</Pill></div>}{message.manualReview && message.type !== "audio" && message.type !== "image" && <div style={{ marginTop: 5 }}><Pill>Media or shortened message · review in WhatsApp</Pill></div>}</li>)}</ol>}
+    {!contact.isGroup && intelligence?.conversationId && <ConversationOutcomeEditor key={`${intelligence.latestOutcome?.id ?? "new"}:${intelligence.latestOutcome?.occurredAt ?? 0}`} workspace={workspace} contact={contact} intelligence={intelligence} save={recordOutcome} />}
+    {!contact.isGroup && intelligence?.qualification && <details className={`${styles.conversationIntelligence} ${styles.conversationQualification}`}><summary><ShieldCheck size={14} />Lead qualification <Pill tone={intelligence.qualification.status === "qualified" ? "positive" : intelligence.qualification.status === "not_qualified" ? "danger" : "neutral"}>{titleCase(intelligence.qualification.status)}</Pill></summary><div className={styles.detailsBody}><div className={styles.itemBetween}><div><strong>{intelligence.qualification.score}% complete</strong><p>{intelligence.qualification.fitReason || "Pipelixr is gathering the details your business requires."}</p></div></div>{intelligence.qualification.answers.length > 0 && <section><h3>Confirmed in the conversation</h3><ul className={styles.auditList}>{intelligence.qualification.answers.map((answer) => <li key={answer.field}><strong>{titleCase(answer.field)}</strong><p>{answer.value}</p></li>)}</ul></section>}{intelligence.qualification.missingFields.length > 0 && <p className={styles.helper}><strong>Still needed:</strong> {intelligence.qualification.missingFields.map(titleCase).join(", ")}</p>}</div></details>}
+    {!contact.isGroup && intelligence && (intelligence.memories.length > 0 || intelligence.commitments.length > 0 || intelligence.payments.length > 0) && <details className={styles.conversationIntelligence}><summary><Brain size={14} />What Pipelixr remembers</summary><div className={styles.detailsBody}>{intelligence.memories.length > 0 && <section><h3>Customer details to confirm</h3><ul className={styles.auditList}>{intelligence.memories.map((memory) => <li key={memory.id}><div className={styles.itemBetween}><div><strong>{titleCase(memory.key)}</strong><p>{memory.value}</p></div><Pill tone={memory.state === "verified" ? "positive" : "neutral"}>{titleCase(memory.state)}</Pill></div>{memory.state !== "verified" && memory.state !== "forgotten" && <div className={styles.actions}><button className={buttonClass.secondary} onClick={() => void verifyMemory({ businessId: workspace.businessId, memoryId: memory.id, state: "verified" })}>Confirm</button><button className={buttonClass.ghost} onClick={() => void verifyMemory({ businessId: workspace.businessId, memoryId: memory.id, state: "forgotten" })}>Forget</button></div>}</li>)}</ul></section>}{intelligence.commitments.length > 0 && <section><h3>Open promises</h3><ul className={styles.auditList}>{intelligence.commitments.map((item) => <li key={item.id}><div className={styles.itemBetween}><div><strong>{item.summary}</strong><p>{item.dueAt ? formatDate(item.dueAt, workspace.timezone) : "No due time detected"}</p></div><Pill tone={item.state === "overdue" ? "danger" : "neutral"}>{titleCase(item.state)}</Pill></div><div className={styles.actions}><button className={buttonClass.secondary} onClick={() => void completeCommitment({ businessId: workspace.businessId, commitmentId: item.id, state: "completed" })}><CheckCheck size={13} />Done</button></div></li>)}</ul></section>}{intelligence.payments.length > 0 && <section><h3>Payment receipts</h3><ul className={styles.auditList}>{intelligence.payments.map((proof) => <li key={proof.id}><strong>{proof.verificationState === "verified" ? "Independently verified" : "Not verified"}</strong><p>{proof.reason || "Receipt saved for review."}</p></li>)}</ul></section>}</div></details>}
     <footer className={styles.conversationFooter}><span>{contact.isGroup ? "Group conversation" : "Latest 100 retained messages"}</span>{whatsapp ? <a href={whatsapp} className={buttonClass.secondary} target="_blank" rel="noopener noreferrer">Open WhatsApp<ExternalLink size={13} /></a> : <span>Open WhatsApp manually</span>}</footer>
     <ConfirmDialog open={confirmDelete} onClose={() => setConfirmDelete(false)} onConfirm={() => void removeContact()} busy={deleting} title="Delete stored contact data?" description="This removes the stored conversation from Pipelixr and prevents re-import. It does not delete messages from WhatsApp." confirmLabel="Delete contact data" />
   </section>;
+}
+
+type ConversationIntelligence = NonNullable<ReturnType<typeof useQuery<typeof api.commerceIntelligence.conversationIntelligence>>>;
+type SaveConversationOutcome = ReturnType<typeof useMutation<typeof api.commerceIntelligence.recordOutcome>>;
+
+function ConversationOutcomeEditor({ workspace, contact, intelligence, save }: { workspace: Workspace; contact: WorkspaceContact; intelligence: ConversationIntelligence; save: SaveConversationOutcome }) {
+  const current = intelligence.latestOutcome;
+  const [outcome, setOutcome] = useState<ConversationOutcome | "">(current?.outcome ?? "");
+  const [value, setValue] = useState(current?.value ? String(current.value) : "");
+  const [objection, setObjection] = useState(current?.objection ?? "");
+  const [campaign, setCampaign] = useState(current?.sourceCampaignId ?? current?.sourceAdId ?? "");
+  const [busy, setBusy] = useState(false);
+  const [resultFeedback, setResultFeedback] = useState<Feedback>(null);
+
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!outcome || busy || !intelligence.conversationId) return;
+    const parsedValue = value.trim() ? Number(value) : undefined;
+    if (outcome === "paid" && parsedValue !== undefined && (!Number.isFinite(parsedValue) || parsedValue < 0)) {
+      setResultFeedback({ text: "Enter a valid sale value.", error: true });
+      return;
+    }
+    setBusy(true);
+    setResultFeedback(null);
+    try {
+      await save({
+        businessId: workspace.businessId,
+        customerId: contact.customerId,
+        conversationId: intelligence.conversationId,
+        outcome,
+        ...(outcome === "paid" && parsedValue !== undefined ? { value: Math.round(parsedValue) } : {}),
+        ...(objection.trim() ? { objection: objection.trim() } : {}),
+        ...(campaign.trim() ? { sourceCampaignId: campaign.trim() } : {}),
+      });
+      setResultFeedback({ text: current ? "Result updated." : "Result recorded." });
+    } catch {
+      setResultFeedback({ text: "We couldn't save this result. Please try again.", error: true });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return <details className={`${styles.conversationIntelligence} ${styles.conversationOutcome}`} open={!current}>
+    <summary><TrendingUp size={14} />Record result {current && <Pill tone={current.outcome === "paid" ? "positive" : "neutral"}>{outcomeLabel(current.outcome)}</Pill>}</summary>
+    <form className={`${styles.form} ${styles.outcomeForm}`} onSubmit={submit}>
+      <div className={styles.formGrid}>
+        <label className={styles.field}>Result<select className={styles.input} value={outcome} disabled={busy} onChange={(event) => setOutcome(event.target.value as ConversationOutcome | "")}><option value="">Choose what happened</option>{conversationOutcomes.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select><span className={styles.fieldHelp}>Qualified means your business has personally confirmed the lead is a real fit.</span></label>
+        {outcome === "paid" && <label className={styles.field}>Sale value, optional<input className={styles.input} inputMode="numeric" placeholder="For example, 25000" value={value} disabled={busy} onChange={(event) => setValue(event.target.value.replace(/[^0-9]/g, ""))} /></label>}
+        <label className={styles.field}>Reason or objection, optional<input className={styles.input} placeholder="For example, delivery fee" value={objection} disabled={busy} onChange={(event) => setObjection(event.target.value)} /></label>
+        <label className={styles.field}>Ad or campaign name, optional<input className={styles.input} placeholder="For example, Black Friday Instagram" value={campaign} disabled={busy} onChange={(event) => setCampaign(event.target.value)} /></label>
+      </div>
+      <div className={styles.formFooter}><button className={buttonClass.primary} disabled={busy || !outcome}>{busy ? "Saving…" : current ? "Update result" : "Save result"}</button><p>This updates the result for this conversation and your Insights report.</p></div>
+      <Notice feedback={resultFeedback} />
+    </form>
+  </details>;
 }
 
 function Opportunities({ workspace }: { workspace: Workspace }) {
@@ -87,10 +167,12 @@ function OpportunityCard({ workspace, opportunity }: { workspace: Workspace; opp
 
 function CommunityInsights({ workspace }: { workspace: Workspace }) {
   const insights = useQuery(api.communityEngine.insights, { businessId: workspace.businessId });
+  const privateInsights = useQuery(api.commerceIntelligence.insights, { businessId: workspace.businessId });
+  const qualificationInsights = useQuery(api.leadQualification.insights, { businessId: workspace.businessId });
   const suggestions = useQuery(api.communityEngine.knowledge, { businessId: workspace.businessId });
-  if (!insights || suggestions === undefined) return <LoadingRows label="Loading business insights" />;
+  if (!insights || !privateInsights || !qualificationInsights || suggestions === undefined) return <LoadingRows label="Loading business insights" />;
   const money = (value: number) => new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN", maximumFractionDigits: 0 }).format(value);
-  return <div className={styles.reviewGrid}><section className={styles.stack}><div className={styles.metrics}>{[{ label: "Open opportunities", value: insights.open }, { label: "Won", value: insights.won }, { label: "Unanswered questions", value: insights.unansweredQuestions }, { label: "Complaints needing care", value: insights.complaints }].map((metric) => <div className={styles.metric} key={metric.label}><strong>{metric.value}</strong><span>{metric.label}</span></div>)}</div><section className={styles.card}><div className={styles.sectionHeading}><div><h2>What people are asking for</h2><p>Demand seen across enabled groups and private chats.</p></div><TrendingUp size={18} /></div>{insights.topDemand.length ? <ul className={styles.auditList}>{insights.topDemand.map((item) => <li key={item.topic}><strong>{item.topic}</strong><p>{item.count} relevant {item.count === 1 ? "message" : "messages"}</p></li>)}</ul> : <EmptyState icon={TrendingUp} title="No demand pattern yet" description="Patterns appear as relevant messages are captured." />}</section><section className={styles.card}><div className={styles.sectionHeading}><div><h2>Groups driving results</h2><p>Recorded revenue attributed to the original community source.</p></div><UsersRound size={18} /></div>{insights.topGroups.length ? <ul className={styles.auditList}>{insights.topGroups.map((group) => <li key={group.groupName}><strong>{group.groupName}</strong><p>{group.opportunities} opportunities · {money(group.revenue)} recorded revenue</p></li>)}</ul> : <EmptyState icon={UsersRound} title="No group outcomes yet" description="Mark opportunities won to see which communities contribute revenue." />}</section></section><aside className={styles.stack}><section className={styles.card}><div className={styles.sectionHeading}><div><h2>Recorded revenue</h2><p>Based on outcomes entered by the business.</p></div></div><div className={styles.metrics}><div className={styles.metric}><strong>{money(insights.groupRevenue)}</strong><span>From groups</span></div><div className={styles.metric}><strong>{money(insights.directRevenue)}</strong><span>From private chats</span></div></div></section><KnowledgeReview workspace={workspace} suggestions={suggestions} /></aside></div>;
+  return <div className={styles.reviewGrid}><section className={styles.stack}><section className={styles.card}><div className={styles.sectionHeading}><div><h2>Automatic lead qualification</h2><p>Pipelixr qualifies one-to-one leads from confirmed conversation details.</p></div><ShieldCheck size={18} /></div><div className={styles.metrics}>{[{ label: "Qualified", value: qualificationInsights.qualified }, { label: "Still qualifying", value: qualificationInsights.active }, { label: "Not qualified", value: qualificationInsights.notQualified }, { label: "Needs attention", value: qualificationInsights.stalled }, { label: "Opted out", value: qualificationInsights.optedOut }, { label: "Average completion", value: `${qualificationInsights.averageScore}%` }].map((metric) => <div className={styles.metric} key={metric.label}><strong>{metric.value}</strong><span>{metric.label}</span></div>)}</div>{qualificationInsights.topMissingFields.length > 0 && <div className={styles.qualificationGap}><strong>Most common details still missing</strong><p>{qualificationInsights.topMissingFields.map((item) => `${item.label} (${item.count})`).join(", ")}</p></div>}</section><section className={styles.card}><div className={styles.sectionHeading}><div><h2>Private-chat results</h2><p>Results your business or Pipelixr has recorded from one-to-one conversations.</p></div><TrendingUp size={18} /></div><div className={styles.metrics}>{[{ label: "Paid", value: privateInsights.paid }, { label: "Booked", value: privateInsights.booked }, { label: "Qualified", value: privateInsights.qualified }, { label: "Lost or abandoned", value: privateInsights.lost }, { label: "Support resolved", value: privateInsights.resolvedSupport }, { label: "Support unresolved", value: privateInsights.unresolvedSupport }].map((metric) => <div className={styles.metric} key={metric.label}><strong>{metric.value}</strong><span>{metric.label}</span></div>)}</div></section><div className={styles.metrics}>{[{ label: "Open opportunities", value: insights.open }, { label: "Won", value: insights.won }, { label: "Unanswered questions", value: insights.unansweredQuestions }, { label: "Complaints needing care", value: insights.complaints }].map((metric) => <div className={styles.metric} key={metric.label}><strong>{metric.value}</strong><span>{metric.label}</span></div>)}</div><section className={styles.card}><div className={styles.sectionHeading}><div><h2>What people are asking for</h2><p>Demand seen across enabled groups and private chats.</p></div><TrendingUp size={18} /></div>{insights.topDemand.length ? <ul className={styles.auditList}>{insights.topDemand.map((item) => <li key={item.topic}><strong>{item.topic}</strong><p>{item.count} relevant {item.count === 1 ? "message" : "messages"}</p></li>)}</ul> : <EmptyState icon={TrendingUp} title="No demand pattern yet" description="Patterns appear as relevant messages are captured." />}</section><section className={styles.card}><div className={styles.sectionHeading}><div><h2>Ads and campaigns producing results</h2><p>Paid conversations and value attributed to the name entered when recording a result.</p></div><TrendingUp size={18} /></div>{privateInsights.topAds.length ? <ul className={styles.auditList}>{privateInsights.topAds.map((source) => <li key={source.adId}><strong>{source.adId}</strong><p>{source.paid} paid from {source.conversations} recorded {source.conversations === 1 ? "conversation" : "conversations"} · {money(source.value)} paid value</p></li>)}</ul> : <EmptyState icon={TrendingUp} title="No ad results recorded yet" description="Add an ad or campaign name when you record a private-chat result." />}</section><section className={styles.card}><div className={styles.sectionHeading}><div><h2>Groups driving results</h2><p>Recorded revenue attributed to the original community source.</p></div><UsersRound size={18} /></div>{insights.topGroups.length ? <ul className={styles.auditList}>{insights.topGroups.map((group) => <li key={group.groupName}><strong>{group.groupName}</strong><p>{group.opportunities} opportunities · {money(group.revenue)} recorded revenue</p></li>)}</ul> : <EmptyState icon={UsersRound} title="No group outcomes yet" description="Mark opportunities won to see which communities contribute revenue." />}</section></section><aside className={styles.stack}><section className={styles.card}><div className={styles.sectionHeading}><div><h2>Recorded value</h2><p>Only private chats marked paid count toward private-chat value.</p></div></div><div className={styles.metrics}><div className={styles.metric}><strong>{money(privateInsights.recordedValue)}</strong><span>Paid private chats</span></div><div className={styles.metric}><strong>{money(insights.groupRevenue)}</strong><span>From groups</span></div></div></section><section className={styles.card}><div className={styles.sectionHeading}><div><h2>Lost-sale reasons</h2><p>Reasons entered when conversations did not convert.</p></div></div>{privateInsights.topObjections.length ? <ul className={styles.auditList}>{privateInsights.topObjections.map((item) => <li key={item.objection}><strong>{item.objection}</strong><p>{item.count} recorded {item.count === 1 ? "conversation" : "conversations"}</p></li>)}</ul> : <EmptyState icon={TrendingUp} title="No reasons recorded yet" description="Add an optional reason when recording a conversation result." />}</section><KnowledgeReview workspace={workspace} suggestions={suggestions} /></aside></div>;
 }
 
 function KnowledgeReview({ workspace, suggestions }: { workspace: Workspace; suggestions: NonNullable<ReturnType<typeof useQuery<typeof api.communityEngine.knowledge>>> }) {

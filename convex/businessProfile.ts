@@ -4,6 +4,8 @@ import { internal } from "./_generated/api";
 import { requireBusiness, requireIdentity } from "./lib/authorization";
 import { BUSINESS_SYSTEM_PROMPT_MAX_LENGTH, BUSINESS_SYSTEM_PROMPT_MIN_LENGTH } from "./lib/launch";
 
+const qualificationField = v.union(v.literal("need"), v.literal("budget"), v.literal("location"), v.literal("timeline"), v.literal("readiness"));
+
 const promptSourceMinimum = 40;
 const promptSourceMaximum = 4_000;
 
@@ -48,6 +50,9 @@ export const save = mutation({
     systemPrompt: v.string(),
     customerAutoReplyEnabled: v.boolean(),
     groupAutoReplyEnabled: v.boolean(),
+    leadQualificationEnabled: v.optional(v.boolean()),
+    leadQualificationCriteria: v.optional(v.string()),
+    leadQualificationRequiredFields: v.optional(v.array(qualificationField)),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -59,6 +64,9 @@ export const save = mutation({
       businessSystemPromptUpdatedAt: now,
       customerAutoReplyEnabled: args.customerAutoReplyEnabled,
       groupAutoReplyEnabled: args.groupAutoReplyEnabled,
+      ...(args.leadQualificationEnabled !== undefined ? { leadQualificationEnabled: args.leadQualificationEnabled } : {}),
+      ...(args.leadQualificationCriteria?.trim() ? { leadQualificationCriteria: args.leadQualificationCriteria.replaceAll("\u0000", "").trim().slice(0, 2_000) } : {}),
+      ...(args.leadQualificationRequiredFields?.length ? { leadQualificationRequiredFields: [...new Set(args.leadQualificationRequiredFields)] } : {}),
       assistantConsentAt: args.customerAutoReplyEnabled || args.groupAutoReplyEnabled ? now : undefined,
       aiEnabled: args.customerAutoReplyEnabled || args.groupAutoReplyEnabled,
       killSwitch: !(args.customerAutoReplyEnabled || args.groupAutoReplyEnabled),

@@ -109,6 +109,7 @@ export default function Onboarding({ initialStep = 0 }: OnboardingProps) {
   }, []);
 
   // Start polling when we hit the connection step
+  /* eslint-disable react-hooks/set-state-in-effect -- Reactive provider state deliberately advances the onboarding state machine. */
   React.useEffect(() => {
     if (step === 4 && existingBusiness && qrData?.status !== "connected") {
       startPolling();
@@ -155,6 +156,7 @@ export default function Onboarding({ initialStep = 0 }: OnboardingProps) {
       }
     }
   }, [existingBusiness, step, initialStep]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const nextFeature = () => {
     if (featureIndex < features.length - 1) {

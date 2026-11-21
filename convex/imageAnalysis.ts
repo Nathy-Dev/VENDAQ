@@ -144,6 +144,7 @@ export const finish = internalMutation({
       timestamp: now,
     });
     await ctx.scheduler.runAfter(0, internal.communityEngine.captureFromInteraction, { interactionId: interaction._id });
+    if (!(interaction.isGroup ?? false)) await ctx.scheduler.runAfter(0, internal.commerceIntelligence.captureFromInteraction, { interactionId: interaction._id });
     await ctx.scheduler.runAfter(0, internal.assistantReply.prepareForInteraction, { interactionId: interaction._id });
     return null;
   },

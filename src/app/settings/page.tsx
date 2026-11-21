@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useMemo } from "react";
 import { Bell, Shield, Building, Moon, ChevronRight, Save, Store, Factory, Zap, Clock, Banknote, MessageSquare, Brain, Eye, CheckCircle2, XCircle, Sparkles, Users } from "lucide-react";
 
 import { useSession } from "next-auth/react";
@@ -85,11 +85,16 @@ export default function SettingsPage() {
   
   const updateBusiness = useMutation(api.businesses.updateBusinessDetails);
 
-  const [bizName, setBizName] = useState("");
-  const [bizIndustry, setBizIndustry] = useState("");
-  const [aov, setAov] = useState(15000);
-  const [responseWindow, setResponseWindow] = useState(120);
-  const [followUpTemplate, setFollowUpTemplate] = useState("Hi [Customer Name], thanks for reaching out. We saw your message and will get back to you shortly. What exactly were you looking for today?");
+  const [bizNameDraft, setBizName] = useState<string | null>(null);
+  const [bizIndustryDraft, setBizIndustry] = useState<string | null>(null);
+  const [aovDraft, setAov] = useState<number | null>(null);
+  const [responseWindowDraft, setResponseWindow] = useState<number | null>(null);
+  const [followUpTemplateDraft, setFollowUpTemplate] = useState<string | null>(null);
+  const bizName = bizNameDraft ?? business?.name ?? "";
+  const bizIndustry = bizIndustryDraft ?? business?.industry ?? "";
+  const aov = aovDraft ?? business?.averageOrderValue ?? 15000;
+  const responseWindow = responseWindowDraft ?? business?.responseWindowMinutes ?? 120;
+  const followUpTemplate = followUpTemplateDraft ?? business?.followUpTemplate ?? "Hi [Customer Name], thanks for reaching out. We saw your message and will get back to you shortly. What exactly were you looking for today?";
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
@@ -128,7 +133,8 @@ export default function SettingsPage() {
     return groups;
   }, [groups, groupsFilter]);
 
-  useEffect(() => {
+  /* eslint-disable react-hooks/set-state-in-effect -- Convex profile hydration intentionally initializes this legacy editable form. */
+  React.useEffect(() => {
     if (business) {
       setBizName(business.name || "");
       setBizIndustry(business.industry || "");
@@ -150,6 +156,7 @@ export default function SettingsPage() {
       setAiNeverOfferDiscount(business.aiNeverOfferDiscount ?? false);
     }
   }, [business]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const handleSaveBusiness = async (e: React.FormEvent) => {
     e.preventDefault();

@@ -10,13 +10,15 @@ import { formatDate, formatMoney, initials, titleCase } from "@/lib/workspace-ui
 import { buttonClass, EmptyState, PageHeader, Panel, Pill, Segmented, Stat, StatGrid } from "./dashboard-ui";
 import { ConfirmDialog, LoadingRows, Notice, type Feedback } from "./WorkspaceFeedback";
 import styles from "./FoundationWorkspace.module.css";
+import CommerceOperations from "./CommerceOperations";
 
 export default function SellerWorkspacePanels({ workspace }: { workspace: Workspace }) {
-  const [tab, setTab] = useState<"queue" | "orders" | "revenue">("queue");
+  const [tab, setTab] = useState<"operations" | "queue" | "orders" | "revenue">("operations");
   return (
     <>
-      <PageHeader title="A clear next step." description="Review a follow-up, keep track of an order, and see what comes next." />
-      <div className={styles.toolbar}><Segmented label="Actions view" value={tab} onChange={setTab} options={[{ value: "queue", label: "Action queue" }, { value: "orders", label: "Orders" }, { value: "revenue", label: "Revenue" }]} /><Pill>Manual actions only</Pill></div>
+      {tab !== "operations" && <PageHeader title="A clear next step." description="Review a follow-up, keep track of an order, and see what comes next." />}
+      <div className={styles.toolbar}><Segmented label="Actions view" value={tab} onChange={setTab} options={[{ value: "operations", label: "Business operations" }, { value: "queue", label: "Follow-ups" }, { value: "orders", label: "Orders" }, { value: "revenue", label: "Revenue" }]} />{tab !== "operations" && <Pill>Manual actions only</Pill>}</div>
+      {tab === "operations" && <CommerceOperations workspace={workspace} />}
       {tab === "queue" && <ActionQueue workspace={workspace} />}
       {tab === "orders" && <OrdersPanel workspace={workspace} />}
       {tab === "revenue" && <RevenuePanel workspace={workspace} />}
@@ -103,7 +105,8 @@ function FollowUpRow({ businessId, entry, timezone }: { businessId: Id<"business
   const skip = useMutation(api.followUps.skip);
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<Feedback>(null);
-  const available = entry.availableAt <= Date.now();
+  const [renderedAt] = useState(() => Date.now());
+  const available = entry.availableAt <= renderedAt;
   async function complete(operation: () => Promise<unknown>, text: string) {
     if (busy) return; setBusy(true); setFeedback(null);
     try { await operation(); setFeedback({ text }); } catch { setFeedback({ text: "This suggestion couldn't be updated. Please retry.", error: true }); } finally { setBusy(false); }

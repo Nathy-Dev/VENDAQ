@@ -172,6 +172,12 @@ export const applyEvent = internalMutation({
         if (!payload.fromMe && !payload.manualReview && payload.mediaType === "text" && payload.text.trim()) {
           await ctx.scheduler.runAfter(0, internal.communityEngine.captureFromInteraction, { interactionId });
         }
+        if (!payload.isGroup && !payload.manualReview && payload.mediaType === "text" && payload.text.trim()) {
+          await ctx.scheduler.runAfter(0, internal.commerceIntelligence.captureFromInteraction, { interactionId });
+        }
+        if (!payload.isGroup && payload.fromMe && payload.mediaType === "text" && payload.text.trim()) {
+          await ctx.scheduler.runAfter(0, internal.commerceIntelligence.captureFromInteraction, { interactionId });
+        }
         if (!payload.fromMe && !payload.manualReview && payload.mediaType === "text" && payload.text.trim() && !(business.killSwitch ?? true) && (business.businessSystemPrompt?.trim().length ?? 0) >= BUSINESS_SYSTEM_PROMPT_MIN_LENGTH) {
           let assistantAuthorized = business.customerAutoReplyEnabled ?? false;
           if (payload.isGroup) {

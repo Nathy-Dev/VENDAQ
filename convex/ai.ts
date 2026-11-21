@@ -354,7 +354,7 @@ export const classifyMessageWithAI = action({
     });
 
     const conversationContext = recentMessages
-      .map((m) => `${m.role === "customer" ? customerName : "Business"}: ${m.content}`)
+      .map((m: { role: string; content: string }) => `${m.role === "customer" ? customerName : "Business"}: ${m.content}`)
       .join("\n");
 
     // ── Step 2: Classify with Groq ──
@@ -531,7 +531,7 @@ export const generateSmartFollowUp = action({
       .join(". ");
 
     const conversationContext = recentMessages
-      .map((m) => `${m.role === "customer" ? args.customerName : "Business"}: ${m.content}`)
+      .map((m: { role: string; content: string }) => `${m.role === "customer" ? args.customerName : "Business"}: ${m.content}`)
       .join("\n");
 
     try {
@@ -619,7 +619,7 @@ export const generateAssistantReply = action({
       .join(". ");
 
     const conversationContext = recentMessages
-      .map((m) => `${m.role === "customer" ? args.customerName : "Business"}: ${m.content}`)
+      .map((m: { role: string; content: string }) => `${m.role === "customer" ? args.customerName : "Business"}: ${m.content}`)
       .join("\n");
 
     try {

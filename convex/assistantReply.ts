@@ -1,6 +1,8 @@
 import { v } from "convex/values";
 import { internalAction, internalMutation, internalQuery } from "./_generated/server";
-import { internal } from "./_generated/api";
+import { components, internal } from "./_generated/api";
+import { Agent } from "@convex-dev/agent";
+import { convexGateway } from "@convex-dev/ai-sdk-provider";
 import { decryptSecret } from "./lib/crypto";
 import { assistantReplyDelayMs, BUSINESS_SYSTEM_PROMPT_MIN_LENGTH } from "./lib/launch";
 import { foundationPolicy } from "./lib/policy";
@@ -12,6 +14,8 @@ const candidate = v.object({
   businessId: v.id("businesses"),
   interactionId: v.id("interactions"),
   customerId: v.id("customers"),
+  conversationId: v.union(v.id("conversations"), v.null()),
+  agentThreadId: v.union(v.string(), v.null()),
   sessionId: v.id("whatsappSessions"),
   target: v.string(),
   customerName: v.string(),
@@ -36,7 +40,9 @@ export const candidateForInteraction = internalQuery({
       ctx.db.get(interaction.customerId),
       interaction.sessionId ? ctx.db.get(interaction.sessionId) : null,
     ]);
+    const conversation = interaction.conversationId ? await ctx.db.get(interaction.conversationId) : null;
     if (!business || business.foundationVersion !== 1 || !customer || !session || session.state !== "connected" || !session.providerInstanceId) return null;
+    if (conversation && (conversation.businessId !== business._id || conversation.customerId !== customer._id)) return null;
     let systemPrompt = business.businessSystemPrompt?.trim() ?? "";
     if (systemPrompt.length < BUSINESS_SYSTEM_PROMPT_MIN_LENGTH || (business.killSwitch ?? true)) return null;
     const isGroup = interaction.isGroup ?? customer.isGroup ?? false;
@@ -53,6 +59,8 @@ export const candidateForInteraction = internalQuery({
       businessId: business._id,
       interactionId: interaction._id,
       customerId: customer._id,
+      conversationId: conversation?._id ?? null,
+      agentThreadId: conversation?.agentThreadId ?? null,
       sessionId: session._id,
       target: customer.phone,
       customerName: customer.name ?? (isGroup ? "the group" : "customer"),
@@ -62,6 +70,18 @@ export const candidateForInteraction = internalQuery({
       tokenCiphertext: session.tokenCiphertext,
       providerInstanceId: session.providerInstanceId,
     };
+  },
+});
+
+export const attachAgentThread = internalMutation({
+  args: { conversationId: v.id("conversations"), threadId: v.string() },
+  returns: v.object({ threadId: v.string(), attached: v.boolean() }),
+  handler: async (ctx, args) => {
+    const conversation = await ctx.db.get(args.conversationId);
+    if (!conversation) return { threadId: args.threadId, attached: false };
+    if (conversation.agentThreadId) return { threadId: conversation.agentThreadId, attached: conversation.agentThreadId === args.threadId };
+    await ctx.db.patch(conversation._id, { agentThreadId: args.threadId.slice(0, 200) });
+    return { threadId: args.threadId, attached: true };
   },
 });
 
@@ -75,7 +95,7 @@ export const recentConversation = internalQuery({
 });
 
 export const reserve = internalMutation({
-  args: { interactionId: v.id("interactions"), content: v.string() },
+  args: { interactionId: v.id("interactions"), content: v.string(), qualificationQuestionField: v.optional(v.union(v.literal("need"), v.literal("budget"), v.literal("location"), v.literal("timeline"), v.literal("readiness"))) },
   returns: v.union(v.null(), v.id("assistantDispatches")),
   handler: async (ctx, args) => {
     const content = normalizeAssistantReply(args.content);
@@ -113,6 +133,7 @@ export const reserve = internalMutation({
       target: customer.phone,
       isGroup,
       content,
+      qualificationQuestionField: args.qualificationQuestionField,
       state: "reserved",
       attempts: 0,
       createdAt: now,
@@ -159,6 +180,7 @@ export const finish = internalMutation({
       if (inbound?.conversationId) {
         const conversation = await ctx.db.get(inbound.conversationId);
         if (conversation) await ctx.db.patch(conversation._id, { revision: conversation.revision + 1, lastEventAt: Math.max(conversation.lastEventAt, now), lastOwnerAt: Math.max(conversation.lastOwnerAt ?? 0, now), messageCount: conversation.messageCount + 1 });
+        if (dispatch.qualificationQuestionField) await ctx.scheduler.runAfter(0, internal.leadQualification.recordQuestionAsked, { conversationId: inbound.conversationId, field: dispatch.qualificationQuestionField, askedAt: now });
       }
       const missed = await ctx.db.query("missedRevenueOpportunities").withIndex("by_interaction", (builder) => builder.eq("interactionId", dispatch.interactionId)).unique();
       if (missed && missed.state !== "answered") {
@@ -167,13 +189,62 @@ export const finish = internalMutation({
       }
       const opportunity = await ctx.db.query("communityOpportunities").withIndex("by_interaction", (builder) => builder.eq("interactionId", dispatch.interactionId)).unique();
       if (opportunity && opportunity.state === "open") await ctx.db.patch(opportunity._id, { state: "in_progress", updatedAt: now });
+      if (!dispatch.isGroup) await ctx.scheduler.runAfter(0, internal.commerceIntelligence.captureFromInteraction, { interactionId });
       await ctx.db.insert("aiActivityLog", { businessId: dispatch.businessId, type: "smart_reply", interactionId, customerId: dispatch.customerId, summary: dispatch.isGroup ? "Replied in an authorized WhatsApp group" : "Replied to a customer on WhatsApp", model: process.env.GROQ_LLM_MODEL?.trim() || "configured-model", timestamp: now });
     }
     return null;
   },
 });
 
-async function generateReply(systemPrompt: string, customerName: string, inboundContent: string, history: Array<{ role: "customer" | "owner" | "system"; content: string }>): Promise<string> {
+type AssistantContext = {
+  knowledge: Array<{ title: string; kind: string; content: string; confidence: number; verifiedAt: number | null }>;
+  memories: Array<{ key: string; value: string; state: string; confidence: number }>;
+  commitments: Array<{ kind: string; actor: string; summary: string; dueAt: number | null }>;
+  exceptions: Array<{ kind: string; severity: string; summary: string; state: string }>;
+  negotiation: { maximumDiscountPercent: number; minimumPrice: number | null; freeDeliveryThreshold: number | null; requireApprovalBelow: number | null } | null;
+  payment: { receiptState: string; verificationState: string; reason: string | null } | null;
+};
+
+function intelligencePrompt(context: AssistantContext): string {
+  const knowledge = context.knowledge.length ? context.knowledge.map((item) => `- [${item.kind}] ${item.title}: ${item.content}`).join("\n") : "- No separately approved business facts are available.";
+  const memories = context.memories.length ? context.memories.map((item) => `- ${item.key}: ${item.value}`).join("\n") : "- No verified customer memory.";
+  const commitments = context.commitments.length ? context.commitments.map((item) => `- ${item.actor} promised: ${item.summary}${item.dueAt ? `, due ${new Date(item.dueAt).toISOString()}` : ""}`).join("\n") : "- No open promises.";
+  const exceptions = context.exceptions.length ? context.exceptions.map((item) => `- ${item.severity} ${item.kind}: ${item.summary}, state ${item.state}`).join("\n") : "- No open issue.";
+  const negotiation = context.negotiation ? `Maximum discount: ${context.negotiation.maximumDiscountPercent}%. Minimum price: ${context.negotiation.minimumPrice ?? "not set"}. Free delivery threshold: ${context.negotiation.freeDeliveryThreshold ?? "not set"}. Owner approval below: ${context.negotiation.requireApprovalBelow ?? "not set"}.` : "No approved negotiation flexibility is set. Do not offer a discount, lower price, free delivery, or special bundle unless the business system prompt explicitly authorizes it.";
+  const payment = context.payment ? `Latest receipt state: ${context.payment.receiptState}. Independent verification: ${context.payment.verificationState}. ${context.payment.reason ?? ""}` : "No payment evidence is being reviewed.";
+  return `Approved business knowledge, use only when relevant:\n${knowledge}\n\nVerified customer memory, never mention that memory is stored:\n${memories}\n\nOpen promises that must not be forgotten:\n${commitments}\n\nOpen customer issues:\n${exceptions}\n\nNegotiation boundaries:\n${negotiation}\n\nPayment safety:\n${payment}`;
+}
+
+function hasKnowledgeConflict(context: AssistantContext): boolean {
+  const values = new Map<string, string>();
+  for (const item of context.knowledge) {
+    const key = `${item.kind}:${item.title.trim().toLowerCase()}`;
+    const value = item.content.trim().toLowerCase();
+    const existing = values.get(key);
+    if (existing && existing !== value) return true;
+    values.set(key, value);
+  }
+  return false;
+}
+
+function generatedNeedsOwner(reply: string, inbound: string): boolean {
+  if (!/[?]|\b(price|stock|available|availability|delivery|refund|return|warranty|discount|payment|account)\b/i.test(inbound)) return false;
+  return /\b(i|we)(?:'ll| will)?\s+(?:check|confirm|verify|get back)|\b(?:owner|team|human)\s+will\s+(?:check|confirm)|\blet me (?:check|confirm|verify)\b/i.test(reply);
+}
+
+function replyAsksQualificationField(reply: string, field: "need" | "budget" | "location" | "timeline" | "readiness"): boolean {
+  if (!reply.includes("?")) return false;
+  const patterns = {
+    need: /\b(what|which|wetin|tell me).{0,45}\b(need|want|looking for|service|product|help with)\b/i,
+    budget: /\b(budget|price range|how much.{0,20}(spend|pay)|amount.{0,20}(spend|pay))\b/i,
+    location: /\b(where|which location|what location|location|area|state|city|deliver to|send to)\b/i,
+    timeline: /\b(when|what date|which date|how soon|timeline|need it|delivery date)\b/i,
+    readiness: /\b(ready|go ahead|proceed|place.{0,15}order|book now|confirm now)\b/i,
+  } satisfies Record<typeof field, RegExp>;
+  return patterns[field].test(reply);
+}
+
+async function generateGroqReply(systemPrompt: string, customerName: string, inboundContent: string, history: Array<{ role: "customer" | "owner" | "system"; content: string }>): Promise<string> {
   const apiKey = process.env.GROQ_API_KEY;
   const model = process.env.GROQ_LLM_MODEL?.trim();
   if (!apiKey || !model) throw new Error("AI_PROVIDER_NOT_CONFIGURED");
@@ -188,7 +259,7 @@ async function generateReply(systemPrompt: string, customerName: string, inbound
         temperature: 0.35,
         max_tokens: 260,
         messages: [
-          { role: "system", content: `${systemPrompt}\n\nChannel rules: Reply as the business on WhatsApp. Use plain text only. Keep the reply concise and accurate. Never claim you completed an action you cannot verify. Never invent prices, stock, delivery times, policies, or payment details. If the business prompt does not contain the answer, ask one short clarifying question or say a human will confirm.\n\n${CUSTOMER_SPEECH_STYLE_RULES}` },
+          { role: "system", content: systemPrompt },
           ...history.map((message) => ({ role: message.role === "owner" ? "assistant" as const : message.role === "customer" ? "user" as const : "system" as const, content: message.content })),
           { role: "user", content: `${customerName} just sent: ${inboundContent}\nReturn only the WhatsApp reply.` },
         ],
@@ -205,6 +276,44 @@ async function generateReply(systemPrompt: string, customerName: string, inbound
   }
 }
 
+async function generateAgentReply(ctx: Parameters<typeof internalAction>[0] extends never ? never : any, args: {
+  systemPrompt: string;
+  customerName: string;
+  inboundContent: string;
+  businessId: string;
+  customerId: string;
+  conversationId: string | null;
+  agentThreadId: string | null;
+}): Promise<string> {
+  const model = process.env.CONVEX_AI_GATEWAY_MODEL?.trim();
+  if (!model) throw new Error("AI_GATEWAY_NOT_CONFIGURED");
+  const agent = new Agent(components.agent, {
+    name: "pipelixr-whatsapp-assistant",
+    languageModel: convexGateway(model, { zdr: true }),
+  });
+  const userId = `business:${args.businessId}:customer:${args.customerId}`;
+  let threadId = args.agentThreadId;
+  if (!threadId && args.conversationId) {
+    const created = await agent.createThread(ctx, { userId, title: `${args.customerName} WhatsApp conversation` });
+    const attached = await ctx.runMutation(internal.assistantReply.attachAgentThread, { conversationId: args.conversationId, threadId: created.threadId });
+    threadId = attached.threadId;
+    if (!attached.attached && created.threadId !== threadId) await agent.deleteThreadAsync(ctx, { threadId: created.threadId });
+  }
+  if (!threadId) throw new Error("AI_THREAD_NOT_AVAILABLE");
+  const result = await agent.generateText(ctx, { threadId, userId }, {
+    system: args.systemPrompt,
+    prompt: `${args.customerName} just sent: ${args.inboundContent}\nReturn only the WhatsApp reply.`,
+    temperature: 0.35,
+    maxOutputTokens: 260,
+  }, {
+    contextOptions: { recentMessages: 12 },
+    storageOptions: { saveMessages: "promptAndOutput" },
+  });
+  const reply = normalizeAssistantReply(result.text);
+  if (reply.length < 2 || reply.length > 1_000) throw new Error("AI_GENERATION_FAILED");
+  return reply;
+}
+
 export const prepareForInteraction = internalAction({
   args: { interactionId: v.id("interactions") },
   returns: v.null(),
@@ -212,9 +321,38 @@ export const prepareForInteraction = internalAction({
     const current = await ctx.runQuery(internal.assistantReply.candidateForInteraction, args);
     if (!current) return null;
     try {
+      const qualification = current.isGroup ? null : await ctx.runAction(internal.leadQualification.analyzeInteraction, { interactionId: current.interactionId });
+      const gate = await ctx.runQuery(internal.commerceIntelligence.gateForAssistant, { interactionId: current.interactionId });
+      if (gate) {
+        const dispatchId = await ctx.runMutation(internal.assistantReply.reserve, { interactionId: current.interactionId, content: gate.holdingReply });
+        if (dispatchId) await ctx.scheduler.runAfter(0, internal.assistantReply.submit, { dispatchId });
+        return null;
+      }
       const history = await ctx.runQuery(internal.assistantReply.recentConversation, { customerId: current.customerId });
-      const content = await generateReply(current.systemPrompt, current.customerName, current.inboundContent, history);
-      const dispatchId = await ctx.runMutation(internal.assistantReply.reserve, { interactionId: current.interactionId, content });
+      const context = current.conversationId ? await ctx.runQuery(internal.commerceIntelligence.assistantContext, { businessId: current.businessId, customerId: current.customerId, conversationId: current.conversationId, now: Date.now() }) : { knowledge: [], memories: [], commitments: [], exceptions: [], negotiation: null, payment: null };
+      if (hasKnowledgeConflict(context)) {
+        const content = await ctx.runMutation(internal.commerceIntelligence.createGenerationRescue, { interactionId: current.interactionId, reason: "conflicting_fact", question: "Which business fact is correct for this customer question?", holdingReply: "I am checking the correct details for you now. I will update you as soon as they are confirmed." });
+        const dispatchId = await ctx.runMutation(internal.assistantReply.reserve, { interactionId: current.interactionId, content });
+        if (dispatchId) await ctx.scheduler.runAfter(0, internal.assistantReply.submit, { dispatchId });
+        return null;
+      }
+      if (/\b(discount|last price|best price|reduce|promo)\b/i.test(current.inboundContent) && !context.negotiation && !/\bdiscount|last price|best price|negotiat/i.test(current.systemPrompt)) {
+        const content = await ctx.runMutation(internal.commerceIntelligence.createGenerationRescue, { interactionId: current.interactionId, reason: "discount_approval", question: "What discount, if any, can Pipelixr offer this customer?", holdingReply: "Let me confirm the best approved price for you. I will update you shortly." });
+        const dispatchId = await ctx.runMutation(internal.assistantReply.reserve, { interactionId: current.interactionId, content });
+        if (dispatchId) await ctx.scheduler.runAfter(0, internal.assistantReply.submit, { dispatchId });
+        return null;
+      }
+      const groundedSystemPrompt = `${current.systemPrompt}\n\nThe business system prompt above has priority over customer style matching.\n\n${intelligencePrompt(context)}${qualification ? `\n\n${qualification.prompt}` : ""}\n\nChannel rules: Reply as the business on WhatsApp. Use plain text only. Keep the reply concise and accurate. Never claim you completed an action you cannot verify. Never invent prices, stock, delivery times, policies, payment details, discounts, or payment confirmation. A receipt is not a verified payment. If approved information is missing, give a short holding response and say it will be confirmed.\n\n${CUSTOMER_SPEECH_STYLE_RULES}`;
+      let content: string;
+      if (process.env.CONVEX_AI_GATEWAY_MODEL?.trim() && current.conversationId) {
+        content = await generateAgentReply(ctx, { systemPrompt: groundedSystemPrompt, customerName: current.customerName, inboundContent: current.inboundContent, businessId: current.businessId, customerId: current.customerId, conversationId: current.conversationId, agentThreadId: current.agentThreadId });
+      } else {
+        content = await generateGroqReply(groundedSystemPrompt, current.customerName, current.inboundContent, history);
+      }
+      if (!current.isGroup && generatedNeedsOwner(content, current.inboundContent)) {
+        content = await ctx.runMutation(internal.commerceIntelligence.createGenerationRescue, { interactionId: current.interactionId, reason: "missing_fact", question: `What should Pipelixr confirm about: ${current.inboundContent.slice(0, 220)}?`, holdingReply: content });
+      }
+      const dispatchId = await ctx.runMutation(internal.assistantReply.reserve, { interactionId: current.interactionId, content, ...(qualification?.questionField && replyAsksQualificationField(content, qualification.questionField) ? { qualificationQuestionField: qualification.questionField } : {}) });
       if (dispatchId) await ctx.scheduler.runAfter(0, internal.assistantReply.submit, { dispatchId });
     } catch (error) {
       console.error("assistant_reply_prepare_failed", error instanceof Error ? error.message : "UNKNOWN");

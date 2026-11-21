@@ -18,6 +18,7 @@ import type * as auth from "../auth.js";
 import type * as businessProfile from "../businessProfile.js";
 import type * as businesses from "../businesses.js";
 import type * as cloudinary from "../cloudinary.js";
+import type * as commerceIntelligence from "../commerceIntelligence.js";
 import type * as communityEngine from "../communityEngine.js";
 import type * as connections from "../connections.js";
 import type * as crons from "../crons.js";
@@ -32,10 +33,12 @@ import type * as http from "../http.js";
 import type * as imageAnalysis from "../imageAnalysis.js";
 import type * as ingestion from "../ingestion.js";
 import type * as interactions from "../interactions.js";
+import type * as leadQualification from "../leadQualification.js";
 import type * as lib_assistantStyle from "../lib/assistantStyle.js";
 import type * as lib_authentication from "../lib/authentication.js";
 import type * as lib_authorization from "../lib/authorization.js";
 import type * as lib_classifier from "../lib/classifier.js";
+import type * as lib_commerceIntelligence from "../lib/commerceIntelligence.js";
 import type * as lib_crypto from "../lib/crypto.js";
 import type * as lib_events from "../lib/events.js";
 import type * as lib_evolution from "../lib/evolution.js";
@@ -77,6 +80,7 @@ declare const fullApi: ApiFromModules<{
   businessProfile: typeof businessProfile;
   businesses: typeof businesses;
   cloudinary: typeof cloudinary;
+  commerceIntelligence: typeof commerceIntelligence;
   communityEngine: typeof communityEngine;
   connections: typeof connections;
   crons: typeof crons;
@@ -91,10 +95,12 @@ declare const fullApi: ApiFromModules<{
   imageAnalysis: typeof imageAnalysis;
   ingestion: typeof ingestion;
   interactions: typeof interactions;
+  leadQualification: typeof leadQualification;
   "lib/assistantStyle": typeof lib_assistantStyle;
   "lib/authentication": typeof lib_authentication;
   "lib/authorization": typeof lib_authorization;
   "lib/classifier": typeof lib_classifier;
+  "lib/commerceIntelligence": typeof lib_commerceIntelligence;
   "lib/crypto": typeof lib_crypto;
   "lib/events": typeof lib_events;
   "lib/evolution": typeof lib_evolution;
@@ -146,4 +152,6 @@ export declare const internal: FilterApi<
   FunctionReference<any, "internal">
 >;
 
-export declare const components: {};
+export declare const components: {
+  agent: import("@convex-dev/agent/_generated/component.js").ComponentApi<"agent">;
+};

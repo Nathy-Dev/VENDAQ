@@ -13,6 +13,7 @@ import FollowUpRules from "./WorkspaceFollowUpRules";
 import WorkspaceHealth from "./WorkspaceHealth";
 import BusinessAssistantSettings from "./BusinessAssistantSettings";
 import WorkspaceGroups from "./WorkspaceGroups";
+import BusinessKnowledgeSettings from "./BusinessKnowledgeSettings";
 import styles from "./FoundationWorkspace.module.css";
 
 export { default as ConnectionPanel } from "./WorkspaceConnection";
@@ -22,6 +23,7 @@ const sections = [
   { value: "general", label: "General" },
   { value: "connection", label: "Connection" },
   { value: "assistant", label: "Business AI" },
+  { value: "knowledge", label: "Business knowledge" },
   { value: "groups", label: "Groups & communities" },
   { value: "rules", label: "Follow-up rules" },
   { value: "privacy", label: "Privacy & health" },
@@ -39,6 +41,7 @@ export default function WorkspaceSettings({ workspace }: { workspace: Workspace 
           {section === "general" && <GeneralSettings workspace={workspace} />}
           {section === "connection" && <ConnectionPanel workspace={workspace} />}
           {section === "assistant" && <BusinessAssistantSettings workspace={workspace} />}
+          {section === "knowledge" && <BusinessKnowledgeSettings workspace={workspace} />}
           {section === "groups" && <WorkspaceGroups workspace={workspace} />}
           {section === "rules" && <FollowUpRules workspace={workspace} />}
           {section === "privacy" && <WorkspaceHealth workspace={workspace} />}

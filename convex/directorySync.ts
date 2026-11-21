@@ -184,7 +184,7 @@ export const sync = internalAction({
       }));
       const rawMappings = accountResults.flatMap(providerIdentityMappings);
       const mappings = await Promise.all(rawMappings.map(async (mapping) => ({ ...mapping, canonicalIdentityKey: await identityDigest(authorized.businessId, mapping.canonicalJid) })));
-      const relevantJids = new Set([...capturedJids.filter((jid) => jid.endsWith("@s.whatsapp.net")), ...mappings.map((mapping) => mapping.canonicalJid)]);
+      const relevantJids = new Set([...capturedJids.filter((jid: string) => jid.endsWith("@s.whatsapp.net")), ...mappings.map((mapping) => mapping.canonicalJid)]);
       const contacts = allContacts.filter((contact) => relevantJids.has(contact.jid));
       await ctx.runMutation(internal.directorySync.apply, { businessId: authorized.businessId, contacts, mappings, groups });
       await ctx.runMutation(internal.directorySync.markSucceeded, { sessionId: authorized.sessionId, generation: authorized.generation, syncedAt: Date.now() });

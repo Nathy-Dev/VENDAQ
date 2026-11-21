@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { internalMutation } from "./_generated/server";
-import { internal } from "./_generated/api";
+import { components, internal } from "./_generated/api";
 import { foundationPolicy, logEvent } from "./lib/policy";
 
 export const cancelCustomerTasks = internalMutation({
@@ -78,12 +78,27 @@ export const deleteCustomerBatch = internalMutation({
     }
     const labels = await ctx.db.query("messageLabels").withIndex("by_customer", (builder) => builder.eq("customerId", job.customerId)).take(foundationPolicy().batchSize);
     for (const label of labels) await ctx.db.delete(label._id);
+    const memoryBatches = await Promise.all((["observed", "verified", "disputed", "forgotten"] as const).map((state) => ctx.db.query("customerMemories").withIndex("by_customer_state_updated", (builder) => builder.eq("customerId", job.customerId).eq("state", state)).take(foundationPolicy().batchSize)));
+    for (const memory of memoryBatches.flat()) await ctx.db.delete(memory._id);
+    const commitmentBatches = await Promise.all((["open", "completed", "cancelled", "overdue"] as const).map((state) => ctx.db.query("conversationCommitments").withIndex("by_customer_state_updated", (builder) => builder.eq("customerId", job.customerId).eq("state", state)).take(foundationPolicy().batchSize)));
+    for (const commitment of commitmentBatches.flat()) await ctx.db.delete(commitment._id);
+    const exceptionBatches = await Promise.all((["open", "waiting_on_business", "waiting_on_customer", "resolved", "dismissed"] as const).map((state) => ctx.db.query("commerceExceptions").withIndex("by_customer_state_updated", (builder) => builder.eq("customerId", job.customerId).eq("state", state)).take(foundationPolicy().batchSize)));
+    for (const exception of exceptionBatches.flat()) await ctx.db.delete(exception._id);
+    const proofs = await ctx.db.query("paymentProofs").withIndex("by_customer_created", (builder) => builder.eq("customerId", job.customerId)).take(foundationPolicy().batchSize);
+    for (const proof of proofs) await ctx.db.delete(proof._id);
+    const rescueBatches = await Promise.all((["open", "answered", "expired", "cancelled"] as const).map((state) => ctx.db.query("ownerRescueRequests").withIndex("by_customer_state", (builder) => builder.eq("customerId", job.customerId).eq("state", state)).take(foundationPolicy().batchSize)));
+    for (const rescue of rescueBatches.flat()) await ctx.db.delete(rescue._id);
     const actionEvents = await ctx.db.query("sellerActionEvents").withIndex("by_customer_time", (builder) => builder.eq("customerId", job.customerId)).take(foundationPolicy().batchSize);
     for (const actionEvent of actionEvents) await ctx.db.delete(actionEvent._id);
     const attributions = await ctx.db.query("revenueAttributions").withIndex("by_customer", (builder) => builder.eq("customerId", job.customerId)).take(foundationPolicy().batchSize);
     for (const attribution of attributions) await ctx.db.delete(attribution._id);
     const orders = await ctx.db.query("orders").withIndex("by_customer", (builder) => builder.eq("customerId", job.customerId)).take(foundationPolicy().batchSize);
     for (const order of orders) await ctx.db.delete(order._id);
+    const conversations = await ctx.db.query("conversations").withIndex("by_customer", (builder) => builder.eq("customerId", job.customerId)).take(10);
+    const outcomes = (await Promise.all(conversations.map((conversation) => ctx.db.query("conversationOutcomes").withIndex("by_conversation_occurred", (builder) => builder.eq("conversationId", conversation._id)).take(foundationPolicy().batchSize)))).flat();
+    for (const outcome of outcomes) await ctx.db.delete(outcome._id);
+    const qualifications = await ctx.db.query("leadQualifications").withIndex("by_customer_updated", (builder) => builder.eq("customerId", job.customerId)).take(foundationPolicy().batchSize);
+    for (const qualification of qualifications) await ctx.db.delete(qualification._id);
     // Clear queued payloads as well as displayed messages; retain only minimized
     // dedup tombstones so an already-accepted retry cannot recreate the contact.
     const identityKey = customer.identityKey;
@@ -93,13 +108,15 @@ export const deleteCustomerBatch = internalMutation({
     for (const receipt of receipts) await ctx.db.delete(receipt._id);
     const views = await ctx.db.query("statusObservations").withIndex("by_business_identity", (builder) => builder.eq("businessId", job.businessId).eq("viewerIdentityKey", identityKey)).take(foundationPolicy().batchSize);
     for (const view of views) await ctx.db.delete(view._id);
-    if ([messages, tasks, opportunities, communityOpportunities, labels, actionEvents, attributions, orders, events, receipts, views].some((batch) => batch.length === foundationPolicy().batchSize)) {
+    if ([messages, tasks, opportunities, communityOpportunities, labels, actionEvents, attributions, orders, proofs, outcomes, qualifications, events, receipts, views, ...memoryBatches, ...commitmentBatches, ...exceptionBatches, ...rescueBatches].some((batch) => batch.length === foundationPolicy().batchSize)) {
       const scheduledId = await ctx.scheduler.runAfter(0, internal.maintenance.deleteCustomerBatch, args);
       await ctx.db.patch(job._id, { scheduledId, attempts: 1, dueAt: Date.now() });
       return null;
     }
-    const conversations = await ctx.db.query("conversations").withIndex("by_customer", (builder) => builder.eq("customerId", job.customerId)).take(10);
-    for (const conversation of conversations) await ctx.db.delete(conversation._id);
+    for (const conversation of conversations) {
+      if (conversation.agentThreadId) await ctx.runMutation(components.agent.threads.deleteAllForThreadIdAsync, { threadId: conversation.agentThreadId });
+      await ctx.db.delete(conversation._id);
+    }
     await ctx.db.patch(job._id, { state: "done", completedAt: Date.now() });
     await ctx.db.insert("foundationAudit", { businessId: job.businessId, kind: "customer_deleted", correlationId: job._id, at: Date.now(), expiresAt: Date.now() + foundationPolicy().eventRetentionDays * 86400000 });
     return null;
@@ -131,6 +148,8 @@ export const sweep = internalMutation({
     }
     const dueOpportunities = await ctx.db.query("missedRevenueOpportunities").withIndex("by_state_due", (builder) => builder.eq("state", "pending").lte("dueAt", now)).take(batchSize);
     for (const opportunity of dueOpportunities) await ctx.scheduler.runAfter(0, internal.readOnly.promoteOpportunity, { opportunityId: opportunity._id });
+    const overdueCommitments = await ctx.db.query("conversationCommitments").withIndex("by_state_due", (builder) => builder.eq("state", "open").lte("dueAt", now)).take(batchSize);
+    for (const commitment of overdueCommitments) await ctx.db.patch(commitment._id, { state: "overdue", updatedAt: now });
     const healthDue = await ctx.db.query("whatsappSessions").withIndex("by_health_due", (builder) => builder.lte("nextHealthAt", now)).take(batchSize);
     for (const session of healthDue) {
       await ctx.db.patch(session._id, { nextHealthAt: now + foundationPolicy().healthIntervalMs, ...((session.qrExpiresAt ?? Infinity) <= now ? { qrCiphertext: undefined, qrExpiresAt: undefined } : {}) });
@@ -175,6 +194,14 @@ export const sweep = internalMutation({
       }
       const dispatch = await ctx.db.query("assistantDispatches").withIndex("by_interaction", (builder) => builder.eq("interactionId", message._id)).unique();
       if (dispatch) await ctx.db.delete(dispatch._id);
+      const commitment = await ctx.db.query("conversationCommitments").withIndex("by_source_interaction", (builder) => builder.eq("sourceInteractionId", message._id)).unique();
+      if (commitment) await ctx.db.delete(commitment._id);
+      const exception = await ctx.db.query("commerceExceptions").withIndex("by_interaction", (builder) => builder.eq("interactionId", message._id)).unique();
+      if (exception) await ctx.db.delete(exception._id);
+      const proof = await ctx.db.query("paymentProofs").withIndex("by_interaction", (builder) => builder.eq("interactionId", message._id)).unique();
+      if (proof) await ctx.db.delete(proof._id);
+      const rescues = await ctx.db.query("ownerRescueRequests").withIndex("by_interaction", (builder) => builder.eq("interactionId", message._id)).take(20);
+      for (const rescue of rescues) await ctx.db.delete(rescue._id);
       const task = await ctx.db.query("followUpTasks").withIndex("by_trigger_interaction", (builder) => builder.eq("triggerInteractionId", message._id)).unique();
       if (task) await ctx.db.delete(task._id);
       await ctx.db.delete(message._id);
@@ -199,7 +226,19 @@ export const sweep = internalMutation({
       for (const attribution of attributions) await ctx.db.delete(attribution._id);
       const orders = await ctx.db.query("orders").withIndex("by_customer", (builder) => builder.eq("customerId", customer._id)).take(batchSize);
       for (const order of orders) await ctx.db.delete(order._id);
-      if ([actionEvents, attributions, orders].some((batch) => batch.length === batchSize)) continue;
+      const memoryBatches = await Promise.all((["observed", "verified", "disputed", "forgotten"] as const).map((state) => ctx.db.query("customerMemories").withIndex("by_customer_state_updated", (builder) => builder.eq("customerId", customer._id).eq("state", state)).take(batchSize)));
+      for (const memory of memoryBatches.flat()) await ctx.db.delete(memory._id);
+      const commitmentBatches = await Promise.all((["open", "completed", "cancelled", "overdue"] as const).map((state) => ctx.db.query("conversationCommitments").withIndex("by_customer_state_updated", (builder) => builder.eq("customerId", customer._id).eq("state", state)).take(batchSize)));
+      for (const commitment of commitmentBatches.flat()) await ctx.db.delete(commitment._id);
+      const exceptionBatches = await Promise.all((["open", "waiting_on_business", "waiting_on_customer", "resolved", "dismissed"] as const).map((state) => ctx.db.query("commerceExceptions").withIndex("by_customer_state_updated", (builder) => builder.eq("customerId", customer._id).eq("state", state)).take(batchSize)));
+      for (const exception of exceptionBatches.flat()) await ctx.db.delete(exception._id);
+      const proofs = await ctx.db.query("paymentProofs").withIndex("by_customer_created", (builder) => builder.eq("customerId", customer._id)).take(batchSize);
+      for (const proof of proofs) await ctx.db.delete(proof._id);
+      const rescueBatches = await Promise.all((["open", "answered", "expired", "cancelled"] as const).map((state) => ctx.db.query("ownerRescueRequests").withIndex("by_customer_state", (builder) => builder.eq("customerId", customer._id).eq("state", state)).take(batchSize)));
+      for (const rescue of rescueBatches.flat()) await ctx.db.delete(rescue._id);
+      const qualifications = await ctx.db.query("leadQualifications").withIndex("by_customer_updated", (builder) => builder.eq("customerId", customer._id)).take(batchSize);
+      for (const qualification of qualifications) await ctx.db.delete(qualification._id);
+      if ([actionEvents, attributions, orders, proofs, qualifications, ...memoryBatches, ...commitmentBatches, ...exceptionBatches, ...rescueBatches].some((batch) => batch.length === batchSize)) continue;
       const conversation = await ctx.db.query("conversations").withIndex("by_customer", (builder) => builder.eq("customerId", customer._id)).unique();
       if (conversation) await ctx.db.delete(conversation._id);
       await ctx.db.delete(customer._id);

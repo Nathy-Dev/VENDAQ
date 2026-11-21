@@ -53,6 +53,15 @@ export default defineSchema({
     businessSystemPrompt: v.optional(v.string()),
     businessSystemPromptUpdatedAt: v.optional(v.number()),
     businessSystemPromptGeneratedAt: v.optional(v.number()),
+    leadQualificationEnabled: v.optional(v.boolean()),
+    leadQualificationCriteria: v.optional(v.string()),
+    leadQualificationRequiredFields: v.optional(v.array(v.union(
+      v.literal("need"),
+      v.literal("budget"),
+      v.literal("location"),
+      v.literal("timeline"),
+      v.literal("readiness"),
+    ))),
     lastDirectorySyncAt: v.optional(v.number()),
     // Status-to-Cash: template used when nudging a status viewer who never DMs.
     // Supports the placeholder [Customer Name].
@@ -485,6 +494,13 @@ export default defineSchema({
     target: v.string(),
     isGroup: v.boolean(),
     content: v.string(),
+    qualificationQuestionField: v.optional(v.union(
+      v.literal("need"),
+      v.literal("budget"),
+      v.literal("location"),
+      v.literal("timeline"),
+      v.literal("readiness"),
+    )),
     state: v.union(
       v.literal("reserved"),
       v.literal("submitting"),
@@ -583,6 +599,9 @@ export default defineSchema({
     businessId: v.id("businesses"), customerId: v.id("customers"), identityKey: v.string(),
     revision: v.number(), lastEventAt: v.number(), lastInboundAt: v.optional(v.number()),
     lastOwnerAt: v.optional(v.number()), messageCount: v.number(),
+    // Durable model history lives in the Agent component. This optional link is
+    // additive so existing production conversations remain valid.
+    agentThreadId: v.optional(v.string()),
   }).index("by_business_identity", ["businessId", "identityKey"])
     .index("by_business_activity", ["businessId", "lastEventAt"])
     .index("by_customer", ["customerId"]),
@@ -691,4 +710,208 @@ export default defineSchema({
   }).index("by_interaction", ["interactionId"])
     .index("by_business_time", ["businessId", "labeledAt"])
     .index("by_customer", ["customerId"]),
+
+  businessKnowledge: defineTable({
+    businessId: v.id("businesses"),
+    title: v.string(),
+    kind: v.union(
+      v.literal("business_fact"),
+      v.literal("product"),
+      v.literal("price"),
+      v.literal("inventory"),
+      v.literal("delivery"),
+      v.literal("payment"),
+      v.literal("returns"),
+      v.literal("warranty"),
+      v.literal("policy"),
+      v.literal("faq"),
+    ),
+    content: v.string(),
+    sourceType: v.union(v.literal("owner"), v.literal("system_prompt"), v.literal("catalog"), v.literal("integration"), v.literal("conversation")),
+    sourceRef: v.optional(v.string()),
+    status: v.union(v.literal("active"), v.literal("needs_review"), v.literal("archived")),
+    confidence: v.number(),
+    effectiveAt: v.number(),
+    expiresAt: v.optional(v.number()),
+    verifiedAt: v.optional(v.number()),
+    verifiedBy: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_business_status_updated", ["businessId", "status", "updatedAt"])
+    .index("by_business_kind_status", ["businessId", "kind", "status"])
+    .index("by_business_source", ["businessId", "sourceType", "sourceRef"]),
+
+  customerMemories: defineTable({
+    businessId: v.id("businesses"),
+    customerId: v.id("customers"),
+    key: v.string(),
+    value: v.string(),
+    category: v.union(v.literal("preference"), v.literal("identity"), v.literal("purchase"), v.literal("delivery"), v.literal("support"), v.literal("relationship")),
+    sourceInteractionId: v.optional(v.id("interactions")),
+    state: v.union(v.literal("observed"), v.literal("verified"), v.literal("disputed"), v.literal("forgotten")),
+    confidence: v.number(),
+    lastObservedAt: v.number(),
+    verifiedAt: v.optional(v.number()),
+    expiresAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_customer_state_updated", ["customerId", "state", "updatedAt"])
+    .index("by_customer_key", ["customerId", "key"])
+    .index("by_business_state_updated", ["businessId", "state", "updatedAt"]),
+
+  conversationCommitments: defineTable({
+    businessId: v.id("businesses"),
+    customerId: v.id("customers"),
+    conversationId: v.id("conversations"),
+    sourceInteractionId: v.id("interactions"),
+    actor: v.union(v.literal("customer"), v.literal("business")),
+    kind: v.union(v.literal("follow_up"), v.literal("stock_check"), v.literal("price_check"), v.literal("payment"), v.literal("delivery"), v.literal("refund"), v.literal("replacement"), v.literal("appointment"), v.literal("other")),
+    summary: v.string(),
+    dueAt: v.optional(v.number()),
+    state: v.union(v.literal("open"), v.literal("completed"), v.literal("cancelled"), v.literal("overdue")),
+    confidence: v.number(),
+    assignedTo: v.optional(v.string()),
+    completionInteractionId: v.optional(v.id("interactions")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    completedAt: v.optional(v.number()),
+  }).index("by_business_state_due", ["businessId", "state", "dueAt"])
+    .index("by_state_due", ["state", "dueAt"])
+    .index("by_customer_state_updated", ["customerId", "state", "updatedAt"])
+    .index("by_source_interaction", ["sourceInteractionId"])
+    .index("by_conversation_state", ["conversationId", "state", "createdAt"]),
+
+  paymentProofs: defineTable({
+    businessId: v.id("businesses"),
+    customerId: v.id("customers"),
+    conversationId: v.id("conversations"),
+    interactionId: v.id("interactions"),
+    orderId: v.optional(v.id("orders")),
+    mediaId: v.optional(v.string()),
+    mediaUrl: v.optional(v.string()),
+    extractedAmount: v.optional(v.number()),
+    extractedReference: v.optional(v.string()),
+    extractedBeneficiary: v.optional(v.string()),
+    extractedPaidAt: v.optional(v.number()),
+    duplicateFingerprint: v.optional(v.string()),
+    receiptState: v.union(v.literal("received"), v.literal("unreadable"), v.literal("review_required"), v.literal("rejected"), v.literal("matched")),
+    verificationState: v.union(v.literal("not_started"), v.literal("pending"), v.literal("verified"), v.literal("not_found"), v.literal("mismatch"), v.literal("unavailable")),
+    verificationProvider: v.optional(v.string()),
+    verificationReason: v.optional(v.string()),
+    verifiedAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_interaction", ["interactionId"])
+    .index("by_business_verification_updated", ["businessId", "verificationState", "updatedAt"])
+    .index("by_customer_created", ["customerId", "createdAt"])
+    .index("by_business_fingerprint", ["businessId", "duplicateFingerprint"]),
+
+  commerceExceptions: defineTable({
+    businessId: v.id("businesses"),
+    customerId: v.id("customers"),
+    conversationId: v.id("conversations"),
+    interactionId: v.id("interactions"),
+    orderId: v.optional(v.id("orders")),
+    kind: v.union(v.literal("complaint"), v.literal("delay"), v.literal("out_of_stock"), v.literal("payment_failure"), v.literal("wrong_item"), v.literal("damaged_item"), v.literal("refund"), v.literal("return"), v.literal("warranty"), v.literal("delivery_fee"), v.literal("incorrect_information"), v.literal("other")),
+    severity: v.union(v.literal("low"), v.literal("normal"), v.literal("high"), v.literal("critical")),
+    state: v.union(v.literal("open"), v.literal("waiting_on_business"), v.literal("waiting_on_customer"), v.literal("resolved"), v.literal("dismissed")),
+    summary: v.string(),
+    proposedResolution: v.optional(v.string()),
+    approvedResolution: v.optional(v.string()),
+    ownerQuestion: v.optional(v.string()),
+    dueAt: v.optional(v.number()),
+    resolutionInteractionId: v.optional(v.id("interactions")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    resolvedAt: v.optional(v.number()),
+  }).index("by_business_state_severity", ["businessId", "state", "severity"])
+    .index("by_customer_state_updated", ["customerId", "state", "updatedAt"])
+    .index("by_interaction", ["interactionId"]),
+
+  ownerRescueRequests: defineTable({
+    businessId: v.id("businesses"),
+    customerId: v.id("customers"),
+    conversationId: v.id("conversations"),
+    interactionId: v.id("interactions"),
+    exceptionId: v.optional(v.id("commerceExceptions")),
+    reason: v.union(v.literal("missing_fact"), v.literal("conflicting_fact"), v.literal("policy_approval"), v.literal("discount_approval"), v.literal("payment_review"), v.literal("complaint"), v.literal("high_risk"), v.literal("other")),
+    question: v.string(),
+    customerHoldingReply: v.string(),
+    contextSummary: v.string(),
+    state: v.union(v.literal("open"), v.literal("answered"), v.literal("expired"), v.literal("cancelled")),
+    ownerAnswer: v.optional(v.string()),
+    answeredAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    expiresAt: v.number(),
+  }).index("by_business_state_created", ["businessId", "state", "createdAt"])
+    .index("by_interaction", ["interactionId"])
+    .index("by_customer_state", ["customerId", "state", "createdAt"]),
+
+  negotiationPolicies: defineTable({
+    businessId: v.id("businesses"),
+    name: v.string(),
+    scope: v.union(v.literal("all"), v.literal("category"), v.literal("product")),
+    scopeRef: v.optional(v.string()),
+    minimumPrice: v.optional(v.number()),
+    maximumDiscountPercent: v.number(),
+    freeDeliveryThreshold: v.optional(v.number()),
+    allowedBundles: v.array(v.string()),
+    requireApprovalBelow: v.optional(v.number()),
+    isActive: v.boolean(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_business_active_scope", ["businessId", "isActive", "scope"]),
+
+  leadQualifications: defineTable({
+    businessId: v.id("businesses"),
+    customerId: v.id("customers"),
+    conversationId: v.id("conversations"),
+    status: v.union(v.literal("qualifying"), v.literal("qualified"), v.literal("not_qualified"), v.literal("opted_out"), v.literal("stalled")),
+    answers: v.array(v.object({
+      field: v.union(v.literal("need"), v.literal("budget"), v.literal("location"), v.literal("timeline"), v.literal("readiness")),
+      value: v.string(),
+      confidence: v.number(),
+      sourceInteractionId: v.id("interactions"),
+      updatedAt: v.number(),
+    })),
+    missingFields: v.array(v.union(v.literal("need"), v.literal("budget"), v.literal("location"), v.literal("timeline"), v.literal("readiness"))),
+    questionAttempts: v.array(v.object({
+      field: v.union(v.literal("need"), v.literal("budget"), v.literal("location"), v.literal("timeline"), v.literal("readiness")),
+      count: v.number(),
+      lastAskedAt: v.number(),
+    })),
+    score: v.number(),
+    fitState: v.union(v.literal("fit"), v.literal("uncertain"), v.literal("not_fit")),
+    fitConfidence: v.number(),
+    fitReason: v.optional(v.string()),
+    lastAssessedInteractionId: v.id("interactions"),
+    lastQuestionField: v.optional(v.union(v.literal("need"), v.literal("budget"), v.literal("location"), v.literal("timeline"), v.literal("readiness"))),
+    lastQuestionAt: v.optional(v.number()),
+    qualifiedAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_conversation", ["conversationId"])
+    .index("by_customer_updated", ["customerId", "updatedAt"])
+    .index("by_business_status_updated", ["businessId", "status", "updatedAt"]),
+
+  conversationOutcomes: defineTable({
+    businessId: v.id("businesses"),
+    customerId: v.id("customers"),
+    conversationId: v.id("conversations"),
+    outcome: v.union(v.literal("paid"), v.literal("booked"), v.literal("qualified"), v.literal("abandoned"), v.literal("lost_price"), v.literal("lost_stock"), v.literal("lost_delivery"), v.literal("resolved_support"), v.literal("unresolved_support")),
+    value: v.optional(v.number()),
+    objection: v.optional(v.string()),
+    decisiveInteractionId: v.optional(v.id("interactions")),
+    sourceCampaignId: v.optional(v.string()),
+    sourceAdSetId: v.optional(v.string()),
+    sourceAdId: v.optional(v.string()),
+    sourceCreativeId: v.optional(v.string()),
+    recordedBy: v.union(v.literal("system"), v.literal("owner"), v.literal("integration")),
+    occurredAt: v.number(),
+    createdAt: v.number(),
+  }).index("by_business_occurred", ["businessId", "occurredAt"])
+    .index("by_business_outcome_occurred", ["businessId", "outcome", "occurredAt"])
+    .index("by_conversation_occurred", ["conversationId", "occurredAt"])
+    .index("by_ad_occurred", ["businessId", "sourceAdId", "occurredAt"]),
 });

@@ -23,11 +23,7 @@ const COLUMN_LABELS: Record<string, string> = {
 };
 
 export default function LeadPipeline({ orders, isLoading }: LeadPipelineProps) {
-  const [now, setNow] = React.useState<number>(0);
-
-  React.useEffect(() => {
-    setNow(Date.now());
-  }, []);
+  const [now] = React.useState(() => Date.now());
 
   const getTemperature = (order: Order, currentTime: number): Temperature => {
     if (order.status === "awaiting_payment" || order.totalAmount > 20000) return "hot";
