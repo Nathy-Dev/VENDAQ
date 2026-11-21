@@ -229,7 +229,7 @@ describe("authenticated WhatsApp ingestion", () => {
       return new Response(null, { status: 404 });
     }));
 
-    await webhook(harness, message(source, { id: "image-reply-1", content: { imageMessage: { url: "https://private-media.test/image", mimetype: "image/png", mediaKey: "synthetic-image-key", caption: "Do you have this?" } } }));
+    await webhook(harness, message(source, { id: "image-reply-1", content: { imageMessage: { URL: "https://private-media.test/image", directPath: "/private/image", mimetype: "image/png", mediaKey: [1, 2, 3, 4], fileEncSHA256: [5, 6, 7], fileSHA256: [8, 9, 10], caption: "Do you have this?" } } }));
     await drain(harness);
 
     const interactions = await harness.run((ctx) => ctx.db.query("interactions").collect());
@@ -245,6 +245,8 @@ describe("authenticated WhatsApp ingestion", () => {
     expect(outbound).toMatchObject({ content: "Yes, that is a blue short-sleeve shirt. Which size would you like?", messageType: "text" });
     expect(await harness.run((ctx) => ctx.db.query("assistantDispatches").collect())).toEqual([expect.objectContaining({ interactionId: inbound!._id, state: "accepted", providerMessageId: "provider-image-reply-1" })]);
     const visionRequest = requests.find((request) => request.url === "https://api.openai.com/v1/responses")!;
+    const providerDownloadRequest = requests.find((request) => request.url.endsWith("/message/downloadmedia"))!;
+    expect(JSON.parse(providerDownloadRequest.body as string)).toEqual({ message: { imageMessage: { URL: "https://private-media.test/image", directPath: "/private/image", mediaKey: [1, 2, 3, 4], mimetype: "image/png", fileEncSHA256: [5, 6, 7], fileSHA256: [8, 9, 10] } } });
     const visionBody = JSON.parse(visionRequest.body as string);
     expect(visionBody).toMatchObject({ model: "synthetic-vision-model", input: [{ role: "user", content: [{ type: "input_text" }, { type: "input_image", detail: "low" }] }] });
     expect(visionBody.input[0].content[1].image_url).toBe(`data:image/png;base64,${png.toString("base64")}`);

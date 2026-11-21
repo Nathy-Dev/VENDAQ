@@ -29,8 +29,9 @@ function groupName(data: Record<string, unknown>): string {
 
 function boundedMediaMessage(message: Record<string, unknown>): Record<string, unknown> {
   const allowed = [
-    "url", "directPath", "mediaKey", "mimetype", "mimeType", "fileEncSha256",
-    "fileSha256", "fileLength", "mediaKeyTimestamp", "height", "width", "viewOnce",
+    "URL", "url", "directPath", "mediaKey", "mimetype", "mimeType",
+    "fileEncSHA256", "fileEncSha256", "fileSHA256", "fileSha256",
+    "fileLength", "mediaKeyTimestamp", "height", "width", "viewOnce",
   ];
   const output: Record<string, unknown> = {};
   for (const key of allowed) {
@@ -38,6 +39,7 @@ function boundedMediaMessage(message: Record<string, unknown>): Record<string, u
     if (typeof value === "string" && value.length <= 8_192) output[key] = value;
     else if (typeof value === "number" && Number.isFinite(value)) output[key] = value;
     else if (typeof value === "boolean") output[key] = value;
+    else if (Array.isArray(value) && value.length <= 128 && value.every((entry) => Number.isInteger(entry) && entry >= 0 && entry <= 255)) output[key] = value;
   }
   return output;
 }
