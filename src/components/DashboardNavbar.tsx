@@ -111,7 +111,26 @@ export default function DashboardNavbar() {
       </aside>
       <header className={styles.mobileHeader}>
         <Link href="/dashboard" aria-label="Pipelixr home"><Brand /></Link>
-        <Link href="/settings" className={styles.iconButton} aria-label="Settings"><Settings size={23} strokeWidth={1.7} /></Link>
+        <nav className={styles.mobileActions} aria-label="Mobile account">
+          <Link
+            href="/billing"
+            className={`${styles.iconButton} ${pathname === "/billing" || pathname.startsWith("/billing/") ? styles.active : ""}`}
+            aria-label="Billing"
+            aria-current={pathname === "/billing" || pathname.startsWith("/billing/") ? "page" : undefined}
+            title="Billing"
+          >
+            <CreditCard size={23} strokeWidth={1.7} aria-hidden="true" />
+          </Link>
+          <Link
+            href="/settings"
+            className={`${styles.iconButton} ${pathname === "/settings" || pathname.startsWith("/settings/") ? styles.active : ""}`}
+            aria-label="Settings"
+            aria-current={pathname === "/settings" || pathname.startsWith("/settings/") ? "page" : undefined}
+            title="Settings"
+          >
+            <Settings size={23} strokeWidth={1.7} aria-hidden="true" />
+          </Link>
+        </nav>
       </header>
       <nav className={styles.bottomNav} aria-label="Mobile main">
         {mainNavigation.map((item) => navigationLink(item, true))}
