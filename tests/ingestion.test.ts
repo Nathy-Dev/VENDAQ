@@ -200,6 +200,133 @@ describe("authenticated WhatsApp ingestion", () => {
     expect(vi.mocked(fetch).mock.calls.map(([input]) => String(input))).not.toContain("https://provider.example.test/send/text");
   });
 
+  it("analyzes a one-to-one image privately and replies through the authorized assistant path", async () => {
+    const harness = createHarness();
+    const source = await tenant(harness, "image-reply");
+    await source.owner.mutation(api.businessProfile.save, {
+      businessId: source.businessId,
+      systemPrompt: "You represent Image Reply, a Nigerian fashion business. Answer only from verified business facts and the factual image analysis, never invent prices, stock, delivery details, discounts, payment confirmation, or policies, and ask one short clarifying question when needed.",
+      customerAutoReplyEnabled: true,
+      groupAutoReplyEnabled: false,
+    });
+    vi.stubEnv("FOUNDATION_PROVIDER_ENABLED", "true");
+    vi.stubEnv("EVOLUTION_GO_URL", "https://provider.example.test");
+    vi.stubEnv("EVOLUTION_GO_API_KEY", "synthetic-provider-key");
+    vi.stubEnv("OPENAI_API_KEY", "synthetic-openai-key");
+    vi.stubEnv("OPENAI_VISION_MODEL", "synthetic-vision-model");
+    vi.stubEnv("GROQ_API_KEY", "synthetic-groq-key");
+    vi.stubEnv("GROQ_LLM_MODEL", "synthetic-model");
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x01]);
+    const requests: Array<{ url: string; body: BodyInit | null | undefined }> = [];
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async (input, init?: RequestInit) => {
+      const url = String(input);
+      requests.push({ url, body: init?.body });
+      if (url.endsWith("/message/downloadmedia")) return Response.json({ data: { base64: png.toString("base64"), mimetype: "image/png" } });
+      if (url === "https://api.openai.com/v1/responses") return Response.json({ output: [{ content: [{ type: "output_text", text: "A blue short-sleeve shirt is shown. No price is visible. The customer appears to be asking about this product." }] }] });
+      if (url === "https://api.groq.com/openai/v1/chat/completions") return Response.json({ choices: [{ message: { content: "Yes, that is a blue short-sleeve shirt. Which size would you like?" } }] });
+      if (url.endsWith("/message/presence")) return Response.json({ message: "success" });
+      if (url.endsWith("/send/text")) return Response.json({ messageId: "provider-image-reply-1" });
+      return new Response(null, { status: 404 });
+    }));
+
+    await webhook(harness, message(source, { id: "image-reply-1", content: { imageMessage: { url: "https://private-media.test/image", mimetype: "image/png", mediaKey: "synthetic-image-key", caption: "Do you have this?" } } }));
+    await drain(harness);
+
+    const interactions = await harness.run((ctx) => ctx.db.query("interactions").collect());
+    const inbound = interactions.find((interaction) => interaction.role === "customer");
+    const outbound = interactions.find((interaction) => interaction.role === "owner");
+    expect(inbound).toMatchObject({
+      messageType: "image",
+      imageAnalysisState: "completed",
+      imageAnalysis: "A blue short-sleeve shirt is shown. No price is visible. The customer appears to be asking about this product.",
+      manualReviewRequired: false,
+    });
+    expect(inbound?.content).toContain("Customer caption: Do you have this?");
+    expect(outbound).toMatchObject({ content: "Yes, that is a blue short-sleeve shirt. Which size would you like?", messageType: "text" });
+    expect(await harness.run((ctx) => ctx.db.query("assistantDispatches").collect())).toEqual([expect.objectContaining({ interactionId: inbound!._id, state: "accepted", providerMessageId: "provider-image-reply-1" })]);
+    const visionRequest = requests.find((request) => request.url === "https://api.openai.com/v1/responses")!;
+    const visionBody = JSON.parse(visionRequest.body as string);
+    expect(visionBody).toMatchObject({ model: "synthetic-vision-model", input: [{ role: "user", content: [{ type: "input_text" }, { type: "input_image", detail: "low" }] }] });
+    expect(visionBody.input[0].content[1].image_url).toBe(`data:image/png;base64,${png.toString("base64")}`);
+    expect(requests.map((request) => request.url)).toEqual(expect.arrayContaining([
+      "https://provider.example.test/message/downloadmedia",
+      "https://api.openai.com/v1/responses",
+      "https://api.groq.com/openai/v1/chat/completions",
+      "https://provider.example.test/message/presence",
+      "https://provider.example.test/send/text",
+    ]));
+    expect(JSON.stringify(interactions)).not.toContain("private-media.test");
+    expect(JSON.stringify(interactions)).not.toContain(png.toString("base64"));
+  });
+
+  it("keeps failed image analysis in manual review and never guesses a reply", async () => {
+    const harness = createHarness();
+    const source = await tenant(harness, "image-provider-error");
+    await source.owner.mutation(api.businessProfile.save, {
+      businessId: source.businessId,
+      systemPrompt: "You represent Image Provider Error, a Nigerian business. Only answer from verified facts, never invent prices, stock, delivery details, discounts, payment confirmation, or policies, and ask one short clarifying question when needed.",
+      customerAutoReplyEnabled: true,
+      groupAutoReplyEnabled: false,
+    });
+    vi.stubEnv("FOUNDATION_PROVIDER_ENABLED", "true");
+    vi.stubEnv("EVOLUTION_GO_URL", "https://provider.example.test");
+    vi.stubEnv("EVOLUTION_GO_API_KEY", "synthetic-provider-key");
+    vi.stubEnv("OPENAI_API_KEY", "synthetic-openai-key");
+    vi.stubEnv("OPENAI_VISION_MODEL", "synthetic-vision-model");
+    vi.stubEnv("GROQ_API_KEY", "synthetic-groq-key");
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x01]);
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/message/downloadmedia")) return Response.json({ data: { base64: png.toString("base64"), mimetype: "image/png" } });
+      if (url === "https://api.openai.com/v1/responses") return Response.json({ error: { message: "private provider detail" } }, { status: 400 });
+      return new Response(null, { status: 404 });
+    }));
+
+    await webhook(harness, message(source, { id: "image-provider-error", content: { imageMessage: { url: "https://private-media.test/image", mimetype: "image/png", mediaKey: "synthetic-image-key", caption: "How much?" } } }));
+    await drain(harness);
+
+    const interactions = await harness.run((ctx) => ctx.db.query("interactions").collect());
+    expect(interactions).toHaveLength(1);
+    expect(interactions[0]).toMatchObject({ role: "customer", messageType: "image", imageAnalysisState: "failed", imageAnalysisErrorCode: "OPENAI_IMAGE_HTTP_400", manualReviewRequired: true });
+    expect(interactions[0].imageAnalysis).toBeUndefined();
+    expect(JSON.stringify(interactions)).not.toContain("private provider detail");
+    expect(await harness.run((ctx) => ctx.db.query("assistantDispatches").collect())).toHaveLength(0);
+    const calls = vi.mocked(fetch).mock.calls.map(([input]) => String(input));
+    expect(calls).not.toContain("https://api.groq.com/openai/v1/chat/completions");
+    expect(calls).not.toContain("https://provider.example.test/send/text");
+  });
+
+  it("does not analyze images from groups that are not individually enabled", async () => {
+    const harness = createHarness();
+    const source = await tenant(harness, "disabled-group-image");
+    await source.owner.mutation(api.businessProfile.save, {
+      businessId: source.businessId,
+      systemPrompt: "You represent Disabled Group Image, a Nigerian business. Only reply in WhatsApp groups the owner has individually enabled, and answer only from verified business facts without inventing prices, stock, delivery details, payment confirmation, or policies.",
+      customerAutoReplyEnabled: false,
+      groupAutoReplyEnabled: true,
+    });
+    vi.stubEnv("FOUNDATION_PROVIDER_ENABLED", "true");
+    vi.stubEnv("EVOLUTION_GO_URL", "https://provider.example.test");
+    vi.stubEnv("EVOLUTION_GO_API_KEY", "synthetic-provider-key");
+    vi.stubEnv("OPENAI_API_KEY", "synthetic-openai-key");
+    vi.stubEnv("OPENAI_VISION_MODEL", "synthetic-vision-model");
+    await webhook(harness, message(source, {
+      id: "disabled-group-image",
+      chat: "12345@g.us",
+      name: "Participant",
+      info: { IsGroup: true, IsMention: true, SenderAlt: "2348111111111@s.whatsapp.net" },
+      data: { groupData: { Name: "Disabled Image Group" } },
+      content: { imageMessage: { url: "https://private-media.test/group-image", mimetype: "image/png", mediaKey: "synthetic-image-key", caption: "Do you sell this?" } },
+    }));
+    await drain(harness);
+
+    const [interaction] = await harness.run((ctx) => ctx.db.query("interactions").collect());
+    expect(interaction).toMatchObject({ messageType: "image", isGroup: true, manualReviewRequired: true });
+    expect(interaction.imageAnalysisState).toBeUndefined();
+    expect(fetch).not.toHaveBeenCalled();
+    expect(await harness.run((ctx) => ctx.db.query("assistantDispatches").collect())).toHaveLength(0);
+  });
+
   it("canonicalizes private LID messages and names group threads from group metadata", async () => {
     const harness = createHarness();
     const source = await tenant(harness);

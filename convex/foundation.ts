@@ -67,7 +67,7 @@ export const customers = query({
 
 export const messages = query({
   args: { businessId: v.id("businesses"), customerId: v.id("customers") },
-  returns: v.array(v.object({ messageId: v.id("interactions"), role: v.union(v.literal("customer"), v.literal("owner"), v.literal("system")), text: v.string(), timestamp: v.number(), manualReview: v.boolean(), type: v.string(), transcript: v.union(v.string(), v.null()), transcriptionState: v.union(v.literal("pending"), v.literal("completed"), v.literal("failed"), v.null()) })),
+  returns: v.array(v.object({ messageId: v.id("interactions"), role: v.union(v.literal("customer"), v.literal("owner"), v.literal("system")), text: v.string(), timestamp: v.number(), manualReview: v.boolean(), type: v.string(), transcript: v.union(v.string(), v.null()), transcriptionState: v.union(v.literal("pending"), v.literal("completed"), v.literal("failed"), v.null()), imageAnalysisState: v.union(v.literal("pending"), v.literal("completed"), v.literal("failed"), v.null()) })),
   handler: async (ctx, args) => {
     await requireBusiness(ctx, args.businessId);
     const customer = await ctx.db.get(args.customerId);
@@ -82,7 +82,7 @@ export const messages = query({
       }
     }
     const batches = await Promise.all(linkedCustomers.map((linked) => ctx.db.query("interactions").withIndex("by_customer", (builder) => builder.eq("customerId", linked._id)).order("desc").take(100)));
-    return batches.flat().filter((message) => message.businessId === args.businessId).sort((a, b) => b.timestamp - a.timestamp).slice(0, 100).map((message) => ({ messageId: message._id, role: message.role, text: message.content, timestamp: message.timestamp, manualReview: message.manualReviewRequired ?? false, type: message.messageType ?? "unsupported", transcript: message.transcript ?? null, transcriptionState: message.transcriptionState ?? null }));
+    return batches.flat().filter((message) => message.businessId === args.businessId).sort((a, b) => b.timestamp - a.timestamp).slice(0, 100).map((message) => ({ messageId: message._id, role: message.role, text: message.content, timestamp: message.timestamp, manualReview: message.manualReviewRequired ?? false, type: message.messageType ?? "unsupported", transcript: message.transcript ?? null, transcriptionState: message.transcriptionState ?? null, imageAnalysisState: message.imageAnalysisState ?? null }));
   },
 });
 

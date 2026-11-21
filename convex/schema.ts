@@ -210,6 +210,8 @@ export default defineSchema({
     aiConfidence: v.optional(v.number()), // 0-1 confidence score from AI
     aiReasoning: v.optional(v.string()), // Brief explanation of why AI classified this way
     imageAnalysis: v.optional(v.string()), // AI vision analysis of attached image
+    imageAnalysisState: v.optional(v.union(v.literal("pending"), v.literal("completed"), v.literal("failed"))),
+    imageAnalysisErrorCode: v.optional(v.string()),
     aiProcessedAt: v.optional(v.number()), // Timestamp when AI processed this message
     // Media support
     messageType: v.optional(v.union(v.literal("text"), v.literal("image"), v.literal("video"), v.literal("audio"), v.literal("document"), v.literal("location"))),

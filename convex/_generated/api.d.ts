@@ -29,6 +29,7 @@ import type * as foundation from "../foundation.js";
 import type * as foundationHttp from "../foundationHttp.js";
 import type * as groups from "../groups.js";
 import type * as http from "../http.js";
+import type * as imageAnalysis from "../imageAnalysis.js";
 import type * as ingestion from "../ingestion.js";
 import type * as interactions from "../interactions.js";
 import type * as lib_assistantStyle from "../lib/assistantStyle.js";
@@ -87,6 +88,7 @@ declare const fullApi: ApiFromModules<{
   foundationHttp: typeof foundationHttp;
   groups: typeof groups;
   http: typeof http;
+  imageAnalysis: typeof imageAnalysis;
   ingestion: typeof ingestion;
   interactions: typeof interactions;
   "lib/assistantStyle": typeof lib_assistantStyle;

@@ -27,7 +27,8 @@ export const candidateForInteraction = internalQuery({
   returns: v.union(v.null(), candidate),
   handler: async (ctx, args) => {
     const interaction = await ctx.db.get(args.interactionId);
-    if (!interaction || interaction.role !== "customer" || interaction.manualReviewRequired || !["text", "audio"].includes(interaction.messageType ?? "")) return null;
+    if (!interaction || interaction.role !== "customer" || interaction.manualReviewRequired || !["text", "audio", "image"].includes(interaction.messageType ?? "")) return null;
+    if (interaction.messageType === "image" && (interaction.imageAnalysisState !== "completed" || !interaction.imageAnalysis?.trim())) return null;
     const existing = await ctx.db.query("assistantDispatches").withIndex("by_interaction", (builder) => builder.eq("interactionId", interaction._id)).unique();
     if (existing) return null;
     const [business, customer, session] = await Promise.all([
@@ -80,7 +81,8 @@ export const reserve = internalMutation({
     const content = normalizeAssistantReply(args.content);
     if (content.length < 2 || content.length > 1_000) return null;
     const interaction = await ctx.db.get(args.interactionId);
-    if (!interaction || interaction.role !== "customer" || interaction.manualReviewRequired || !["text", "audio"].includes(interaction.messageType ?? "") || !interaction.sessionId) return null;
+    if (!interaction || interaction.role !== "customer" || interaction.manualReviewRequired || !["text", "audio", "image"].includes(interaction.messageType ?? "") || !interaction.sessionId) return null;
+    if (interaction.messageType === "image" && (interaction.imageAnalysisState !== "completed" || !interaction.imageAnalysis?.trim())) return null;
     const existing = await ctx.db.query("assistantDispatches").withIndex("by_interaction", (builder) => builder.eq("interactionId", interaction._id)).unique();
     if (existing) return null;
     const customer = await ctx.db.get(interaction.customerId);
@@ -274,7 +276,8 @@ export const dispatchForSubmit = internalQuery({
       ctx.db.get(dispatch.customerId),
     ]);
     if (!business || business.foundationVersion !== 1 || !session || session.businessId !== business._id || session.state !== "connected" || !session.providerInstanceId || (business.killSwitch ?? true)) return null;
-    if (!interaction || interaction.businessId !== business._id || interaction.customerId !== dispatch.customerId || interaction.sessionId !== session._id || interaction.role !== "customer") return null;
+    if (!interaction || interaction.businessId !== business._id || interaction.customerId !== dispatch.customerId || interaction.sessionId !== session._id || interaction.role !== "customer" || interaction.manualReviewRequired) return null;
+    if (interaction.messageType === "image" && (interaction.imageAnalysisState !== "completed" || !interaction.imageAnalysis?.trim())) return null;
     if (!customer || customer.businessId !== business._id || customer.phone !== dispatch.target || (business.businessSystemPrompt?.trim().length ?? 0) < BUSINESS_SYSTEM_PROMPT_MIN_LENGTH) return null;
     const isGroup = interaction.isGroup ?? customer.isGroup ?? false;
     if (isGroup !== dispatch.isGroup) return null;

@@ -161,6 +161,14 @@ export const applyEvent = internalMutation({
         if (!payload.fromMe && payload.mediaType === "audio" && payload.mediaPayload) {
           await ctx.scheduler.runAfter(0, internal.transcription.transcribe, { interactionId, mediaPayload: payload.mediaPayload, ...(payload.mediaMimeType ? { mediaMimeType: payload.mediaMimeType } : {}) });
         }
+        if (!payload.fromMe && payload.mediaType === "image" && payload.mediaPayload) {
+          let imageAnalysisAuthorized = !payload.isGroup;
+          if (payload.isGroup) {
+            const group = await ctx.db.query("managedGroups").withIndex("by_business_group", (builder) => builder.eq("businessId", business._id).eq("groupJid", payload.chat)).unique();
+            imageAnalysisAuthorized = (business.groupAutoReplyEnabled ?? false) && !!group?.isEnabled && (!(group.mentionOnly ?? true) || payload.mentioned);
+          }
+          if (imageAnalysisAuthorized) await ctx.scheduler.runAfter(0, internal.imageAnalysis.analyze, { interactionId, mediaPayload: payload.mediaPayload, ...(payload.mediaMimeType ? { mediaMimeType: payload.mediaMimeType } : {}) });
+        }
         if (!payload.fromMe && !payload.manualReview && payload.mediaType === "text" && payload.text.trim()) {
           await ctx.scheduler.runAfter(0, internal.communityEngine.captureFromInteraction, { interactionId });
         }

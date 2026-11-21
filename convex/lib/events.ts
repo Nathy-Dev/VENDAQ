@@ -27,6 +27,21 @@ function groupName(data: Record<string, unknown>): string {
   return text(group.Name ?? group.name ?? group.Subject ?? group.subject ?? group.groupName ?? nestedName.Name ?? nestedName.name, 120);
 }
 
+function boundedMediaMessage(message: Record<string, unknown>): Record<string, unknown> {
+  const allowed = [
+    "url", "directPath", "mediaKey", "mimetype", "mimeType", "fileEncSha256",
+    "fileSha256", "fileLength", "mediaKeyTimestamp", "height", "width", "viewOnce",
+  ];
+  const output: Record<string, unknown> = {};
+  for (const key of allowed) {
+    const value = message[key];
+    if (typeof value === "string" && value.length <= 8_192) output[key] = value;
+    else if (typeof value === "number" && Number.isFinite(value)) output[key] = value;
+    else if (typeof value === "boolean") output[key] = value;
+  }
+  return output;
+}
+
 export function eventTime(value: unknown, now: number): number {
   const timestamp = typeof value === "number" ? (value < 100000000000 ? value * 1000 : value) : typeof value === "string" ? Date.parse(value) : NaN;
   if (!Number.isFinite(timestamp) || timestamp < 0 || timestamp > now + 300000) throw new Error("INVALID_TIMESTAMP");
@@ -59,8 +74,15 @@ export function normalizeEvent(body: Record<string, unknown>, now: number): Norm
     const type = plain ? "text" : message.imageMessage ? "image" : message.videoMessage ? "video" : message.audioMessage ? "audio" : message.documentMessage ? "document" : message.locationMessage ? "location" : "unsupported";
     const caption = text(object(message.imageMessage ?? message.videoMessage ?? message.documentMessage).caption, foundationPolicy().maxTextLength);
     const audio = object(message.audioMessage);
-    const mediaPayload = type === "audio" ? JSON.stringify({ audioMessage: audio }) : "";
-    const mediaMimeType = type === "audio" ? text(audio.mimetype ?? audio.mimeType, 120) : "";
+    const image = object(message.imageMessage);
+    const mediaMessage = type === "audio" ? audio : type === "image" ? image : {};
+    const boundedMedia = boundedMediaMessage(mediaMessage);
+    const mediaPayload = type === "audio"
+      ? JSON.stringify({ audioMessage: boundedMedia })
+      : type === "image"
+        ? JSON.stringify({ imageMessage: boundedMedia })
+        : "";
+    const mediaMimeType = ["audio", "image"].includes(type) ? text(mediaMessage.mimetype ?? mediaMessage.mimeType, 120) : "";
     // Only trust an explicit provider signal that the connected account was
     // mentioned. A generic `mentionedJid` list could refer to somebody else.
     const mentioned = isGroup && (info.IsMention === true || info.IsBotMentioned === true || data.IsMentioned === true);
@@ -72,7 +94,7 @@ export function normalizeEvent(body: Record<string, unknown>, now: number): Norm
       ...(participantJid ? { participantJid } : {}),
       ...(participantName ? { participantName } : {}),
       ...(aliasJids.length ? { aliasJids } : {}),
-      ...(mediaPayload && mediaPayload.length <= 20_000 ? { mediaPayload } : {}),
+      ...(Object.keys(boundedMedia).length && mediaPayload.length <= 20_000 ? { mediaPayload } : {}),
       ...(mediaMimeType ? { mediaMimeType } : {}),
       // Large text is minimized, with an explicit manual-review signal rather
       // than presenting a truncated message as complete buyer context.

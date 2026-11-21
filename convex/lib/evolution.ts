@@ -130,6 +130,66 @@ export async function downloadAuthorizedInboundAudio(options: {
   throw new Error(lastError);
 }
 
+function detectedImageMimeType(bytes: Uint8Array): string {
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "image/jpeg";
+  if (bytes.length >= 8 && [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a].every((value, index) => bytes[index] === value)) return "image/png";
+  if (bytes.length >= 6 && String.fromCharCode(...bytes.slice(0, 6)) === "GIF87a") return "image/gif";
+  if (bytes.length >= 6 && String.fromCharCode(...bytes.slice(0, 6)) === "GIF89a") return "image/gif";
+  if (bytes.length >= 12 && String.fromCharCode(...bytes.slice(0, 4)) === "RIFF" && String.fromCharCode(...bytes.slice(8, 12)) === "WEBP") return "image/webp";
+  return "";
+}
+
+export async function downloadAuthorizedInboundImage(options: {
+  token: string;
+  instanceId: string;
+  message: Record<string, unknown>;
+}): Promise<{ bytes: Uint8Array; mimetype: string }> {
+  if (!options.instanceId || Object.keys(options.message).length === 0) throw new Error("INVALID_IMAGE_DOWNLOAD");
+  if (process.env.FOUNDATION_PROVIDER_ENABLED !== "true") throw new Error("PROVIDER_DISABLED");
+  const baseUrl = process.env.EVOLUTION_GO_URL;
+  const apiKey = process.env.EVOLUTION_GO_API_KEY;
+  if (!baseUrl || !apiKey) throw new Error("PROVIDER_NOT_CONFIGURED");
+  const url = new URL(baseUrl);
+  const local = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+  if (url.protocol !== "https:" && !(local && process.env.ALLOW_LOCAL_PROVIDER_HTTP === "true")) throw new Error("INSECURE_PROVIDER_URL");
+  if (url.username || url.password || url.search || url.hash) throw new Error("INVALID_PROVIDER_URL");
+  const mode = process.env.EVOLUTION_GO_AUTH_MODE ?? "instance-token";
+  if (!["global-instance", "instance-token"].includes(mode)) throw new Error("INVALID_PROVIDER_AUTH_MODE");
+  let lastError = "PROVIDER_IMAGE_DOWNLOAD_FAILED";
+  for (const path of ["/message/downloadmedia", "/message/download", "/message/downloadimage"]) {
+    const response = await fetch(`${url.toString().replace(/\/$/, "")}${path}`, {
+      method: "POST",
+      headers: { Accept: "application/json, image/jpeg, image/png, image/webp, image/gif, application/octet-stream", "Content-Type": "application/json", apikey: mode === "instance-token" ? options.token : apiKey, instanceId: options.instanceId },
+      body: JSON.stringify({ message: options.message }),
+      signal: AbortSignal.timeout(20_000),
+      redirect: "error",
+    });
+    if (response.status === 404 || response.status === 405) continue;
+    if (!response.ok) { lastError = response.status === 401 || response.status === 403 ? "PROVIDER_AUTH_FAILED" : "PROVIDER_IMAGE_DOWNLOAD_FAILED"; break; }
+    const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+    let bytes: Uint8Array;
+    let reportedMimeType = contentType.split(";")[0];
+    if (contentType.includes("application/json")) {
+      const root = object(await response.json());
+      const data = object(root.data);
+      let base64 = text(data.base64 ?? data.media ?? root.base64 ?? root.media, 14_000_000);
+      if (base64.includes(",")) base64 = base64.split(",").pop() ?? "";
+      if (!base64) throw new Error("PROVIDER_IMAGE_DOWNLOAD_FAILED");
+      const binary = atob(base64);
+      bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+      reportedMimeType = text(data.mimetype ?? data.mimeType ?? root.mimetype ?? root.mimeType, 120).split(";")[0].toLowerCase();
+    } else {
+      bytes = new Uint8Array(await response.arrayBuffer());
+    }
+    if (bytes.byteLength === 0 || bytes.byteLength > 10_000_000) throw new Error("IMAGE_SIZE_NOT_SUPPORTED");
+    const detectedMimeType = detectedImageMimeType(bytes);
+    if (!detectedMimeType) throw new Error("IMAGE_TYPE_NOT_SUPPORTED");
+    if (reportedMimeType.startsWith("image/") && reportedMimeType !== detectedMimeType) throw new Error("IMAGE_TYPE_MISMATCH");
+    return { bytes, mimetype: detectedMimeType };
+  }
+  throw new Error(lastError);
+}
+
 export function providerInstanceId(result: unknown): string {
   const root = object(result);
   const data = object(root.data);
