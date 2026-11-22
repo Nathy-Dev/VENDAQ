@@ -147,6 +147,32 @@ describe("Business AI brief HTTP flows", () => {
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 
+  it.each([
+    "credit_balance_exhausted",
+    "organization_spend_limit_exceeded",
+    "organization_usage_limit_exceeded",
+    "project_spend_limit_exceeded",
+  ])("classifies persistent OpenAI 429 code %s as unavailable quota", async (providerCode) => {
+    const harness = createHarness();
+    const source = await tenant(harness, `voice-business-brief-${providerCode}`);
+    vi.stubEnv("OPENAI_API_KEY", "synthetic-openai-key");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ error: { code: providerCode, message: "private provider detail" } }, { status: 429 })));
+    const form = new FormData();
+    form.append("businessId", source.businessId);
+    form.append("recording", new Blob([new Uint8Array(1_024)], { type: "audio/webm" }), "business-description.webm");
+
+    const response = await source.owner.fetch("/api/business-ai/transcribe", {
+      method: "POST",
+      headers: { Origin: "https://auth.example.test" },
+      body: form,
+    });
+
+    expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBe("300");
+    expect(await response.json()).toEqual({ error: "OPENAI_TRANSCRIPTION_QUOTA_EXHAUSTED" });
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
   it("streams only the generated prompt text from the provider response", async () => {
     const harness = createHarness();
     const source = await tenant(harness, "stream-business-brief");

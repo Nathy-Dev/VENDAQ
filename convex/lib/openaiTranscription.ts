@@ -22,7 +22,16 @@ export function transcriptionHttpError(status: number, providerCode?: string): s
   if (status === 413) return "AUDIO_SIZE_NOT_SUPPORTED";
   if (status === 429) {
     const normalizedCode = providerCode?.trim().toLowerCase();
-    if (["billing_hard_limit_reached", "billing_not_active", "insufficient_quota", "quota_exceeded"].includes(normalizedCode ?? "")) {
+    if ([
+      "billing_hard_limit_reached",
+      "billing_not_active",
+      "credit_balance_exhausted",
+      "insufficient_quota",
+      "organization_spend_limit_exceeded",
+      "organization_usage_limit_exceeded",
+      "project_spend_limit_exceeded",
+      "quota_exceeded",
+    ].includes(normalizedCode ?? "")) {
       return "OPENAI_TRANSCRIPTION_QUOTA_EXHAUSTED";
     }
     return "OPENAI_TRANSCRIPTION_RATE_LIMITED";
