@@ -123,8 +123,6 @@ export const generateSystemPrompt = action({
       ownerId: identity.subject,
     });
     if (!business) throw new ConvexError({ code: "NOT_FOUND" });
-    const source = await ctx.runQuery(internal.billing.accessForOwner, { ownerId: identity.subject });
-    if (!source?.canUsePaidFeatures) throw new ConvexError({ code: "BILLING_UPGRADE_REQUIRED" });
     const description = cleanPrompt(args.businessDescription);
     if (description.length < promptSourceMinimum || description.length > promptSourceMaximum) {
       throw new ConvexError({ code: "INVALID_BUSINESS_DESCRIPTION" });

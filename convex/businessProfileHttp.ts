@@ -32,11 +32,7 @@ function noStoreHeaders(request?: Request, extra?: HeadersInit): Headers {
 
 async function authorize(ctx: Parameters<Parameters<typeof httpAction>[0]>[0], businessId: Id<"businesses">) {
   const identity = await requireIdentity(ctx);
-  const business = await ctx.runQuery(internal.businessProfile.authorizeForGeneration, { businessId, ownerId: identity.subject });
-  if (!business) return null;
-  const access = await ctx.runQuery(internal.billing.accessForOwner, { ownerId: identity.subject });
-  if (!access?.canUsePaidFeatures) throw new ConvexError({ code: "BILLING_UPGRADE_REQUIRED" });
-  return business;
+  return await ctx.runQuery(internal.businessProfile.authorizeForGeneration, { businessId, ownerId: identity.subject });
 }
 
 function errorResponse(request: Request, error: unknown, fallback: string): Response {

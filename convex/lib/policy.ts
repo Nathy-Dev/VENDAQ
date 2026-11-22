@@ -13,7 +13,10 @@ export function setting(name: string, fallback: number, minimum = 1, maximum = 1
 
 export function foundationPolicy() {
   return {
-    maxWebhookBytes: setting("FOUNDATION_MAX_WEBHOOK_BYTES", 262144, 1024, 1048576),
+    // Evolution Go can include large thumbnail or media metadata in otherwise
+    // valid message events. Accept a bounded envelope, then normalizeEvent
+    // retains only the small allow-listed fields needed for media download.
+    maxWebhookBytes: setting("FOUNDATION_MAX_WEBHOOK_BYTES", 1048576, 1024, 1048576),
     maxTextLength: setting("FOUNDATION_MAX_TEXT_LENGTH", 16000, 100, 64000),
     retryAttempts: setting("FOUNDATION_RETRY_ATTEMPTS", 5, 1, 10),
     retryBaseMs: setting("FOUNDATION_RETRY_BASE_MS", 2000, 100, 60000),

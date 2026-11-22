@@ -34,6 +34,29 @@ describe("Business AI brief HTTP flows", () => {
     expect(response.headers.get("access-control-allow-origin")).toBe("https://auth.example.test");
   });
 
+  it("keeps the required onboarding business brief available after paid access expires", async () => {
+    const harness = createHarness();
+    const source = await tenant(harness, "voice-business-brief-onboarding-access");
+    await harness.run(async (ctx) => {
+      const subscription = await ctx.db.query("businessSubscriptions").withIndex("by_business", (builder) => builder.eq("businessId", source.businessId)).unique();
+      await ctx.db.patch(subscription!._id, { status: "expired", trialEndsAt: Date.now() - 1, currentPeriodEnd: Date.now() - 1, updatedAt: Date.now() });
+    });
+    vi.stubEnv("OPENAI_API_KEY", "synthetic-openai-key");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ text: "We sell handmade bags and deliver nationwide.", language: "en" })));
+    const form = new FormData();
+    form.append("businessId", source.businessId);
+    form.append("recording", new Blob([new Uint8Array(1_024)], { type: "audio/webm" }), "business-description.webm");
+
+    const response = await source.owner.fetch("/api/business-ai/transcribe", {
+      method: "POST",
+      headers: { Origin: "https://auth.example.test" },
+      body: form,
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ transcript: "We sell handmade bags and deliver nationwide." });
+  });
+
   it("retries a transient transcription 502 and succeeds without another user recording", async () => {
     const harness = createHarness();
     const source = await tenant(harness, "voice-business-brief-retry");
