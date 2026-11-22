@@ -62,7 +62,10 @@ export const save = mutation({
   },
   returns: v.null(),
   handler: async (ctx, args) => {
-    const business = await requireBusiness(ctx, args.businessId);
+    // Business knowledge is part of onboarding and remains editable when a
+    // subscription is read-only. Paid reply authorization is still enforced
+    // immediately below and again at every assistant dispatch boundary.
+    const business = await requireBusiness(ctx, args.businessId, { allowReadOnly: true });
     const access = await billingAccess(ctx, business);
     if ((args.customerAutoReplyEnabled || args.groupAutoReplyEnabled) && (!access.canUsePaidFeatures || !access.automation)) throw new ConvexError({ code: "BILLING_UPGRADE_REQUIRED" });
     const systemPrompt = validateSystemPrompt(args.systemPrompt);

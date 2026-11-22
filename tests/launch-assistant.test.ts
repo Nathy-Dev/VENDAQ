@@ -161,6 +161,43 @@ describe("Launch 1 assistant authorization", () => {
     expect(profile.groupAutoReplyEnabled).toBe(false);
   });
 
+  it("keeps business knowledge editable when billing is read-only", async () => {
+    const harness = createHarness();
+    const source = await tenant(harness, "read-only-business-knowledge");
+    await harness.run(async (ctx) => {
+      const subscription = await ctx.db.query("businessSubscriptions").withIndex("by_business", (builder) => builder.eq("businessId", source.businessId)).unique();
+      await ctx.db.patch(subscription!._id, { status: "expired", trialEndsAt: Date.now() - 1, currentPeriodEnd: Date.now() - 1, updatedAt: Date.now() });
+    });
+
+    await source.owner.mutation(api.businessProfile.save, {
+      businessId: source.businessId,
+      systemPrompt: directPrompt,
+      customerAutoReplyEnabled: false,
+      groupAutoReplyEnabled: false,
+    });
+
+    const profile = await source.owner.query(api.businessProfile.get, { businessId: source.businessId });
+    expect(profile.systemPrompt).toBe(directPrompt);
+    expect(profile.customerAutoReplyEnabled).toBe(false);
+    expect(profile.groupAutoReplyEnabled).toBe(false);
+  });
+
+  it("still blocks paid reply authorization when billing is read-only", async () => {
+    const harness = createHarness();
+    const source = await tenant(harness, "read-only-reply-authorization");
+    await harness.run(async (ctx) => {
+      const subscription = await ctx.db.query("businessSubscriptions").withIndex("by_business", (builder) => builder.eq("businessId", source.businessId)).unique();
+      await ctx.db.patch(subscription!._id, { status: "expired", trialEndsAt: Date.now() - 1, currentPeriodEnd: Date.now() - 1, updatedAt: Date.now() });
+    });
+
+    await expect(source.owner.mutation(api.businessProfile.save, {
+      businessId: source.businessId,
+      systemPrompt: directPrompt,
+      customerAutoReplyEnabled: true,
+      groupAutoReplyEnabled: false,
+    })).rejects.toThrow("BILLING_UPGRADE_REQUIRED");
+  });
+
   it("keeps each group disabled until it is individually enabled", async () => {
     const harness = createHarness();
     const source = await tenant(harness, "group-opt-in");

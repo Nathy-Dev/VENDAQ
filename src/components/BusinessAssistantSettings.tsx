@@ -204,8 +204,16 @@ function BusinessAssistantForm({ workspace, compact, profile, qualificationPolic
       await save({ businessId: workspace.businessId, systemPrompt: systemPrompt.trim(), customerAutoReplyEnabled: customerReplies, groupAutoReplyEnabled: groupReplies, leadQualificationEnabled: qualificationEnabled, leadQualificationCriteria: qualificationCriteria.trim(), leadQualificationRequiredFields: qualificationFields });
       setEditingPrompt(false);
       setFeedback({ scope: "save", text: customerReplies || groupReplies ? "Business knowledge and reply authorization saved." : "Business knowledge saved. Automated replies remain off." });
-    } catch {
-      setFeedback({ scope: "save", text: "We couldn't save these assistant settings. Please try again.", error: true });
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "";
+      const needsAutomationPlan = code.includes("BILLING_UPGRADE_REQUIRED") || code.includes("BILLING_READ_ONLY");
+      setFeedback({
+        scope: "save",
+        text: needsAutomationPlan
+          ? "Your business knowledge is ready, but automated replies need an active automation plan. Turn off reply authorization to save the knowledge now, or activate a plan."
+          : "We couldn't save these assistant settings. Please try again.",
+        error: true,
+      });
     } finally { setBusy(null); }
   }
 
