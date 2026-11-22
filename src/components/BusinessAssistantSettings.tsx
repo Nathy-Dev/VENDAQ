@@ -9,6 +9,9 @@ import { buttonClass } from "./dashboard-ui";
 import { Notice, type Feedback } from "./WorkspaceFeedback";
 import styles from "./FoundationWorkspace.module.css";
 
+type FeedbackScope = "voice" | "generate" | "save";
+type ScopedFeedback = Exclude<Feedback, null> & { scope: FeedbackScope };
+
 export default function BusinessAssistantSettings({ workspace, compact = false }: { workspace: Workspace; compact?: boolean }) {
   const profile = useQuery(api.businessProfile.get, { businessId: workspace.businessId });
   const qualificationPolicy = useQuery(api.leadQualification.policy, { businessId: workspace.businessId });
@@ -28,7 +31,7 @@ function BusinessAssistantForm({ workspace, compact, profile, qualificationPolic
   const [qualificationCriteria, setQualificationCriteria] = useState(qualificationPolicy.criteria);
   const [qualificationFields, setQualificationFields] = useState(qualificationPolicy.requiredFields);
   const [busy, setBusy] = useState<"generate" | "transcribe" | "save" | null>(null);
-  const [feedback, setFeedback] = useState<Feedback>(null);
+  const [feedback, setFeedback] = useState<ScopedFeedback | null>(null);
   const [recording, setRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const recorderRef = useRef<MediaRecorder | null>(null);
@@ -67,7 +70,7 @@ function BusinessAssistantForm({ workspace, compact, profile, qualificationPolic
 
   async function transcribeRecording(blob: Blob) {
     if (blob.size > 10 * 1024 * 1024) {
-      setFeedback({ text: "That recording is too large. Please record a shorter description.", error: true });
+      setFeedback({ scope: "voice", text: "That recording is too large. Please record a shorter description.", error: true });
       return;
     }
     setBusy("transcribe"); setFeedback(null);
@@ -87,7 +90,7 @@ function BusinessAssistantForm({ workspace, compact, profile, qualificationPolic
       const transcript = result.transcript?.trim();
       if (!transcript) throw new Error("EMPTY_TRANSCRIPT");
       setDescription((current) => [current.trim(), transcript].filter(Boolean).join("\n\n").slice(0, 4_000));
-      setFeedback({ text: "Voice description added. You can correct the transcript or add more details before generating." });
+      setFeedback({ scope: "voice", text: "Voice description added. You can correct the transcript or add more details before generating." });
     } catch (error) {
       const code = error instanceof Error ? error.message : "TRANSCRIPTION_FAILED";
       const message = code === "BUSINESS_AI_RATE_LIMITED"
@@ -99,7 +102,7 @@ function BusinessAssistantForm({ workspace, compact, profile, qualificationPolic
             : code === "AUDIO_SIZE_NOT_SUPPORTED"
               ? "That recording could not be processed. Please make a shorter recording and try again."
               : "We couldn't transcribe that recording. Check your connection and try again.";
-      setFeedback({ text: message, error: true });
+      setFeedback({ scope: "voice", text: message, error: true });
     } finally {
       setBusy(null);
     }
@@ -107,7 +110,7 @@ function BusinessAssistantForm({ workspace, compact, profile, qualificationPolic
 
   async function startRecording() {
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
-      setFeedback({ text: "Voice recording is not supported by this browser. You can still type your business description.", error: true });
+      setFeedback({ scope: "voice", text: "Voice recording is not supported by this browser. You can still type your business description.", error: true });
       return;
     }
     setFeedback(null);
@@ -119,7 +122,7 @@ function BusinessAssistantForm({ workspace, compact, profile, qualificationPolic
       streamRef.current = stream;
       chunksRef.current = [];
       recorder.ondataavailable = (event) => { if (event.data.size) chunksRef.current.push(event.data); };
-      recorder.onerror = () => setFeedback({ text: "The recording stopped unexpectedly. Please try again.", error: true });
+      recorder.onerror = () => setFeedback({ scope: "voice", text: "The recording stopped unexpectedly. Please try again.", error: true });
       recorder.onstop = () => {
         if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
         recordingTimerRef.current = null;
@@ -130,7 +133,7 @@ function BusinessAssistantForm({ workspace, compact, profile, qualificationPolic
         const blob = new Blob(chunksRef.current, { type: recorder.mimeType || "audio/webm" });
         chunksRef.current = [];
         if (blob.size >= 512) void transcribeRecording(blob);
-        else setFeedback({ text: "We couldn't hear enough audio. Please try recording again.", error: true });
+        else setFeedback({ scope: "voice", text: "We couldn't hear enough audio. Please try recording again.", error: true });
       };
       recorder.start(1_000);
       setRecordingSeconds(0);
@@ -143,7 +146,7 @@ function BusinessAssistantForm({ workspace, compact, profile, qualificationPolic
       }, 1_000);
     } catch {
       streamRef.current?.getTracks().forEach((track) => track.stop());
-      setFeedback({ text: "Microphone access was not available. Allow microphone access in your browser, then try again.", error: true });
+      setFeedback({ scope: "voice", text: "Microphone access was not available. Allow microphone access in your browser, then try again.", error: true });
     }
   }
 
@@ -154,7 +157,7 @@ function BusinessAssistantForm({ workspace, compact, profile, qualificationPolic
   async function generatePrompt() {
     const source = description.trim();
     if (source.length < 40) {
-      setFeedback({ text: "Add at least a few sentences about what you sell, how orders work, and what customers usually ask.", error: true });
+      setFeedback({ scope: "generate", text: "Add at least a few sentences about what you sell, how orders work, and what customers usually ask.", error: true });
       return;
     }
     const previousPrompt = systemPrompt;
@@ -182,10 +185,10 @@ function BusinessAssistantForm({ workspace, compact, profile, qualificationPolic
       const complete = generated.replaceAll("\u0000", "").trim().slice(0, 8_000);
       if (complete.length < 120) throw new Error("AI_GENERATION_FAILED");
       setSystemPrompt(complete);
-      setFeedback({ text: "Your business prompt is ready. Review it, use Edit if anything needs changing, then save." });
+      setFeedback({ scope: "generate", text: "Your business prompt is ready. Review it, use Edit if anything needs changing, then save." });
     } catch (error) {
       setSystemPrompt(previousPrompt);
-      setFeedback({ text: error instanceof Error && error.message === "BUSINESS_AI_RATE_LIMITED" ? "You've generated several prompts this hour. Please try again later. Your existing prompt has not been changed." : "We couldn't generate the prompt right now. Your existing prompt has not been changed.", error: true });
+      setFeedback({ scope: "generate", text: error instanceof Error && error.message === "BUSINESS_AI_RATE_LIMITED" ? "You've generated several prompts this hour. Please try again later. Your existing prompt has not been changed." : "We couldn't generate the prompt right now. Your existing prompt has not been changed.", error: true });
     } finally {
       setBusy(null); setStreamingPrompt(false);
     }
@@ -193,16 +196,16 @@ function BusinessAssistantForm({ workspace, compact, profile, qualificationPolic
 
   async function saveProfile() {
     if (systemPrompt.trim().length < 120) {
-      setFeedback({ text: "The system prompt needs more detail before Pipelixr can reply accurately.", error: true });
+      setFeedback({ scope: "save", text: "The system prompt needs more detail before Pipelixr can reply accurately.", error: true });
       return;
     }
     setBusy("save"); setFeedback(null);
     try {
       await save({ businessId: workspace.businessId, systemPrompt: systemPrompt.trim(), customerAutoReplyEnabled: customerReplies, groupAutoReplyEnabled: groupReplies, leadQualificationEnabled: qualificationEnabled, leadQualificationCriteria: qualificationCriteria.trim(), leadQualificationRequiredFields: qualificationFields });
       setEditingPrompt(false);
-      setFeedback({ text: customerReplies || groupReplies ? "Business knowledge and reply authorization saved." : "Business knowledge saved. Automated replies remain off." });
+      setFeedback({ scope: "save", text: customerReplies || groupReplies ? "Business knowledge and reply authorization saved." : "Business knowledge saved. Automated replies remain off." });
     } catch {
-      setFeedback({ text: "We couldn't save these assistant settings. Please try again.", error: true });
+      setFeedback({ scope: "save", text: "We couldn't save these assistant settings. Please try again.", error: true });
     } finally { setBusy(null); }
   }
 
@@ -223,7 +226,9 @@ function BusinessAssistantForm({ workspace, compact, profile, qualificationPolic
           {recording && <div className={styles.voiceWave} aria-hidden="true">{Array.from({ length: 16 }, (_, index) => <span key={index} style={{ animationDelay: `${index * -70}ms` }} />)}</div>}
           <button type="button" className={recording ? buttonClass.danger : buttonClass.secondary} disabled={busy !== null} onClick={recording ? stopRecording : () => void startRecording()}>{recording ? <><Square size={13} fill="currentColor" />Stop recording</> : <><Mic size={14} />Record description</>}</button>
         </div>
+        <Notice feedback={feedback?.scope === "voice" ? feedback : null} />
         <div className={styles.generatorRow}><button type="button" className={buttonClass.secondary} disabled={busy !== null || recording || description.trim().length < 40} onClick={() => void generatePrompt()}><Sparkles size={14} />{busy === "generate" ? "Writing your business prompt..." : "Generate comprehensive system prompt"}</button><span>Uses everything in your description above.</span></div>
+        <Notice feedback={feedback?.scope === "generate" ? feedback : null} />
         <div className={styles.promptField}>
           <div className={styles.promptHeader}><div><span>System prompt used for every reply</span><small>{editingPrompt ? "Editing is on. Save when your changes are ready." : "Locked to prevent accidental changes."}</small></div><button type="button" className={buttonClass.ghost} disabled={streamingPrompt || busy === "save"} onClick={() => setEditingPrompt((value) => !value)}>{editingPrompt ? <><Check size={14} />Done editing</> : <><Pencil size={14} />Edit prompt</>}</button></div>
           {editingPrompt ? <textarea autoFocus className={`${styles.input} ${styles.textarea} ${styles.promptTextarea}`} rows={compact ? 12 : 18} minLength={120} maxLength={8000} required value={systemPrompt} onChange={(event) => setSystemPrompt(event.target.value)} placeholder="Define the business, products, sales process, policies, tone, escalation rules, and what the assistant must never invent." /> : <div className={styles.promptViewer} data-streaming={streamingPrompt} data-empty={!systemPrompt}><pre>{systemPrompt || "Your generated system prompt will appear here."}{streamingPrompt && <span className={styles.streamingCursor} aria-hidden="true" />}</pre></div>}
@@ -242,8 +247,8 @@ function BusinessAssistantForm({ workspace, compact, profile, qualificationPolic
             <div className={styles.field}><span>Details Pipelixr should confirm</span><div className={styles.qualificationFields}>{qualificationPolicy.availableFields.map((entry) => <label className={styles.checkLabel} key={entry.field}><input type="checkbox" checked={qualificationFields.includes(entry.field)} onChange={(event) => setQualificationFields((current) => event.target.checked ? [...new Set([...current, entry.field])] : current.filter((field) => field !== entry.field))} /><span><strong>{entry.label}</strong><p>{entry.question}</p></span></label>)}</div><span className={styles.fieldHelp}>Pipelixr asks at most one missing qualification question in a reply and does not keep repeating the same question.</span></div>
           </>}
         </fieldset>
-        <Notice feedback={feedback} />
         <div className={styles.formFooter}><button type="button" className={buttonClass.primary} disabled={busy !== null || recording || systemPrompt.trim().length < 120} onClick={() => void saveProfile()}>{busy === "save" ? "Saving..." : "Save business knowledge & authorization"}</button></div>
+        <Notice feedback={feedback?.scope === "save" ? feedback : null} />
       </div>
     </section>
   </div>;
