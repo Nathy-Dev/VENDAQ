@@ -135,6 +135,7 @@ export default defineSchema({
     memorySummaryUpdatedAt: v.optional(v.number()),
     tags: v.array(v.string()),
   }).index("by_business_phone", ["businessId", "phone"])
+    .index("by_business", ["businessId"])
     .index("by_business_last_interaction", ["businessId", "lastInteraction"])
     .index("by_business_funnel_stage", ["businessId", "funnelStage"])
     .index("by_expiry", ["expiresAt"])
@@ -148,6 +149,7 @@ export default defineSchema({
     name: v.optional(v.string()),
     updatedAt: v.number(),
   }).index("by_business_jid", ["businessId", "jid"])
+    .index("by_business", ["businessId"])
     .index("by_business_canonical", ["businessId", "canonicalJid"]),
 
   orders: defineTable({
@@ -336,6 +338,7 @@ export default defineSchema({
     priorityScore: v.optional(v.number()),
     reasonSnapshot: v.optional(v.string()),
   }).index("by_business_due", ["businessId", "dueAt"])
+    .index("by_business", ["businessId"])
     .index("by_customer_reason", ["customerId", "reason"])
     .index("by_customer_status", ["customerId", "status", "createdAt"])
     .index("by_customer", ["customerId"])
@@ -375,6 +378,7 @@ export default defineSchema({
     sentCount: v.number(),
     createdAt: v.number(),
   }).index("by_business_status", ["businessId", "status"])
+    .index("by_business", ["businessId"])
     .index("by_scheduled_status", ["status", "scheduledAt"]),
 
   actionOutcomes: defineTable({
@@ -391,6 +395,7 @@ export default defineSchema({
     closedAt: v.optional(v.number()),
     outcomeValue: v.optional(v.number()),
   }).index("by_business_sent", ["businessId", "sentAt"])
+    .index("by_business", ["businessId"])
     .index("by_customer_status", ["customerId", "status"]),
 
   sellerActionEvents: defineTable({
@@ -403,6 +408,7 @@ export default defineSchema({
     value: v.optional(v.number()),
     at: v.number(),
   }).index("by_business_time", ["businessId", "at"])
+    .index("by_business", ["businessId"])
     .index("by_idempotency", ["businessId", "idempotencyKey"])
     .index("by_customer_time", ["customerId", "at"])
     .index("by_task_time", ["taskId", "at"]),
@@ -423,6 +429,7 @@ export default defineSchema({
     reason: v.string(),
     createdAt: v.number(),
   }).index("by_business_time", ["businessId", "createdAt"])
+    .index("by_business", ["businessId"])
     .index("by_order", ["orderId"])
     .index("by_task", ["taskId"])
     .index("by_customer", ["customerId"]),
@@ -445,7 +452,8 @@ export default defineSchema({
     model: v.string(), // Which model was used
     confidence: v.optional(v.number()),
     timestamp: v.number(),
-  }).index("by_business_time", ["businessId", "timestamp"]),
+  }).index("by_business_time", ["businessId", "timestamp"])
+    .index("by_business", ["businessId"]),
 
   // ── Groups & Communities the owner has opted the AI into ──
   // By default the assistant stays silent in ALL group chats. A group only
@@ -482,6 +490,7 @@ export default defineSchema({
     updatedAt: v.optional(v.number()),
     addedAt: v.number(),
   }).index("by_business_group", ["businessId", "groupJid"])
+    .index("by_business", ["businessId"])
     .index("by_business_enabled", ["businessId", "isEnabled"]),
 
   // Durable at-most-once assistant dispatch ledger. A dispatch that reaches
@@ -518,6 +527,7 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   }).index("by_interaction", ["interactionId"])
+    .index("by_business", ["businessId"])
     .index("by_owner_rescue", ["ownerRescueId", "createdAt"])
     .index("by_business_time", ["businessId", "createdAt"])
     .index("by_business_target_time", ["businessId", "target", "createdAt"]),
@@ -537,7 +547,8 @@ export default defineSchema({
     hotLeads: v.number(),
     coldViewers: v.number(),
     lostOpportunities: v.number(),
-  }).index("by_business_date", ["businessId", "date"]),
+  }).index("by_business_date", ["businessId", "date"])
+    .index("by_business", ["businessId"]),
 
   disconnectionAlerts: defineTable({
 
@@ -548,6 +559,7 @@ export default defineSchema({
     notifiedAt: v.optional(v.number()), // When the in-app notification was shown
     durationMinutes: v.optional(v.number()), // How long disconnected before detected
   }).index("by_business_status", ["businessId", "status"])
+    .index("by_business", ["businessId"])
     .index("by_business_detected", ["businessId", "detectedAt"]),
 
   users: defineTable({
@@ -595,6 +607,7 @@ export default defineSchema({
     .index("by_disconnect_due", ["state", "disconnectDueAt"]),
   inboundEvents: defineTable(eventFields)
     .index("by_session_key", ["sessionId", "eventKey"])
+    .index("by_business", ["businessId"])
     .index("by_business_identity", ["businessId", "identityKey"])
     .index("by_business_state", ["businessId", "state", "receivedAt"])
     .index("by_due", ["state", "dueAt"])
@@ -638,6 +651,7 @@ export default defineSchema({
     updatedAt: v.number(),
     closedAt: v.optional(v.number()),
   }).index("by_interaction", ["interactionId"])
+    .index("by_business", ["businessId"])
     .index("by_business_state_updated", ["businessId", "state", "updatedAt"])
     .index("by_business_source_created", ["businessId", "sourceType", "createdAt"])
     .index("by_business_group_created", ["businessId", "sourceGroupJid", "createdAt"])
@@ -651,6 +665,7 @@ export default defineSchema({
     evidenceText: v.string(),
     recordedAt: v.number(),
   }).index("by_opportunity_time", ["opportunityId", "recordedAt"])
+    .index("by_business", ["businessId"])
     .index("by_business_time", ["businessId", "recordedAt"]),
   knowledgeSuggestions: defineTable({
     businessId: v.id("businesses"),
@@ -663,10 +678,12 @@ export default defineSchema({
     createdAt: v.number(),
     reviewedAt: v.optional(v.number()),
   }).index("by_business_state_created", ["businessId", "state", "createdAt"])
+    .index("by_business", ["businessId"])
     .index("by_interaction", ["interactionId"]),
   privacySuppressions: defineTable({
     businessId: v.id("businesses"), identityKey: v.string(), createdAt: v.number(),
-  }).index("by_business_identity", ["businessId", "identityKey"]),
+  }).index("by_business_identity", ["businessId", "identityKey"])
+    .index("by_business", ["businessId"]),
   deletionJobs: defineTable({
     businessId: v.id("businesses"), customerId: v.id("customers"), requestedAt: v.number(),
     state: v.union(v.literal("pending"), v.literal("done"), v.literal("dead_letter")), completedAt: v.optional(v.number()),
@@ -676,18 +693,19 @@ export default defineSchema({
     businessId: v.id("businesses"), sessionId: v.id("whatsappSessions"), messageId: v.string(),
     identityKey: v.string(),
     deliveredAt: v.optional(v.number()), readAt: v.optional(v.number()), expiresAt: v.number(),
-  }).index("by_session_message", ["sessionId", "messageId"]).index("by_expiry", ["expiresAt"]).index("by_business_identity", ["businessId", "identityKey"]),
+  }).index("by_session_message", ["sessionId", "messageId"]).index("by_expiry", ["expiresAt"]).index("by_business_identity", ["businessId", "identityKey"]).index("by_business", ["businessId"]),
   statusObservations: defineTable({
     businessId: v.id("businesses"), sessionId: v.id("whatsappSessions"), statusMessageId: v.string(),
     viewerIdentityKey: v.string(), observedAt: v.number(), expiresAt: v.number(),
   }).index("by_session_status_viewer", ["sessionId", "statusMessageId", "viewerIdentityKey"])
+    .index("by_business", ["businessId"])
     .index("by_business_identity", ["businessId", "viewerIdentityKey"])
     .index("by_business_time", ["businessId", "observedAt"])
     .index("by_expiry", ["expiresAt"]),
   foundationAudit: defineTable({
     businessId: v.id("businesses"), kind: v.string(), correlationId: v.string(), at: v.number(),
     code: v.optional(v.string()), expiresAt: v.number(),
-  }).index("by_business_time", ["businessId", "at"]).index("by_expiry", ["expiresAt"]),
+  }).index("by_business_time", ["businessId", "at"]).index("by_business", ["businessId"]).index("by_expiry", ["expiresAt"]),
   authAttempts: defineTable({
     key: v.string(), windowStart: v.number(), count: v.number(),
   }).index("by_key", ["key"]).index("by_window", ["windowStart"]),
@@ -696,7 +714,8 @@ export default defineSchema({
     kind: v.union(v.literal("prompt_generation"), v.literal("voice_transcription")),
     windowStart: v.number(),
     count: v.number(),
-  }).index("by_business_kind", ["businessId", "kind"]),
+  }).index("by_business_kind", ["businessId", "kind"])
+    .index("by_business", ["businessId"]),
   businessSubscriptions: defineTable({
     businessId: v.id("businesses"),
     provider: v.literal("paystack"),
@@ -746,6 +765,7 @@ export default defineSchema({
     expiresAt: v.number(),
     completedAt: v.optional(v.number()),
   }).index("by_reference", ["reference"])
+    .index("by_business", ["businessId"])
     .index("by_business_created", ["businessId", "createdAt"])
     .index("by_state_expiry", ["state", "expiresAt"]),
   billingWebhookEvents: defineTable({
@@ -759,6 +779,7 @@ export default defineSchema({
     reference: v.optional(v.string()),
     code: v.optional(v.string()),
   }).index("by_provider_digest", ["provider", "eventDigest"])
+    .index("by_business", ["businessId"])
     .index("by_state_received", ["state", "receivedAt"]),
   billingPayments: defineTable({
     businessId: v.id("businesses"),
@@ -772,6 +793,7 @@ export default defineSchema({
     paidAt: v.optional(v.number()),
     createdAt: v.number(),
   }).index("by_provider_reference", ["provider", "reference"])
+    .index("by_business", ["businessId"])
     .index("by_business_created", ["businessId", "createdAt"])
     .index("by_status_created", ["status", "createdAt"]),
   billingUsagePeriods: defineTable({
@@ -781,13 +803,15 @@ export default defineSchema({
     metric: v.literal("assisted_conversation"),
     quantity: v.number(),
     updatedAt: v.number(),
-  }).index("by_business_metric_period", ["businessId", "metric", "periodStart"]),
+  }).index("by_business_metric_period", ["businessId", "metric", "periodStart"])
+    .index("by_business", ["businessId"]),
   billingUsageConversations: defineTable({
     businessId: v.id("businesses"),
     conversationId: v.id("conversations"),
     periodStart: v.number(),
     firstAssistedAt: v.number(),
   }).index("by_business_period_conversation", ["businessId", "periodStart", "conversationId"])
+    .index("by_business", ["businessId"])
     .index("by_business_period", ["businessId", "periodStart"]),
   foundationMigrations: defineTable({
     version: v.number(), state: v.union(v.literal("running"), v.literal("done")),
@@ -800,6 +824,7 @@ export default defineSchema({
     state: v.union(v.literal("pending"), v.literal("missed"), v.literal("answered")),
     answeredAt: v.optional(v.number()), scheduledId: v.optional(v.id("_scheduled_functions")), expiresAt: v.number(),
   }).index("by_interaction", ["interactionId"])
+    .index("by_business", ["businessId"])
     .index("by_business_state_due", ["businessId", "state", "dueAt"])
     .index("by_state_due", ["state", "dueAt"])
     .index("by_conversation_state", ["conversationId", "state", "triggerAt"])
@@ -810,6 +835,7 @@ export default defineSchema({
     label: v.union(v.literal("buying_signal"), v.literal("inquiry"), v.literal("payment_related"), v.literal("casual_noise"), v.literal("manual_review")),
     labeledBy: v.string(), labeledAt: v.number(),
   }).index("by_interaction", ["interactionId"])
+    .index("by_business", ["businessId"])
     .index("by_business_time", ["businessId", "labeledAt"])
     .index("by_customer", ["customerId"]),
 
@@ -840,6 +866,7 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   }).index("by_business_status_updated", ["businessId", "status", "updatedAt"])
+    .index("by_business", ["businessId"])
     .index("by_business_kind_status", ["businessId", "kind", "status"])
     .index("by_business_source", ["businessId", "sourceType", "sourceRef"]),
 
@@ -858,6 +885,7 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   }).index("by_customer_state_updated", ["customerId", "state", "updatedAt"])
+    .index("by_business", ["businessId"])
     .index("by_customer_key", ["customerId", "key"])
     .index("by_business_state_updated", ["businessId", "state", "updatedAt"]),
 
@@ -878,6 +906,7 @@ export default defineSchema({
     updatedAt: v.number(),
     completedAt: v.optional(v.number()),
   }).index("by_business_state_due", ["businessId", "state", "dueAt"])
+    .index("by_business", ["businessId"])
     .index("by_state_due", ["state", "dueAt"])
     .index("by_customer_state_updated", ["customerId", "state", "updatedAt"])
     .index("by_source_interaction", ["sourceInteractionId"])
@@ -904,6 +933,7 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   }).index("by_interaction", ["interactionId"])
+    .index("by_business", ["businessId"])
     .index("by_business_verification_updated", ["businessId", "verificationState", "updatedAt"])
     .index("by_customer_created", ["customerId", "createdAt"])
     .index("by_business_fingerprint", ["businessId", "duplicateFingerprint"]),
@@ -927,6 +957,7 @@ export default defineSchema({
     updatedAt: v.number(),
     resolvedAt: v.optional(v.number()),
   }).index("by_business_state_severity", ["businessId", "state", "severity"])
+    .index("by_business", ["businessId"])
     .index("by_customer_state_updated", ["customerId", "state", "updatedAt"])
     .index("by_interaction", ["interactionId"]),
 
@@ -948,6 +979,7 @@ export default defineSchema({
     updatedAt: v.number(),
     expiresAt: v.number(),
   }).index("by_business_state_created", ["businessId", "state", "createdAt"])
+    .index("by_business", ["businessId"])
     .index("by_interaction", ["interactionId"])
     .index("by_customer_state", ["customerId", "state", "createdAt"]),
 
@@ -964,7 +996,8 @@ export default defineSchema({
     isActive: v.boolean(),
     createdAt: v.number(),
     updatedAt: v.number(),
-  }).index("by_business_active_scope", ["businessId", "isActive", "scope"]),
+  }).index("by_business_active_scope", ["businessId", "isActive", "scope"])
+    .index("by_business", ["businessId"]),
 
   leadQualifications: defineTable({
     businessId: v.id("businesses"),
@@ -995,6 +1028,7 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   }).index("by_conversation", ["conversationId"])
+    .index("by_business", ["businessId"])
     .index("by_customer_updated", ["customerId", "updatedAt"])
     .index("by_business_status_updated", ["businessId", "status", "updatedAt"]),
 
@@ -1014,8 +1048,25 @@ export default defineSchema({
     occurredAt: v.number(),
     createdAt: v.number(),
   }).index("by_business_occurred", ["businessId", "occurredAt"])
+    .index("by_business", ["businessId"])
     .index("by_occurred", ["occurredAt"])
     .index("by_business_outcome_occurred", ["businessId", "outcome", "occurredAt"])
     .index("by_conversation_occurred", ["conversationId", "occurredAt"])
     .index("by_ad_occurred", ["businessId", "sourceAdId", "occurredAt"]),
+
+  adminAccountDeletionJobs: defineTable({
+    businessId: v.id("businesses"),
+    businessName: v.string(),
+    ownerId: v.string(),
+    requestedBy: v.string(),
+    requestedAt: v.number(),
+    state: v.union(v.literal("pending"), v.literal("running"), v.literal("done"), v.literal("dead_letter")),
+    phase: v.number(),
+    deletedRecords: v.number(),
+    updatedAt: v.number(),
+    completedAt: v.optional(v.number()),
+    errorCode: v.optional(v.string()),
+    scheduledId: v.optional(v.id("_scheduled_functions")),
+  }).index("by_business", ["businessId"])
+    .index("by_state_updated", ["state", "updatedAt"]),
 });

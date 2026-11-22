@@ -15,7 +15,10 @@ If `ADMIN_USER_IDS` is absent or empty, the console fails closed for everyone. R
 
 ## Data and safety
 
-- The console is read-only. It has no account suspension, billing mutation, message-send, or provider-control commands.
+- Overview, operations, and billing remain read-only. Business details include a guarded permanent account-deletion command.
+- Deletion requires the admin to type the exact business name. It immediately disables automation and seller access, disables an active Paystack subscription, revokes the WhatsApp session, and removes tenant records in bounded background batches.
+- If Paystack cancellation or provider disconnection cannot be confirmed, deletion fails closed and leaves the workspace disabled for operator review.
+- Credential accounts are removed from the local users/auth tables. Google identities cannot be deleted from Google; their Pipelixr business and data are removed.
 - Queries are bounded to protect production database reads. The UI shows a snapshot notice when a safety limit is reached.
 - Customer message bodies, WhatsApp tokens, Paystack secrets, payment references, and provider credentials are never returned.
 - The business CSV export is generated in the operator’s browser from the already authorized table data.

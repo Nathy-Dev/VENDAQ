@@ -21,7 +21,9 @@ export async function isAdmin(ctx: Pick<QueryCtx, "auth">) {
 }
 
 export async function requireAdmin(ctx: Pick<QueryCtx, "auth">) {
-  if (!(await isAdmin(ctx))) {
+  const identity = await ctx.auth.getUserIdentity();
+  if (!identity?.subject || !adminSubjects().has(identity.subject)) {
     throw new ConvexError({ code: "ADMIN_FORBIDDEN" });
   }
+  return identity;
 }

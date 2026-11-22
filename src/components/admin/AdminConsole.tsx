@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
-import { useQuery } from "convex/react";
+import { useAction, useQuery } from "convex/react";
 import { useMemo, useState, type ReactNode } from "react";
 import {
   Activity,
@@ -29,6 +29,7 @@ import {
   Search,
   ShieldCheck,
   TrendingUp,
+  Trash2,
   UsersRound,
   WalletCards,
   Wifi,
@@ -224,6 +225,19 @@ function Businesses() {
 
 function BusinessDrawer({ id, onClose }: { id: Id<"businesses">; onClose: () => void }) {
   const data = useQuery(api.admin.businessDetail, { businessId: id });
+  const deletion = useQuery(api.admin.deletionStatus, { businessId: id });
+  const requestDeletion = useAction(api.admin.requestAccountDeletion);
+  const [confirming, setConfirming] = useState(false);
+  const [confirmation, setConfirmation] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  async function deleteAccount() {
+    if (!data || confirmation !== data.business.name || deleting) return;
+    setDeleting(true); setDeleteError(null);
+    try { await requestDeletion({ businessId: id, confirmation }); }
+    catch { setDeleteError("Account deletion could not be started. If this is a paid account, verify the Paystack subscription can be disabled, then try again."); }
+    finally { setDeleting(false); }
+  }
   return <div className={styles.drawerLayer}><button className={styles.drawerBackdrop} onClick={onClose} aria-label="Close details" /><aside className={styles.drawer} aria-label="Business details">
     <div className={styles.drawerHeader}><div><span className={styles.eyebrow}>Business profile</span><h2>{data?.business.name ?? "Loading…"}</h2></div><button onClick={onClose} aria-label="Close"><X size={20} /></button></div>
     {data === undefined ? <AdminLoading label="Loading business details" embedded /> : !data ? <EmptyState title="Business unavailable" description="This workspace may have been removed." /> : <>
@@ -232,6 +246,15 @@ function BusinessDrawer({ id, onClose }: { id: Id<"businesses">; onClose: () => 
       <div className={styles.drawerMetrics}><MiniStat label="Customers" value={data.counts.customers} icon={UsersRound} /><MiniStat label="Conversations" value={data.counts.conversations} icon={MessageCircleMore} /><MiniStat label="Orders" value={data.counts.orders} icon={WalletCards} /><MiniStat label="Open issues" value={data.counts.openExceptions + data.counts.openRescues} icon={AlertCircle} /></div>
       <h3 className={styles.subheading}>Latest orders</h3>
       <div className={styles.orderList}>{data.latestOrders.map((order) => <div key={order.id}><span><strong>{money(order.totalAmount * 100)}</strong><small>{dateTime(order.createdAt)}</small></span><Badge value={order.status} /></div>)}{!data.latestOrders.length && <p className={styles.muted}>No orders recorded yet.</p>}</div>
+      <section className={styles.dangerZone}>
+        <div><span><Trash2 size={17} /></span><div><h3>Delete account</h3><p>Permanently removes the business, workspace data, and credential-login account. Google identities remain with Google but lose their Pipelixr workspace.</p></div></div>
+        {deletion && deletion.state !== "done" ? <div className={styles.deletionProgress}><RefreshCw size={15} /><span><strong>{deletion.state === "dead_letter" ? "Deletion needs operator review" : "Deletion in progress"}</strong><small>{deletion.state === "dead_letter" ? deletion.errorCode ?? "Cleanup stopped safely." : `${deletion.deletedRecords} records removed. The account is already disabled.`}</small></span></div> : !confirming ? <button className={styles.dangerButton} onClick={() => setConfirming(true)}><Trash2 size={15} /> Delete business and user</button> : <div className={styles.confirmDelete}>
+          <p>Type <strong>{data.business.name}</strong> to confirm. This action cannot be undone.</p>
+          <input value={confirmation} onChange={(event) => setConfirmation(event.target.value)} placeholder={data.business.name} autoComplete="off" />
+          {deleteError && <span className={styles.deleteError}>{deleteError}</span>}
+          <div><button className={styles.secondaryButton} onClick={() => { setConfirming(false); setConfirmation(""); setDeleteError(null); }} disabled={deleting}>Cancel</button><button className={styles.dangerButton} onClick={() => void deleteAccount()} disabled={confirmation !== data.business.name || deleting}>{deleting ? "Starting deletion…" : "Permanently delete"}</button></div>
+        </div>}
+      </section>
     </>}
   </aside></div>;
 }

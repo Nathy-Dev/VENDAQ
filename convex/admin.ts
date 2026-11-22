@@ -1,7 +1,11 @@
 import { v } from "convex/values";
-import { query, type QueryCtx } from "./_generated/server";
+import { ConvexError } from "convex/values";
+import { action, query, type QueryCtx } from "./_generated/server";
+import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { adminAccessConfigured, isAdmin, requireAdmin } from "./lib/adminAuthorization";
+import { decryptSecret } from "./lib/crypto";
+import { paystackRequest } from "./lib/paystack";
 
 const BUSINESS_LIMIT = 500;
 const LIST_LIMIT = 100;
@@ -289,5 +293,40 @@ export const billing = query({
       recentPayments: allPayments.map((payment) => ({ id: payment._id, businessId: payment.businessId, businessName: names.get(payment.businessId) ?? "Unknown business", amountKobo: payment.amountKobo, status: payment.status, channel: payment.channel ?? null, paidAt: payment.paidAt ?? payment.createdAt })),
       attention: [...subscriptionGroups[2], ...subscriptionGroups[3]].sort((a, b) => (a.currentPeriodEnd ?? Infinity) - (b.currentPeriodEnd ?? Infinity)).slice(0, 40).map((subscription) => ({ id: subscription._id, businessId: subscription.businessId, businessName: names.get(subscription.businessId) ?? "Unknown business", plan: subscription.plan, status: subscription.status, amountKobo: subscription.amountKobo, periodEnd: subscription.currentPeriodEnd ?? null })),
     };
+  },
+});
+
+export const deletionStatus = query({
+  args: { businessId: v.id("businesses") },
+  returns: v.union(v.null(), v.object({
+    jobId: v.id("adminAccountDeletionJobs"),
+    state: v.union(v.literal("pending"), v.literal("running"), v.literal("done"), v.literal("dead_letter")),
+    phase: v.number(),
+    deletedRecords: v.number(),
+    requestedAt: v.number(),
+    completedAt: v.union(v.number(), v.null()),
+    errorCode: v.union(v.string(), v.null()),
+  })),
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+    const job = await ctx.db.query("adminAccountDeletionJobs").withIndex("by_business", (builder) => builder.eq("businessId", args.businessId)).unique();
+    return job ? { jobId: job._id, state: job.state, phase: job.phase, deletedRecords: job.deletedRecords, requestedAt: job.requestedAt, completedAt: job.completedAt ?? null, errorCode: job.errorCode ?? null } : null;
+  },
+});
+
+export const requestAccountDeletion = action({
+  args: { businessId: v.id("businesses"), confirmation: v.string() },
+  returns: v.id("adminAccountDeletionJobs"),
+  handler: async (ctx, args): Promise<Id<"adminAccountDeletionJobs">> => {
+    const identity = await requireAdmin(ctx);
+    const preparation = await ctx.runQuery(internal.adminDeletion.accountDeletionPreparation, { businessId: args.businessId });
+    if (!preparation) throw new ConvexError({ code: "BUSINESS_NOT_FOUND" });
+    if (args.confirmation !== preparation.businessName) throw new ConvexError({ code: "DELETION_CONFIRMATION_MISMATCH" });
+    if (preparation.subscriptionStatus && ["active", "past_due", "cancel_at_period_end"].includes(preparation.subscriptionStatus)) {
+      if (!preparation.subscriptionCode || !preparation.emailTokenCiphertext) throw new ConvexError({ code: "BILLING_PROVIDER_SYNC_PENDING" });
+      const emailToken = await decryptSecret(preparation.emailTokenCiphertext, `billing:${preparation.businessId}:paystack-email-token`);
+      await paystackRequest("/subscription/disable", { method: "POST", body: { code: preparation.subscriptionCode, token: emailToken } });
+    }
+    return await ctx.runMutation(internal.adminDeletion.beginAccountDeletion, { businessId: args.businessId, requestedBy: identity.subject });
   },
 });

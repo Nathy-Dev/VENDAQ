@@ -25,4 +25,26 @@ describe("admin console authorization", () => {
     expect(overview.businesses.total).toBe(0);
     expect(overview.subscriptions.mrrKobo).toBe(0);
   });
+
+  it("requires an exact business-name confirmation and deletes the tenant in bounded jobs", async () => {
+    vi.stubEnv("ADMIN_USER_IDS", "google:operator");
+    const harness = createHarness();
+    const seller = harness.withIdentity({ subject: "google:delete-me", issuer: "https://auth.example.test" });
+    const admin = harness.withIdentity({ subject: "google:operator", issuer: "https://auth.example.test" });
+    const businessId = await seller.mutation(api.foundation.createBusiness, { name: "Delete Me Ltd" });
+    await harness.run(async (ctx) => {
+      const customerId = await ctx.db.insert("customers", { businessId, name: "Synthetic buyer", phone: "2348000000000", totalValue: 0, lastInteraction: Date.now(), tags: [] });
+      await ctx.db.insert("orders", { businessId, customerId, items: [{ name: "Test", quantity: 1, price: 1000 }], totalAmount: 1000, status: "pending", createdAt: Date.now() });
+    });
+
+    await expect(admin.action(api.admin.requestAccountDeletion, { businessId, confirmation: "wrong name" })).rejects.toThrow("DELETION_CONFIRMATION_MISMATCH");
+    await admin.action(api.admin.requestAccountDeletion, { businessId, confirmation: "Delete Me Ltd" });
+    expect(await harness.run((ctx) => ctx.db.get(businessId))).toMatchObject({ foundationVersion: 0, killSwitch: true, aiEnabled: false });
+
+    await harness.finishAllScheduledFunctions(() => vi.runAllTimers());
+    expect(await harness.run((ctx) => ctx.db.get(businessId))).toBeNull();
+    expect(await harness.run((ctx) => ctx.db.query("customers").withIndex("by_business", (query) => query.eq("businessId", businessId)).take(1))).toHaveLength(0);
+    expect(await harness.run((ctx) => ctx.db.query("orders").withIndex("by_business", (query) => query.eq("businessId", businessId)).take(1))).toHaveLength(0);
+    expect(await admin.query(api.admin.deletionStatus, { businessId })).toMatchObject({ state: "done" });
+  });
 });
