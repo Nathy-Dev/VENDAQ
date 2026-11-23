@@ -2,10 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import {
-  ArrowRight, BarChart3, Check, ChevronDown, Clock3, ListFilter, Menu,
-  MessageCircleMore, MessageSquareText, MoreHorizontal, Search, ShieldCheck,
-  Sparkles, Target, TrendingUp, UserRoundCheck, UsersRound, X, Zap,
+  ArrowRight, Check, ChevronDown, Clock3, ListFilter, Menu, MessageCircleMore,
+  MessageSquareText, ShieldCheck, Sparkles, Target, TrendingUp,
+  UserRoundCheck, UsersRound, X,
 } from "lucide-react";
 import Brand from "./Brand";
 import styles from "./LandingPage.module.css";
@@ -67,6 +68,56 @@ const questions = [
   { question: "Can I control the data in my workspace?", answer: "Your workspace shows its message-retention period and privacy controls. You can request deletion of a contact and related workspace records from the Inbox, then track the background deletion job in Settings. This does not delete messages from WhatsApp." },
 ];
 
+const salesScenarios = [
+  {
+    name: "Amara",
+    initials: "AO",
+    buyer: "Hi, is the green two-piece still available in Medium? I need it in Abuja before Friday.",
+    signal: "Buyer detected",
+    insight: "High intent · Medium · Abuja delivery",
+    reply: "Yes, Medium is in stock. It’s ₦42,000 and we can dispatch to Abuja within 24 hours. Would you like me to reserve it?",
+    followUp: "Tomorrow at 10:00 AM",
+  },
+  {
+    name: "Tobi",
+    initials: "TA",
+    buyer: "Do you offer a discount if I take 20 pieces? I can make payment today.",
+    signal: "Bulk buyer qualified",
+    insight: "20 units · Payment ready · Wholesale",
+    reply: "Yes. Your 20-piece wholesale price is ₦8,500 each. I can prepare the order summary and payment details now.",
+    followUp: "Quote check-in in 2 hours",
+  },
+  {
+    name: "Chidinma",
+    initials: "CN",
+    buyer: "I’ve sent the transfer receipt. Can you confirm it and deliver to Lekki today?",
+    signal: "Receipt detected",
+    insight: "Payment verification needed · Lekki",
+    reply: "Thanks — I’ve received your receipt and flagged it for verification. I’ll confirm delivery as soon as the payment is verified.",
+    followUp: "Verification reminder in 30 minutes",
+  },
+  {
+    name: "Seyi",
+    initials: "SO",
+    buyer: "How much delivery go Ibadan? I wan order two today.",
+    signal: "Buyer detected",
+    insight: "2 items · Ibadan · Ready today",
+    reply: "Delivery to Ibadan is ₦3,500. I can reserve two for you now and send the payment details. Which colours would you like?",
+    followUp: "Follow-up this afternoon",
+  },
+] as const;
+
+type DemoStage = "buyerTyping" | "analyzing" | "signal" | "replyTyping" | "followUp" | "transition";
+
+const demoStageOrder: Record<DemoStage, number> = {
+  buyerTyping: 0,
+  analyzing: 1,
+  signal: 2,
+  replyTyping: 3,
+  followUp: 4,
+  transition: 5,
+};
+
 export default function LandingPage() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [billingInterval, setBillingInterval] = useState<"monthly" | "annual">("monthly");
@@ -111,22 +162,20 @@ export default function LandingPage() {
         <section className={styles.hero} aria-labelledby="hero-title">
           <div className={styles.heroGlow} aria-hidden="true" />
           <div className={styles.heroCopy}>
-            <span className={styles.kicker}><span className={styles.kickerIcon}><Zap size={12} fill="currentColor" aria-hidden="true" /></span>Built for WhatsApp sellers</span>
-            <h1 id="hero-title">Turn busy chats into <span>sales you can follow through.</span></h1>
-            <p className={styles.heroLead}>Pipelixr finds the buyers in your WhatsApp conversations, keeps the next step clear, and helps you reply with the context your business needs.</p>
+            <span className={styles.kicker}><span className={styles.kickerIcon}><WhatsAppIcon /></span>Your WhatsApp sales AI agent</span>
+            <h1 id="hero-title">Turn busy WhatsApp chats <span>into sales.</span></h1>
+            <p className={styles.heroLead}>Pipelixr finds serious buyers in your WhatsApp conversations, qualifies leads, replies using your business details, follows up on opportunities, and tracks which conversations turn into sales.</p>
             <div className={styles.heroActions}>
               <Link href="/signup" className={`${styles.primaryButton} ${styles.heroPrimary}`}>Create my workspace<ArrowRight size={17} aria-hidden="true" /></Link>
               <a href="#product" className={styles.secondaryButton}>See how it works</a>
             </div>
-            <ul className={styles.heroTrust} aria-label="Product assurances">
-              <li><Check size={14} aria-hidden="true" /> Start before connecting WhatsApp</li>
-              <li><Check size={14} aria-hidden="true" /> You choose where it can reply</li>
+            <ul className={styles.heroTrust} aria-label="Pipelixr product assurances">
+              <li><Check size={14} aria-hidden="true" /> Uses your business details</li>
+              <li><ShieldCheck size={14} aria-hidden="true" /> Seller-controlled automation</li>
             </ul>
           </div>
           <figure className={styles.heroVisual}>
-            <div className={styles.visualHalo} aria-hidden="true" />
-            <RevenuePreview />
-            <figcaption>Illustrative workspace · sample seller-recorded data</figcaption>
+            <LiveAgentDemo />
           </figure>
         </section>
 
@@ -278,33 +327,142 @@ function ControlRow({ icon: Icon, title, note, enabled = false }: { icon: typeof
   return <div className={styles.controlRow}><span><Icon size={18} aria-hidden="true" /></span><div><strong>{title}</strong><small>{note}</small></div><span className={`${styles.toggle} ${enabled ? "" : styles.toggleOff}`} aria-label={enabled ? "Enabled" : "Disabled"}><i /></span></div>;
 }
 
-function RevenuePreview() {
+function LiveAgentDemo() {
+  const [scenarioIndex, setScenarioIndex] = useState(0);
+  const [stage, setStage] = useState<DemoStage>("buyerTyping");
+  const [buyerLength, setBuyerLength] = useState(0);
+  const [replyLength, setReplyLength] = useState(0);
+  const [started, setStarted] = useState(false);
+  const [reducedMotion, setReducedMotion] = useState(false);
+  const scenario = salesScenarios[scenarioIndex];
+
+  useEffect(() => {
+    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const updateMotionPreference = () => setReducedMotion(media.matches);
+    updateMotionPreference();
+    media.addEventListener?.("change", updateMotionPreference);
+    const startTimer = window.setTimeout(() => setStarted(true), 900);
+    return () => {
+      window.clearTimeout(startTimer);
+      media.removeEventListener?.("change", updateMotionPreference);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!started || reducedMotion) return;
+    let timer: number;
+
+    if (stage === "buyerTyping") {
+      if (buyerLength < scenario.buyer.length) {
+        timer = window.setTimeout(() => setBuyerLength((length) => length + 1), typingDelay(scenario.buyer, buyerLength));
+      } else {
+        timer = window.setTimeout(() => setStage("analyzing"), 650);
+      }
+    } else if (stage === "analyzing") {
+      timer = window.setTimeout(() => setStage("signal"), 1350);
+    } else if (stage === "signal") {
+      timer = window.setTimeout(() => setStage("replyTyping"), 950);
+    } else if (stage === "replyTyping") {
+      if (replyLength < scenario.reply.length) {
+        timer = window.setTimeout(() => setReplyLength((length) => length + 1), typingDelay(scenario.reply, replyLength));
+      } else {
+        timer = window.setTimeout(() => setStage("followUp"), 700);
+      }
+    } else if (stage === "followUp") {
+      timer = window.setTimeout(() => setStage("transition"), 2600);
+    } else {
+      timer = window.setTimeout(() => {
+        setScenarioIndex((index) => (index + 1) % salesScenarios.length);
+        setBuyerLength(0);
+        setReplyLength(0);
+        setStage("buyerTyping");
+      }, 650);
+    }
+
+    return () => window.clearTimeout(timer);
+  }, [buyerLength, reducedMotion, replyLength, scenario, stage, started]);
+
+  const complete = !started || reducedMotion;
+  const currentStage = complete ? demoStageOrder.followUp : demoStageOrder[stage];
+  const buyerText = complete ? scenario.buyer : scenario.buyer.slice(0, buyerLength);
+  const replyText = complete ? scenario.reply : scenario.reply.slice(0, replyLength);
+  const isLeaving = !complete && stage === "transition";
+  const announcement = complete
+    ? `${scenario.signal}. Reply ready. Follow-up scheduled.`
+    : stage === "analyzing"
+      ? "Pipelixr is analysing the conversation."
+      : stage === "signal"
+        ? `${scenario.signal}. ${scenario.insight}`
+        : stage === "replyTyping"
+          ? "Pipelixr is preparing a reply using the business details."
+          : stage === "followUp"
+            ? `Reply ready. Follow-up scheduled for ${scenario.followUp}.`
+            : `${scenario.name} is typing a WhatsApp message.`;
+
   return (
-    <div className={styles.preview} aria-label="Illustration of the Pipelixr priority workspace">
-      <div className={styles.previewTopbar}><div className={styles.previewBrand}><Brand compact /><span>Everyday Studio</span></div><div className={styles.previewTopActions}><span><Search size={13} aria-hidden="true" /></span><span className={styles.previewAvatar}>NE</span></div></div>
-      <div className={styles.previewBody}>
-        <aside className={styles.previewSidebar} aria-hidden="true"><span className={styles.previewNavActive}><BarChart3 size={17} /></span><span><MessageCircleMore size={17} /></span><span><ListFilter size={17} /></span><span><UsersRound size={17} /></span></aside>
-        <div className={styles.previewMain}>
-          <div className={styles.previewTitle}><div><span>Wednesday, 22 November</span><h2>Good morning, Nneka.</h2></div><span className={styles.previewStatus}><i /> WhatsApp connected</span></div>
-          <div className={styles.metricGrid}>
-            <div className={styles.metricCard}><span>Needs attention</span><strong>8</strong><small><TrendingUp size={10} /> 3 new today</small></div>
-            <div className={styles.metricCard}><span>Buying signals</span><strong>5</strong><small>High-intent chats</small></div>
-            <div className={styles.metricCard}><span>Open pipeline</span><strong>₦186k</strong><small>Seller-recorded</small></div>
-          </div>
-          <div className={styles.priorityPanel}>
-            <div className={styles.panelHeader}><div><strong>Priority conversations</strong><span>Work the next best action</span></div><button type="button" aria-label="More options"><MoreHorizontal size={16} /></button></div>
-            <PriorityRow initials="AM" avatarClass={styles.avatarGold} name="Amara Okafor" message="Is the medium still available?" badge="Buying signal" badgeClass={styles.intentBadge} time="12m" />
-            <PriorityRow initials="TO" avatarClass={styles.avatarPurple} name="Tobi Adebayo" message="Asked for delivery cost" badge="Follow up" badgeClass={styles.followBadge} time="1h" />
-            <PriorityRow initials="ZA" avatarClass={styles.avatarBlue} name="Zara Bello" message="Payment reminder due" badge="Order open" badgeClass={styles.paymentBadge} time="3h" />
-          </div>
-        </div>
+    <div className={`${styles.agentDemo} ${isLeaving ? styles.agentDemoLeaving : ""}`} data-live-agent-demo="true" role="img" aria-label="Pipelixr handling changing WhatsApp sales conversations in real time">
+      <div className={styles.agentDemoBackdrop} aria-hidden="true" />
+      <div className={styles.agentArtwork} aria-hidden="true">
+        <Image src="/pipelixr-agent-hero.webp" width={612} height={408} priority sizes="(max-width: 900px) 92vw, 48vw" alt="" />
       </div>
+
+      <div className={styles.liveConversation} aria-hidden="true">
+        <div className={`${styles.liveBubble} ${styles.buyerBubble}`}>
+          <div className={styles.liveBubbleHeader}><span>{scenario.initials}</span><div><strong>{scenario.name}</strong><small>WhatsApp · now</small></div></div>
+          <p>{buyerText}{!complete && stage === "buyerTyping" && <TypingCursor />}</p>
+        </div>
+
+        {currentStage >= demoStageOrder.analyzing && (
+          <div className={`${styles.liveBubble} ${styles.signalBubble} ${stage === "analyzing" && !complete ? styles.isAnalyzing : ""}`}>
+            <span className={styles.signalIcon}><Sparkles size={14} aria-hidden="true" /></span>
+            <div>
+              <strong>{stage === "analyzing" && !complete ? "Understanding buying intent" : scenario.signal}</strong>
+              <small>{stage === "analyzing" && !complete ? <TypingDots /> : scenario.insight}</small>
+            </div>
+          </div>
+        )}
+
+        {currentStage >= demoStageOrder.replyTyping && (
+          <div className={`${styles.liveBubble} ${styles.replyBubble}`}>
+            <div className={styles.replyLabel}><span><Brand compact /></span><strong>Pipelixr</strong><small>{stage === "replyTyping" && replyLength < scenario.reply.length && !complete ? "typing" : "reply ready"}</small></div>
+            <p>{replyText}{!complete && stage === "replyTyping" && replyLength < scenario.reply.length && <TypingCursor />}</p>
+            <span className={styles.replyContext}><Check size={11} aria-hidden="true" /> Uses your business details</span>
+          </div>
+        )}
+
+        {currentStage >= demoStageOrder.followUp && (
+          <div className={`${styles.liveBubble} ${styles.followUpBubble}`}>
+            <span><Clock3 size={16} aria-hidden="true" /></span><div><strong>Follow-up scheduled</strong><small>{scenario.followUp}</small></div><Check size={14} aria-hidden="true" />
+          </div>
+        )}
+      </div>
+      <p className="sr-only" aria-live="polite">{announcement}</p>
     </div>
   );
 }
 
-function PriorityRow({ initials, avatarClass, name, message, badge, badgeClass, time }: { initials: string; avatarClass: string; name: string; message: string; badge: string; badgeClass: string; time: string }) {
-  return <div className={styles.priorityRow}><span className={`${styles.contactAvatar} ${avatarClass}`}>{initials}</span><div className={styles.contactInfo}><strong>{name}</strong><span>{message}</span></div><span className={badgeClass}>{badge}</span><span className={styles.timeCell}><Clock3 size={11} /> {time}</span><button type="button">Review <ArrowRight size={11} /></button></div>;
+function TypingCursor() {
+  return <span className={styles.typingCursor} aria-hidden="true" />;
+}
+
+function TypingDots() {
+  return <span className={styles.typingDots} aria-label="Typing"><i /><i /><i /></span>;
+}
+
+function WhatsAppIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+      <path fill="currentColor" d="M12 2a9.6 9.6 0 0 0-8.3 14.4L2.4 21.6l5.3-1.3A9.6 9.6 0 1 0 12 2Zm0 2a7.6 7.6 0 1 1-3.9 14.1l-.4-.2-2.4.6.6-2.3-.3-.4A7.6 7.6 0 0 1 12 4Zm-3.1 3.7c-.2 0-.5.1-.7.3-.2.2-.8.8-.8 2s.8 2.3.9 2.5c.1.2 1.6 2.5 4 3.4 2 .8 2.4.6 2.8.6.5 0 1.4-.6 1.6-1.1.2-.5.2-1 .1-1.1-.1-.1-.3-.2-.6-.4l-1.7-.8c-.2-.1-.4-.1-.6.2l-.8 1c-.1.2-.3.2-.5.1a6.2 6.2 0 0 1-1.9-1.2 7 7 0 0 1-1.3-1.7c-.1-.2 0-.4.1-.5l.4-.5.2-.4c.1-.2 0-.4 0-.5l-.8-1.8c-.2-.4-.4-.4-.6-.4h-.4Z" />
+    </svg>
+  );
+}
+
+function typingDelay(text: string, index: number) {
+  const character = text[index] ?? "";
+  if (/[.!?]/.test(character)) return 130;
+  if (/[,—]/.test(character)) return 85;
+  if (character === " ") return 22;
+  return 28 + (index % 4) * 7;
 }
 
 function ConversationCard() {

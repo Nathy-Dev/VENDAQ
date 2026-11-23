@@ -41,6 +41,7 @@ import {
 } from "lucide-react";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
+import Brand from "../Brand";
 import styles from "./AdminConsole.module.css";
 
 type RangeDays = 7 | 30 | 90;
@@ -74,7 +75,7 @@ export default function AdminConsole() {
     <div className={styles.shell}>
       <aside className={`${styles.sidebar} ${mobileOpen ? styles.sidebarOpen : ""}`}>
         <div className={styles.brandRow}>
-          <Link href="/admin" className={styles.brand}><span className={styles.brandMark}>P</span><span>Pipelixr</span><em>ADMIN</em></Link>
+          <Link href="/admin" className={styles.brand}><Brand compact /><span>Pipelixr</span><em>ADMIN</em></Link>
           <button className={styles.mobileClose} onClick={() => setMobileOpen(false)} aria-label="Close menu"><X size={20} /></button>
         </div>
         <nav className={styles.nav} aria-label="Admin navigation">

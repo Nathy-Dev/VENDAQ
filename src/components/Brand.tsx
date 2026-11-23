@@ -5,7 +5,7 @@ export default function Brand({ compact = false }: { compact?: boolean }) {
   return (
     <span className={styles.brand}>
       <span className={styles.mark} aria-hidden="true">
-        <Image src="/logo.png" alt="" width={64} height={64} className={styles.image} />
+        <Image src="/logo.svg" alt="" width={64} height={64} className={styles.image} unoptimized />
       </span>
       {!compact && <span className={styles.wordmark}>pipelixr</span>}
     </span>

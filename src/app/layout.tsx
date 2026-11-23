@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: { default: "Pipelixr — Turn WhatsApp chats into sales", template: "%s | Pipelixr" },
-  description: "Find ready-to-buy customers, keep follow-ups clear, and reply with the right business context from one focused WhatsApp sales workspace.",
+  title: { default: "Pipelixr — AI Sales Assistant for WhatsApp Businesses", template: "%s | Pipelixr" },
+  description: "Find serious buyers, qualify leads, reply using your business details, follow up on opportunities, and track which WhatsApp conversations turn into sales.",
 };
 
 export default function RootLayout({

@@ -13,6 +13,17 @@ import AuthScreen from "../src/components/AuthScreen";
 import LandingPage from "../src/components/LandingPage";
 
 describe("public UI", () => {
+  it("positions Pipelixr as a live AI sales assistant for WhatsApp businesses", () => {
+    const html = renderToStaticMarkup(<LandingPage />);
+    expect(html).toContain("Turn busy WhatsApp chats");
+    expect(html).toContain("into sales.");
+    expect(html).toContain("Pipelixr finds serious buyers in your WhatsApp conversations, qualifies leads, replies using your business details, follows up on opportunities, and tracks which conversations turn into sales.");
+    expect(html).toContain('data-live-agent-demo="true"');
+    expect(html).toContain("Buyer detected");
+    expect(html).toContain("reply ready");
+    expect(html).toContain("Follow-up scheduled");
+  });
+
   it("describes the consent-gated Launch 1 assistant accurately", () => {
     const html = renderToStaticMarkup(<LandingPage />);
     expect(html).toContain("You control customer authorization and every enabled group");

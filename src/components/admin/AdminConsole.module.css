@@ -2,7 +2,7 @@
 .sidebar { position:fixed; inset:0 auto 0 0; z-index:30; width:248px; padding:22px 14px 16px; display:flex; flex-direction:column; background:#101827; color:#cbd5e1; border-right:1px solid #202c3f; }
 .brandRow { display:flex; align-items:center; justify-content:space-between; padding:0 9px 25px; }
 .brand { display:flex; align-items:center; gap:10px; font-size:17px; color:#fff; font-weight:730; letter-spacing:-.02em; }
-.brandMark { width:30px; height:30px; display:grid; place-items:center; border-radius:9px; color:#fff; background:linear-gradient(145deg,#635bff,#8b5cf6); font-weight:800; }
+.brand > span:first-child { filter:invert(1) brightness(1.8); }
 .brand em { padding:3px 5px; border:1px solid #38445a; border-radius:4px; color:#9aa7ba; font-size:8px; font-style:normal; letter-spacing:.14em; }
 .nav { display:flex; flex-direction:column; gap:4px; flex:1; }
 .navLabel { margin:16px 10px 5px; color:#67758a; font-size:10px; text-transform:uppercase; letter-spacing:.13em; font-weight:800; }
