@@ -21,7 +21,7 @@ function money(amount: number) {
 }
 
 function date(value: number | null) {
-  return value ? new Intl.DateTimeFormat("en-NG", { dateStyle: "medium" }).format(value) : "—";
+  return value ? new Intl.DateTimeFormat("en-NG", { dateStyle: "medium" }).format(value) : "N/A";
 }
 
 export default function BillingWorkspace() {
@@ -88,7 +88,7 @@ export default function BillingWorkspace() {
       <Stat label="Automation" value={overview.automation ? "Included" : "Not included"} hint={overview.automation ? `Up to ${overview.enabledGroupLimit} enabled groups` : "Upgrade to Growth"} />
     </StatGrid>
 
-    <div className={styles.controls}><Segmented value={interval} onChange={setInterval} label="Billing interval" options={[{ value: "monthly", label: "Monthly" }, { value: "annual", label: "Annual — 2 months free" }]} /></div>
+    <div className={styles.controls}><Segmented value={interval} onChange={setInterval} label="Billing interval" options={[{ value: "monthly", label: "Monthly" }, { value: "annual", label: "Annual, 2 months free" }]} /></div>
     <div className={styles.planGrid}>
       {(Object.keys(plans) as Plan[]).map((key) => {
         const plan = plans[key];

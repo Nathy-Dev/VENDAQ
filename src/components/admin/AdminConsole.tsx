@@ -368,9 +368,9 @@ function compactId(value: string) { return value.length > 24 ? `${value.slice(0,
 function number(value: number) { return new Intl.NumberFormat("en-NG").format(value); }
 function money(kobo: number) { return new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN", maximumFractionDigits: 0 }).format(kobo / 100); }
 function percent(value: number) { return `${Math.round(value * 100)}%`; }
-function nullablePercent(value: number | null) { return value === null ? "—" : percent(value); }
-function signedPercent(value: number | null) { return value === null ? "—" : `${value < 0 ? "−" : ""}${Math.abs(Math.round(value * 100))}%`; }
-function duration(value: number | null) { if (value === null) return "—"; const minutes = Math.round(value / 60_000); if (minutes < 60) return `${minutes}m`; const hours = Math.round(minutes / 60); if (hours < 48) return `${hours}h`; return `${Math.round(hours / 24)}d`; }
+function nullablePercent(value: number | null) { return value === null ? "N/A" : percent(value); }
+function signedPercent(value: number | null) { return value === null ? "N/A" : `${value < 0 ? "−" : ""}${Math.abs(Math.round(value * 100))}%`; }
+function duration(value: number | null) { if (value === null) return "N/A"; const minutes = Math.round(value / 60_000); if (minutes < 60) return `${minutes}m`; const hours = Math.round(minutes / 60); if (hours < 48) return `${hours}h`; return `${Math.round(hours / 24)}d`; }
 function date(timestamp: number) { return new Intl.DateTimeFormat("en-NG", { day: "2-digit", month: "short", year: "numeric" }).format(timestamp); }
 function shortDate(timestamp: number) { return new Intl.DateTimeFormat("en-NG", { day: "numeric", month: "short" }).format(timestamp); }
 function dateTime(timestamp: number) { return new Intl.DateTimeFormat("en-NG", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }).format(timestamp); }

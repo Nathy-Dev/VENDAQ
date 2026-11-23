@@ -4,7 +4,7 @@
  * All media files (images, videos, audio, documents) are stored in Cloudinary
  * instead of Convex storage to avoid hitting Convex storage limits.
  *
- * Uses signed uploads via Web Crypto API (SHA-1) — no Node.js dependencies.
+ * Uses signed uploads via Web Crypto API (SHA-1) - no Node.js dependencies.
  *
  * Required Convex environment variables:
  *   CLOUDINARY_CLOUD_NAME  - Your Cloudinary cloud name
@@ -61,7 +61,7 @@ type UploadOptions = {
   mimetype: string;
   /** Cloudinary folder (default: "pipelixr/media") */
   folder?: string;
-  /** Custom public_id (optional — Cloudinary generates one if omitted) */
+  /** Custom public_id (optional - Cloudinary generates one if omitted) */
   publicId?: string;
   /** Resource type override (default: auto-detected from mimetype) */
   resourceType?: "image" | "video" | "raw" | "auto";

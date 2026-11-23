@@ -1,5 +1,5 @@
 /**
- * WhatsApp Adapter — re-exports types and provides the adapter factory.
+ * WhatsApp Adapter - re-exports types and provides the adapter factory.
  *
  * All types and the IWhatsAppAdapter interface are defined in ./types.ts
  * to avoid circular dependencies between this file and provider implementations.

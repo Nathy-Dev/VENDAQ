@@ -75,7 +75,7 @@ export default function PipelineBoard({ businessId }: Props) {
       {/* ── What the AI recovered ── */}
       <section className={styles.funnelSection}>
         <h3 className={styles.sectionTitle}>What the AI Did For You</h3>
-        <p className={styles.sectionSubtitle}>Money and leads recovered automatically — no manual work needed.</p>
+        <p className={styles.sectionSubtitle}>Money and leads recovered automatically, with no manual work needed.</p>
         <div className={styles.recoveryGrid}>
           <RecoveryCard
             label="Revenue Recovered"
@@ -103,7 +103,7 @@ export default function PipelineBoard({ businessId }: Props) {
       <section>
         <h3 className={styles.sectionTitle}>Who Needs Your Attention</h3>
         <div className={styles.boardGrid}>
-          {/* HOT — Ready to Buy */}
+          {/* HOT - Ready to Buy */}
           <div className={styles.boardColumn}>
             <div className={styles.boardColumnHeader}>
               <Flame size={15} style={{ color: "#f87171" }} />
@@ -129,7 +129,7 @@ export default function PipelineBoard({ businessId }: Props) {
             )}
           </div>
 
-          {/* COLD — Went Quiet */}
+          {/* COLD - Went Quiet */}
           <div className={styles.boardColumn}>
             <div className={styles.boardColumnHeader}>
               <Snowflake size={15} style={{ color: "#60a5fa" }} />
@@ -151,7 +151,7 @@ export default function PipelineBoard({ businessId }: Props) {
             )}
           </div>
 
-          {/* LOST — Slipped Away */}
+          {/* LOST - Slipped Away */}
           <div className={styles.boardColumn}>
             <div className={styles.boardColumnHeader}>
               <Clock size={15} style={{ color: "#fbbf24" }} />

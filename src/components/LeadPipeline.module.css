@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   LeadPipeline — Redesigned Styles
+   LeadPipeline - Redesigned Styles
    Horizontal kanban with heat indicators
    ══════════════════════════════════════════════════════════ */
 
@@ -96,7 +96,7 @@
   transform: translateY(-1px);
 }
 
-/* Heat bar — colour strip at top based on temperature */
+/* Heat bar - colour strip at top based on temperature */
 .heatBar {
   position: absolute;
   top: 0;

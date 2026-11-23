@@ -5,7 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import {
   ArrowRight, Boxes, CakeSlice, Check, ChevronDown, Clock3, House, ListFilter, Menu, MessageCircleMore,
-  MessageSquareText, ShieldCheck, Shirt, Sparkles, Target, TrendingUp,
+  ShieldCheck, Shirt, Sparkles, Target,
   UserRoundCheck, UsersRound, X,
 } from "lucide-react";
 import Brand from "./Brand";
@@ -48,12 +48,6 @@ const pricingPlans = [
   },
 ];
 
-const outcomes = [
-  { icon: Target, title: "Spot serious buyers sooner", text: "Bring likely buyers to the top instead of rereading every chat to find the conversations that matter." },
-  { icon: MessageSquareText, title: "Give every reply context", text: "Use your products, prices, delivery details, policies, and tone to answer customers more consistently." },
-  { icon: TrendingUp, title: "Keep the sale moving", text: "Know the next step, follow up at the right time, and record what happened without leaving the conversation." },
-];
-
 const businessTypes = [
   { icon: Shirt, title: "Fashion, beauty & personal care", text: "Handle questions about sizes, shades, stock, prices, and delivery without losing ready buyers." },
   { icon: CakeSlice, title: "Food, cakes & event vendors", text: "Qualify dates, quantities, locations, and custom requests, then keep each quote moving." },
@@ -71,7 +65,7 @@ const questions = [
   { question: "What kinds of businesses is Pipelixr best for?", answer: "Pipelixr is built for chat-first businesses that sell through WhatsApp and regularly answer questions about products, prices, availability, quantities, delivery, bookings, or payment. It is especially useful when strong buying intent and follow-ups are getting buried in a busy inbox." },
   { question: "Does Pipelixr send messages for me?", answer: "Only when you choose it. Complete Teach Pipelixr, then separately authorize one-to-one replies or enable individual groups. You can use AI-assisted drafts first, and groups stay silent until enabled individually." },
   { question: "Can it understand Pidgin, voice notes, and images?", answer: "Pipelixr can work with English and Pidgin conversations, transcribe supported voice notes, and analyse supported product images and payment receipts. Unclear, unsupported, or sensitive cases can be held for review instead of forcing a confident reply." },
-  { question: "How does the WhatsApp connection work?", answer: "You can pair an authorized number using a QR code. The connection uses Evolution Go, an unofficial provider—not the official WhatsApp Business API. WhatsApp may restrict or ban the number. You must review and accept those risks before pairing." },
+  { question: "How does the WhatsApp connection work?", answer: "You can pair an authorized number using a QR code. The connection uses Evolution Go, an unofficial provider, not the official WhatsApp Business API. WhatsApp may restrict or ban the number. You must review and accept those risks before pairing." },
   { question: "What counts as an AI-assisted customer chat?", answer: "A customer conversation counts when Pipelixr assists it during your billing period. More messages in that same conversation are not counted again during the same period." },
   { question: "Can I control replies and customer data?", answer: "Yes. You choose where replies are allowed, can pause automation, and can review connection health. Your workspace shows its retention settings and privacy controls, including requests to delete a contact’s related workspace records." },
 ];
@@ -101,7 +95,7 @@ const salesScenarios = [
     buyer: "I’ve sent the transfer receipt. Can you confirm it and deliver to Lekki today?",
     signal: "Receipt detected",
     insight: "Payment verification needed · Lekki",
-    reply: "Thanks — I’ve received your receipt and flagged it for verification. I’ll confirm delivery as soon as the payment is verified.",
+    reply: "Thanks, I’ve received your receipt and flagged it for verification. I’ll confirm delivery as soon as the payment is verified.",
     followUp: "Verification reminder in 30 minutes",
   },
   {
@@ -198,19 +192,57 @@ export default function LandingPage() {
         </section>
 
         <section id="product" className={styles.problemSection} aria-labelledby="problem-title">
-          <div className={styles.sectionHeading}>
-            <span className={styles.overline}>Stop losing intent in the scroll</span>
-            <h2 id="problem-title">Your next sale may already be buried in your inbox.</h2>
-            <p>When every chat looks equally urgent, serious buyers get missed and follow-ups slip. Pipelixr turns message activity into a focused list of conversations and actions worth your attention.</p>
+          <div className={`${styles.sectionHeading} ${styles.productHeading}`}>
+            <span className={styles.overline}>From message to next move</span>
+            <h2 id="problem-title">Pipelixr understands the sale hiding inside the chat.</h2>
+            <p>A customer does not have to say “I am ready to buy.” Pipelixr reads what they need, checks your business details, prepares a grounded reply, and keeps the next sales action visible.</p>
           </div>
-          <div className={styles.outcomeGrid}>
-            {outcomes.map(({ icon: Icon, title, text }, index) => (
-              <article className={styles.outcomeCard} key={title}>
-                <span className={styles.cardNumber}>0{index + 1}</span><span className={styles.iconBox}><Icon size={22} strokeWidth={1.8} aria-hidden="true" /></span>
-                <h3>{title}</h3><p>{text}</p>
-              </article>
-            ))}
+
+          <div className={styles.productStory} aria-label="Example of Pipelixr turning a WhatsApp enquiry into a sales action">
+            <div className={styles.storyStep}>
+              <div className={styles.storyStepLabel}><span>01</span><strong>A customer asks</strong></div>
+              <div className={styles.customerMoment}>
+                <div className={styles.customerIdentity}>
+                  <span>AO</span>
+                  <div><strong>Amara Okafor</strong><small><WhatsAppIcon /> WhatsApp · now</small></div>
+                </div>
+                <p>Hi, is the brown linen set available in Medium? I need it delivered to Abuja before Friday.</p>
+              </div>
+            </div>
+
+            <div className={`${styles.storyStep} ${styles.understandingStep}`}>
+              <div className={styles.storyStepLabel}><span>02</span><strong>Pipelixr understands</strong></div>
+              <div className={styles.intentSummary}>
+                <div className={styles.intentSummaryTop}><span><Sparkles size={15} aria-hidden="true" /></span><div><strong>Serious buying intent</strong><small>Delivery timing matters</small></div></div>
+                <dl className={styles.intentDetails}>
+                  <div><dt>Product</dt><dd>Brown linen set</dd></div>
+                  <div><dt>Size</dt><dd>Medium</dd></div>
+                  <div><dt>Location</dt><dd>Abuja</dd></div>
+                  <div><dt>Needed</dt><dd>Before Friday</dd></div>
+                </dl>
+                <div className={styles.contextCheck}>
+                  <span>Checks your business details</span>
+                  <p><Check size={12} aria-hidden="true" /> Medium in stock</p>
+                  <p><Check size={12} aria-hidden="true" /> ₦38,000</p>
+                  <p><Check size={12} aria-hidden="true" /> Abuja delivery: 2–3 days</p>
+                </div>
+              </div>
+            </div>
+
+            <div className={`${styles.storyStep} ${styles.actionStep}`}>
+              <div className={styles.storyStepLabel}><span>03</span><strong>The sale keeps moving</strong></div>
+              <div className={styles.preparedReply}>
+                <div className={styles.preparedReplyLabel}><span><Brand compact /></span><strong>Reply prepared</strong><small>Using your details</small></div>
+                <p>Yes, the brown linen set is available in Medium for ₦38,000. Abuja delivery takes 2–3 days, so it can arrive before Friday if you order today. Would you like the payment details?</p>
+              </div>
+              <div className={styles.salesNextMove}>
+                <span><Clock3 size={16} aria-hidden="true" /></span>
+                <div><small>Next move protected</small><strong>Follow up tomorrow if there is no reply</strong></div>
+                <Check size={15} aria-hidden="true" />
+              </div>
+            </div>
           </div>
+          <p className={styles.storyNote}>Illustrative example. You decide whether Pipelixr suggests the reply or sends it in an approved chat.</p>
         </section>
 
         <section id="businesses" className={styles.businessSection} aria-labelledby="businesses-title">
@@ -236,7 +268,7 @@ export default function LandingPage() {
             <span><Check size={14} aria-hidden="true" /> Customers ask repeat questions</span>
             <span><Check size={14} aria-hidden="true" /> Follow-ups decide whether you close</span>
           </div>
-          <p className={styles.fitNote}>Best for businesses already selling in chat—not teams looking for a general customer-support chatbot.</p>
+          <p className={styles.fitNote}>Best for businesses already selling in chat, not teams looking for a general customer-support chatbot.</p>
         </section>
 
         <section className={styles.focusSection} aria-labelledby="focus-title">
@@ -246,7 +278,7 @@ export default function LandingPage() {
           </div>
           <div className={styles.focusCopy}>
             <span className={styles.overline}>Know what deserves attention</span>
-            <h2 id="focus-title">Know who to reply to—and what to do next.</h2>
+            <h2 id="focus-title">Know who to reply to, and what to do next.</h2>
             <p>Pipelixr organizes conversations around action, not noise. See who is asking to buy, who is waiting for an answer, and which opportunity needs a follow-up.</p>
             <ul>
               <li><Check size={16} aria-hidden="true" /><span><strong>Priority conversations</strong> surface likely buying intent.</span></li>
@@ -301,7 +333,7 @@ export default function LandingPage() {
                   {plan.custom ? (
                     <a className={styles.planButton} href="mailto:sales@pipelixr.com?subject=Pipelixr%20Scale">Contact sales <ArrowRight size={15} aria-hidden="true" /></a>
                   ) : (
-                    <Link className={`${styles.planButton} ${plan.featured ? styles.planButtonFeatured : ""}`} href="/signup">Start 14-day trial <ArrowRight size={15} aria-hidden="true" /></Link>
+                    <Link className={`${styles.planButton} ${plan.featured ? styles.planButtonFeatured : ""}`} href="/signup">Start 14-day free trial <ArrowRight size={15} aria-hidden="true" /></Link>
                   )}
                 </article>
               );
@@ -313,7 +345,7 @@ export default function LandingPage() {
         <section id="safety" className={styles.controlSection} aria-labelledby="control-title">
           <div className={styles.controlCopy}>
             <span className={styles.darkOverline}>Set the boundaries</span>
-            <h2 id="control-title">You decide where the AI helps—and where it stays quiet.</h2>
+            <h2 id="control-title">You decide where the AI helps, and where it stays quiet.</h2>
             <p>Start with suggested replies, then enable automation only where you are comfortable. One-to-one chats and each WhatsApp group have separate controls, and connection health is monitored in your workspace.</p>
             <Link href="/signup" className={styles.lightButton}>Start my free trial <ArrowRight size={16} aria-hidden="true" /></Link>
           </div>
@@ -495,7 +527,7 @@ function WhatsAppIcon() {
 function typingDelay(text: string, index: number) {
   const character = text[index] ?? "";
   if (/[.!?]/.test(character)) return 130;
-  if (/[,—]/.test(character)) return 85;
+  if (character === ",") return 85;
   if (character === " ") return 22;
   return 28 + (index % 4) * 7;
 }

@@ -1,5 +1,5 @@
 /**
- * Pipeline Engine — The Non-Negotiable Revenue Loop
+ * Pipeline Engine - The Non-Negotiable Revenue Loop
  *
  * Provides:
  *   - Priority Board (hot/cold/lost ranking)
@@ -20,7 +20,7 @@ const COLD_VIEWER_THRESHOLD_DAYS = 3;
 const LOST_OPPORTUNITY_THRESHOLD_DAYS = 7;
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 1. PRIORITY BOARD — Hot leads, cold viewers, lost opportunities
+// 1. PRIORITY BOARD - Hot leads, cold viewers, lost opportunities
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export const getPriorityBoard = query({
@@ -82,7 +82,7 @@ export const getPriorityBoard = query({
         let reason = "Buying signal detected";
         if (c.funnelStage === "awaiting_payment") reason = "Payment pending";
         if (!c.lastOutboundAt || (now - c.lastOutboundAt) > 2 * 60 * 60 * 1000) {
-          reason += " — needs response";
+          reason += ". Needs response";
         }
         hotLeads.push({
           customerId: c._id,
@@ -160,7 +160,7 @@ export const getPriorityBoard = query({
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 2. FULL FUNNEL METRICS — End-to-end conversion tracking
+// 2. FULL FUNNEL METRICS - End-to-end conversion tracking
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export const getFullFunnelMetrics = query({
@@ -277,7 +277,7 @@ export const getFullFunnelMetrics = query({
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 3. DAILY SNAPSHOT — Captures yesterday's metrics for time-series
+// 3. DAILY SNAPSHOT - Captures yesterday's metrics for time-series
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export const captureDailySnapshot = internalMutation({
@@ -404,7 +404,7 @@ export const getDailySnapshots = query({
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 4. ASKED-NO-ORDER FOLLOW-UP — Engaged leads who never ordered
+// 4. ASKED-NO-ORDER FOLLOW-UP - Engaged leads who never ordered
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
@@ -600,7 +600,7 @@ export const tagLostOpportunities = internalMutation({
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 6. CRON ENTRY POINTS — Called by convex/crons.ts
+// 6. CRON ENTRY POINTS - Called by convex/crons.ts
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /** Runs all daily maintenance for every active business */

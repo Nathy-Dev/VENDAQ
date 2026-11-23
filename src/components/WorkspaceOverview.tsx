@@ -27,10 +27,10 @@ export default function WorkspaceOverview({ workspace }: { workspace: Workspace 
       <PageHeader eyebrow={workspace.name} title={firstName ? `Hey, ${firstName}.` : "Your day, at a glance."} description="A little less catching up. A little more moving forward."
         actions={<Link href="/pipeline" className={buttonClass.secondary}><MessageCircle size={15} />Open inbox</Link>} />
       <StatGrid>
-        <Stat label="Leads captured" value={metrics?.leadsCaptured ?? "—"} hint="Customer-initiated conversations" icon={UsersRound} />
-        <Stat label="Actions to review" value={actions?.length ?? "—"} hint="Ready for your attention" icon={ListTodo} />
-        <Stat label="Recorded orders" value={metrics?.orders ?? "—"} hint="Entered by you" icon={ShoppingBag} />
-        <Stat label="Claimed revenue" value={metrics ? formatMoney(metrics.claimedRecoveredRevenue) : "—"} hint="Seller-recorded, not independently verified" />
+        <Stat label="Leads captured" value={metrics?.leadsCaptured ?? "N/A"} hint="Customer-initiated conversations" icon={UsersRound} />
+        <Stat label="Actions to review" value={actions?.length ?? "N/A"} hint="Ready for your attention" icon={ListTodo} />
+        <Stat label="Recorded orders" value={metrics?.orders ?? "N/A"} hint="Entered by you" icon={ShoppingBag} />
+        <Stat label="Claimed revenue" value={metrics ? formatMoney(metrics.claimedRecoveredRevenue) : "N/A"} hint="Seller-recorded, not independently verified" />
       </StatGrid>
       <div className={styles.overviewGrid}>
         <div className={styles.stack}>

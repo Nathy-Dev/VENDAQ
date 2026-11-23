@@ -1,5 +1,5 @@
 /**
- * EvolutionGoAdapter — implements IWhatsAppAdapter for the Evolution Go provider.
+ * EvolutionGoAdapter - implements IWhatsAppAdapter for the Evolution Go provider.
  *
  * This is a thin wrapper around the existing `evolutionGoClient.ts` module,
  * conforming to the adapter interface so the rest of the codebase can use

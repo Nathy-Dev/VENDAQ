@@ -4,7 +4,7 @@ Status: **implemented locally on 2026-10-28; not deployed**.
 
 ## Seller outcome and metric
 
-A seller can create an isolated workspace, accept the unofficial-WhatsApp risk disclosure, connect an Evolution Go instance, and inspect newly captured direct conversations without PIPELIXR sending or classifying anything. Success is measured by authenticated webhook acceptance, duplicate collapse, conversation visibility, visible connection/dead-letter state and completed privacy deletion—not leads, conversion or recovered revenue.
+A seller can create an isolated workspace, accept the unofficial-WhatsApp risk disclosure, connect an Evolution Go instance, and inspect newly captured direct conversations without PIPELIXR sending or classifying anything. Success is measured by authenticated webhook acceptance, duplicate collapse, conversation visibility, visible connection/dead-letter state and completed privacy deletion-not leads, conversion or recovered revenue.
 
 ## Shipped scope
 

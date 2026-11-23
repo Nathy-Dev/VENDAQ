@@ -90,7 +90,7 @@ export const updateBusinessDetails = mutation({
     averageOrderValue: v.optional(v.number()),
     responseWindowMinutes: v.optional(v.number()),
     followUpTemplate: v.optional(v.string()),
-    // AI Behaviour — plain-language settings the owner controls from Settings → AI Behavior.
+    // AI Behaviour - plain-language settings the owner controls from Settings → AI Behavior.
     aiEnabled: v.optional(v.boolean()),
     aiTone: v.optional(v.union(v.literal("friendly"), v.literal("professional"), v.literal("playful"))),
     aiLanguageStyle: v.optional(v.union(v.literal("english"), v.literal("pidgin"), v.literal("mixed"))),

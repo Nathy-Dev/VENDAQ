@@ -45,6 +45,16 @@ describe("public UI", () => {
     expect(html).toContain("WhatsApp is a key sales channel");
   });
 
+  it("shows how Pipelixr turns a customer message into a grounded next action", () => {
+    const html = renderToStaticMarkup(<LandingPage />);
+    expect(html).toContain("From message to next move");
+    expect(html).toContain("Pipelixr understands the sale hiding inside the chat.");
+    expect(html).toContain("Brown linen set");
+    expect(html).toContain("Checks your business details");
+    expect(html).toContain("Reply prepared");
+    expect(html).toContain("Next move protected");
+  });
+
   it("renders accessible login fields and password visibility control", () => {
     const html = renderToStaticMarkup(<AuthScreen mode="login" />);
     expect(html).toContain('autoComplete="email"');

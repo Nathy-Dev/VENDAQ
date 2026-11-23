@@ -22,11 +22,11 @@ const SETTINGS_GROUPS: { title: string; items: SettingsItem[] }[] = [
     title: "Account",
     items: [
       { id: "business", label: "Business Profile", icon: <Building size={18} /> },
-      // "AI Behavior" — plain-language controls that shape HOW the AI replies
+      // "AI Behavior" - plain-language controls that shape HOW the AI replies
       // (tone, language, work hours, dos & don'ts). Distinct from "AI Models" which
       // is the technical/model status view under Advanced.
       { id: "behavior", label: "AI Behavior", icon: <Sparkles size={18} /> },
-      // "Groups & Communities" — opt-in scope for the assistant. AI stays silent
+      // "Groups & Communities" - opt-in scope for the assistant. AI stays silent
       // in every group by default; owners enable it here per-group.
       { id: "groups", label: "Groups & Communities", icon: <Users size={18} /> },
       { id: "automation", label: "Automation Config", icon: <Zap size={18} /> },
@@ -51,7 +51,7 @@ const SETTINGS_GROUPS: { title: string; items: SettingsItem[] }[] = [
 ];
 
 // Preset one-liners that show up above the business context box. Owners can
-// click one to prefill it — reduces the "empty text box" anxiety for
+// click one to prefill it - reduces the "empty text box" anxiety for
 // non-technical users.
 const BUSINESS_CONTEXT_EXAMPLES: string[] = [
   "We sell affordable sneakers and streetwear to young Nigerians, mostly on WhatsApp.",
@@ -99,7 +99,7 @@ export default function SettingsPage() {
   const [saveSuccess, setSaveSuccess] = useState(false);
 
   // ── AI Behavior state ────────────────────────────────────────────────
-  // These control HOW the AI replies. All optional — the AI works fine with
+  // These control HOW the AI replies. All optional - the AI works fine with
   // defaults, but every owner should set at least the business context so the
   // assistant sounds like their business, not a generic bot.
   const [aiEnabled, setAiEnabled] = useState<boolean>(true);
@@ -123,7 +123,7 @@ export default function SettingsPage() {
   const [groupsFilter, setGroupsFilter] = useState<"managed" | "all">("managed");
 
   // Filter groups: by default show only groups you manage (owner/admin).
-  // "All" reveals member-only groups too — useful for community managers who
+  // "All" reveals member-only groups too - useful for community managers who
   // don't formally own the group but want to opt-in.
   const visibleGroups = useMemo(() => {
     if (!groups) return [];
@@ -143,7 +143,7 @@ export default function SettingsPage() {
       if (business.followUpTemplate) setFollowUpTemplate(business.followUpTemplate);
 
       // Hydrate AI Behavior fields. Defaults kick in if the owner hasn't
-      // opened this tab yet — safe for existing customers.
+      // opened this tab yet - safe for existing customers.
       setAiEnabled(business.aiEnabled ?? true);
       setAiTone((business.aiTone as any) || "friendly");
       setAiLanguageStyle((business.aiLanguageStyle as any) || "english");
@@ -473,7 +473,7 @@ export default function SettingsPage() {
                       </div>
                       <div style={{ marginTop: "0.5rem", display: "flex", alignItems: "center", gap: "0.35rem" }}>
                         <CheckCircle2 size={12} style={{ color: "#10b981" }} />
-                        <span style={{ fontSize: "0.7rem", color: "#10b981", fontWeight: 600 }}>Active — processes every incoming message</span>
+                        <span style={{ fontSize: "0.7rem", color: "#10b981", fontWeight: 600 }}>Active. Processes every incoming message</span>
                       </div>
                     </div>
 
@@ -495,11 +495,11 @@ export default function SettingsPage() {
                       </div>
                       <div style={{ fontSize: "0.78rem", color: "#94a3b8", lineHeight: 1.5 }}>
                         <strong style={{ color: "#cbd5e1" }}>Model:</strong> configured in the Convex deployment<br />
-                        <strong style={{ color: "#cbd5e1" }}>Purpose:</strong> Analyzes product photos, payment screenshots, and images customers send — detects buying intent from visuals
+                        <strong style={{ color: "#cbd5e1" }}>Purpose:</strong> Analyzes product photos, payment screenshots, and images customers send to detect buying intent from visuals
                       </div>
                       <div style={{ marginTop: "0.5rem", display: "flex", alignItems: "center", gap: "0.35rem" }}>
                         <CheckCircle2 size={12} style={{ color: "#10b981" }} />
-                        <span style={{ fontSize: "0.7rem", color: "#10b981", fontWeight: 600 }}>Active — triggers on image/video messages</span>
+                        <span style={{ fontSize: "0.7rem", color: "#10b981", fontWeight: 600 }}>Active. Triggers on image and video messages</span>
                       </div>
                     </div>
 
@@ -515,8 +515,8 @@ export default function SettingsPage() {
                           <span className={styles.toggleLabel}>AI Processing</span>
                           <span className={styles.toggleSub}>
                             {business?.aiEnabled === false
-                              ? "AI is disabled — using keyword matching only"
-                              : "AI is active — classifying messages and generating replies"}
+                              ? "AI is disabled. Using keyword matching only"
+                              : "AI is active. Classifying messages and generating replies"}
                           </span>
                         </div>
                         <div className={`${styles.toggle} ${business?.aiEnabled !== false ? styles.toggleOn : styles.toggleOff}`}>
@@ -545,7 +545,7 @@ export default function SettingsPage() {
                 </div>
               )}
 
-              {/* AI BEHAVIOR TAB — plain-language, owner-facing controls that
+              {/* AI BEHAVIOR TAB - plain-language, owner-facing controls that
                   shape HOW the assistant replies. Non-technical wording throughout. */}
               {activeTab === "behavior" && (
                 <div>
@@ -556,7 +556,7 @@ export default function SettingsPage() {
                     <h3 className={styles.tabHeaderTitle}>AI Behavior</h3>
                   </div>
                   <p className={styles.tabHeaderDesc}>
-                    Teach the assistant how to sound and what it should — and shouldn&apos;t — do on your behalf. These settings apply to every AI reply.
+                    Teach the assistant how to sound, what it should do, and what it should not do on your behalf. These settings apply to every AI reply.
                   </p>
 
                   <form onSubmit={handleSaveBehavior} className={styles.form}>
@@ -564,7 +564,7 @@ export default function SettingsPage() {
                     <div className={styles.toggleRow} style={{ marginBottom: "1.25rem", padding: "0.9rem 1rem", borderRadius: "0.75rem", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)" }}>
                       <div className={styles.toggleInfo}>
                         <span className={styles.toggleLabel}>Let the AI reply on my behalf</span>
-                        <span className={styles.toggleSub}>Turn this off and the AI will only classify leads — it won&apos;t send any messages.</span>
+                        <span className={styles.toggleSub}>Turn this off and the AI will only classify leads. It won&apos;t send any messages.</span>
                       </div>
                       <button
                         type="button"
@@ -577,7 +577,7 @@ export default function SettingsPage() {
                       </button>
                     </div>
 
-                    {/* Business context — the single most important field */}
+                    {/* Business context - the single most important field */}
                     <div className={styles.fieldGroup}>
                       <label className={styles.fieldLabel}>
                         <Store size={14} className={styles.fieldLabelIcon} /> What does your business do?
@@ -759,7 +759,7 @@ export default function SettingsPage() {
                 </div>
               )}
 
-              {/* GROUPS & COMMUNITIES TAB — owner-controlled AI scope for group chats.
+              {/* GROUPS & COMMUNITIES TAB - owner-controlled AI scope for group chats.
                   AI stays silent in every group by default; owners opt-in per group here. */}
               {activeTab === "groups" && (
                 <div>
@@ -810,7 +810,7 @@ export default function SettingsPage() {
                   {groups && visibleGroups.length === 0 && (
                     <div style={{ padding: "2rem 1rem", textAlign: "center", color: "#94a3b8", fontSize: "0.85rem", background: "rgba(255,255,255,0.02)", border: "1px dashed rgba(255,255,255,0.1)", borderRadius: "0.6rem" }}>
                       {groupsFilter === "managed"
-                        ? "No groups you manage yet. Pipelixr refreshes this list automatically — or switch to All groups."
+                        ? "No groups you manage yet. Pipelixr refreshes this list automatically. You can also switch to All groups."
                         : "No WhatsApp groups found for this account."}
                     </div>
                   )}
@@ -890,7 +890,7 @@ export default function SettingsPage() {
                   )}
 
                   <div style={{ marginTop: "1.25rem", padding: "0.85rem 1rem", borderRadius: "0.6rem", background: "rgba(59,130,246,0.05)", border: "1px solid rgba(59,130,246,0.15)", fontSize: "0.75rem", color: "#cbd5e1", lineHeight: 1.5 }}>
-                    <strong style={{ color: "#93c5fd" }}>How this works:</strong> By default, the AI never speaks in group chats — only in your one-on-one WhatsApp DMs. Enable a group here to let the AI notice buying signals and reply on your behalf inside that group.
+                    <strong style={{ color: "#93c5fd" }}>How this works:</strong> By default, the AI never speaks in group chats. It only responds in your one-on-one WhatsApp DMs. Enable a group here to let the AI notice buying signals and reply on your behalf inside that group.
                   </div>
                 </div>
               )}

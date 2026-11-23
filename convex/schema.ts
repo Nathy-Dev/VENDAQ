@@ -67,7 +67,7 @@ export default defineSchema({
     // Supports the placeholder [Customer Name].
     viewedNoDmTemplate: v.optional(v.string()),
     // AI configuration
-    aiEnabled: v.optional(v.boolean()), // Default true — toggle AI processing
+    aiEnabled: v.optional(v.boolean()), // Default true - toggle AI processing
     // Deprecated: model selection is now deployment-level via Convex env vars.
     aiLlmModel: v.optional(v.string()),
     aiVisionModel: v.optional(v.string()),

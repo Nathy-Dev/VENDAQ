@@ -58,7 +58,7 @@ describe("Launch 1 assistant authorization", () => {
   });
 
   it("removes em and en dashes from assistant replies", () => {
-    expect(normalizeAssistantReply("Yes o — e dey available – send your size."))
+    expect(normalizeAssistantReply("Yes o \u2014 e dey available \u2013 send your size."))
       .toBe("Yes o, e dey available, send your size.");
     expect(normalizeAssistantReply("Delivery takes 2–3 days."))
       .toBe("Delivery takes 2 to 3 days.");
@@ -80,7 +80,7 @@ describe("Launch 1 assistant authorization", () => {
     vi.stubGlobal("fetch", vi.fn().mockImplementation(async (input, init?: RequestInit) => {
       if (String(input) === "https://api.groq.com/openai/v1/chat/completions") {
         requestBody = JSON.parse(String(init?.body));
-        return Response.json({ choices: [{ message: { content: "Yes o — e dey available. Abeg confirm the colour." } }] });
+        return Response.json({ choices: [{ message: { content: "Yes o \u2014 e dey available. Abeg confirm the colour." } }] });
       }
       return new Response(null, { status: 404 });
     }));
@@ -95,7 +95,7 @@ describe("Launch 1 assistant authorization", () => {
     expect(requestBody?.messages?.at(-1)?.content).toContain("Abeg, una get this shoe for size 42?");
     const [dispatch] = await harness.run((ctx) => ctx.db.query("assistantDispatches").collect());
     expect(dispatch.content).toBe("Yes o, e dey available. Abeg confirm the colour.");
-    expect(dispatch.content).not.toMatch(/[—–]/);
+    expect(dispatch.content).not.toMatch(/[\u2014\u2013]/);
   });
 
   it("keeps the business response pattern above customer style matching", async () => {

@@ -130,7 +130,7 @@ const CLASSIFY_SYSTEM_PROMPT = `You are an intent classifier for WhatsApp busine
 
 Categories:
 - BUYING_SIGNAL: Customer wants to buy, asks about price, availability, ordering, payment. Includes Nigerian pidgin like "how much", "e dey?", "I wan buy", "wetin be the price", "abeg send price", "last price?", "you get size 42?", "e still dey?", "I need am", screenshots of products they want.
-- GENERAL_INQUIRY: Customer asks a question but not about buying — e.g. business hours, location, warranty, general info.
+- GENERAL_INQUIRY: Customer asks a question but not about buying. Examples include business hours, location, warranty, and general information.
 - NOISE: Greetings with no buying context ("hello", "hi", "good morning"), acknowledgments ("ok", "thanks", "seen"), spam, or unrelated messages.
 
 Respond in this exact JSON format only (no markdown, no explanation):
@@ -174,12 +174,12 @@ function parseClassificationResponse(raw: string): AIClassificationResult | null
 // ─── Smart Reply Generation ─────────────────────────────────────────────────
 
 const REPLY_SYSTEM_PROMPT = `You are a friendly, efficient WhatsApp sales assistant for a Nigerian business. Generate a natural reply that:
-- Is warm but not overly formal — match the tone Nigerian customers expect on WhatsApp
-- Gets straight to helping them buy — don't waste their time
+- Is warm but not overly formal. Match the tone Nigerian customers expect on WhatsApp
+- Gets straight to helping them buy. Don't waste their time
 - Uses their name naturally
 - References their specific interest if known
 - Is concise (2-3 sentences max, WhatsApp messages should be short)
-- Never uses markdown, bullet points, or formatting — this is WhatsApp, keep it plain text
+- Never uses markdown, bullet points, or formatting. This is WhatsApp, so keep it plain text
 - Can include 1 emoji max if appropriate
 - Ends with a clear next step or question
 
@@ -261,11 +261,11 @@ ${toneLine}
 ${languageLine}
 
 Style rules:
-- Get straight to helping them buy — don't waste their time
+- Get straight to helping them buy. Don't waste their time
 - Use the customer's name naturally
 - Reference their specific interest if known
 - Keep replies concise (2-3 sentences max, WhatsApp messages should be short)
-- Never use markdown, bullet points, or formatting — plain text only
+- Never use markdown, bullet points, or formatting. Use plain text only
 - At most 1 emoji if appropriate
 - End with a clear next step or question${guardrailBlock}
 
@@ -310,7 +310,7 @@ function parseImageAnalysis(raw: string): ImageAnalysisResult | null {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// CONVEX ACTIONS — Called from the message processing pipeline
+// CONVEX ACTIONS - Called from the message processing pipeline
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
@@ -427,7 +427,7 @@ export const classifyMessageWithAI = action({
         }
       } catch (err) {
         console.error("[AI classifyMessage] Vision error:", err);
-        // Non-fatal — we still have the text classification
+        // Non-fatal - we still have the text classification
       }
     }
 
@@ -756,7 +756,7 @@ export const analyzeImage = action({
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// MUTATIONS — Database operations for AI results
+// MUTATIONS - Database operations for AI results
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /** Updates an interaction record with AI classification results. */
@@ -873,7 +873,7 @@ export const logAIActivity = mutation({
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// QUERIES — For the dashboard and settings
+// QUERIES - For the dashboard and settings
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /** Returns business AI config (used by AI actions to check if AI is enabled). */
@@ -1034,7 +1034,7 @@ export const getAIMetrics = query({
 
 /**
  * Returns whether AI providers are fully configured for this deployment.
- * This is an action—not a query—because only actions may read Convex env vars.
+ * This is an action, not a query, because only actions may read Convex env vars.
  * It deliberately returns no API keys or model IDs.
  */
 export const getAIProviderStatus = action({
@@ -1067,7 +1067,7 @@ function buildFallbackReply(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// MEDIA PIPELINE — Download → Cloudinary → Vision → React
+// MEDIA PIPELINE - Download → Cloudinary → Vision → React
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /** Updates an interaction record with Cloudinary media URL + public ID. */
@@ -1315,7 +1315,7 @@ export const processMediaMessage = action({
 
             // ── Step 4: React with ✅ if payment proof detected ──
             if (parsed.isPaymentProof) {
-              console.log(`[processMediaMessage] Payment proof detected from ${customerName} — reacting ✅`);
+              console.log(`[processMediaMessage] Payment proof detected from ${customerName}. Reacting ✅`);
               await evoClient.reactToMessage(
                 instanceName,
                 {

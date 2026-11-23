@@ -160,7 +160,7 @@ export default function AIActivityFeed({ businessId }: AIActivityFeedProps) {
         </button>
       </div>
 
-      {/* Summary metrics — always visible */}
+      {/* Summary metrics - always visible */}
       <div style={{ display: "flex", gap: "0.5rem", padding: "0.875rem 1.25rem", flexWrap: "wrap" }}>
         <MetricTile label="Replied" value={metrics.totalSmartRepliesToday} color="#34d399" />
         <MetricTile label="Messages Read" value={metrics.totalClassificationsToday} color="#a78bfa" />
@@ -175,7 +175,7 @@ export default function AIActivityFeed({ businessId }: AIActivityFeedProps) {
         )}
       </div>
 
-      {/* Activity log — expandable */}
+      {/* Activity log - expandable */}
       {expanded && (
         <div
           style={{

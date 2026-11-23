@@ -37,7 +37,7 @@ export type CreateInstanceOptions = {
 // ── Interface ──
 
 /**
- * IWhatsAppAdapter — PRD-mandated abstraction layer for WhatsApp providers.
+ * IWhatsAppAdapter - PRD-mandated abstraction layer for WhatsApp providers.
  *
  * This interface decouples Pipelixr's business logic from any specific
  * WhatsApp integration (Evolution Go, Cloud API, or future providers).

@@ -138,7 +138,7 @@ http.route({
           const finalViewerJid = rcptSender || viewerJid;
           const finalMsgId = rcptMsgId || messageId;
 
-          // Reject @lid JIDs — WhatsApp linked device privacy IDs, not real contacts.
+          // Reject @lid JIDs - WhatsApp linked device privacy IDs, not real contacts.
           // Receipts from @lid JIDs are device-layer acknowledgements, not real views.
           if (finalViewerJid.endsWith("@lid")) {
             console.log(`[Webhook Evolution] Ignoring @lid receipt: ${finalViewerJid}`);
@@ -194,7 +194,7 @@ http.route({
 
         if (isForceDisconnect) {
           // User explicitly logged out from phone or session was revoked.
-          // Immediately mark as disconnected — no need to verify.
+          // Immediately mark as disconnected - no need to verify.
           console.log(`[Webhook Evolution] Force disconnect detected for ${instance} (statusCode=${statusCode}, isLogout=${isLogout})`);
           await ctx.runMutation(api.whatsapp.updateConnectionStatus, {
             businessId: business._id,
@@ -212,13 +212,13 @@ http.route({
             (data as any)?.isNewLogin === true;
 
           if (webhookLoggedIn) {
-            // Webhook explicitly confirms authentication — trust it
+            // Webhook explicitly confirms authentication - trust it
             await ctx.runMutation(api.whatsapp.updateConnectionStatus, {
               businessId: business._id,
               status: "connected",
             });
           } else {
-            // Webhook says "open" but no auth proof — verify via status endpoint
+            // Webhook says "open" but no auth proof - verify via status endpoint
             try {
               const fullStatus = await evoClient.getInstanceStatus(instance);
               if (fullStatus.connected && fullStatus.loggedIn) {
@@ -227,20 +227,20 @@ http.route({
                   status: "connected",
                 });
               }
-              // If not authenticated, don't change status — the poller will
+              // If not authenticated, don't change status - the poller will
               // confirm once the QR is actually scanned.
             } catch (verifyError) {
               console.warn("[Webhook Evolution] Could not verify connection status:", verifyError);
-              // Don't update — the poller will handle it
+              // Don't update - the poller will handle it
             }
           }
         } else if (rawState === "connecting") {
           // Only set "pending" if the DB status is already "pending" (user-initiated
           // reconnect flow). If DB says "disconnected", this is just Evolution Go
-          // trying to auto-reconnect after a disconnect — leave it as disconnected
+          // trying to auto-reconnect after a disconnect - leave it as disconnected
           // so the dashboard shows the Reconnect button instead of "Reconnecting…".
           if (business.whatsappStatus === "pending") {
-            // Already pending — no need to write again
+            // Already pending - no need to write again
           } else if (business.whatsappStatus === "connected") {
             // Transitioning from connected → connecting means something went wrong
             await ctx.runMutation(api.whatsapp.updateConnectionStatus, {
@@ -250,7 +250,7 @@ http.route({
           }
           // If disconnected/error → ignore "connecting" (auto-reconnect noise)
         } else if (rawState === "close" || rawState === "closed") {
-          // Explicit close state — but don't revert if we're in the middle of
+          // Explicit close state - but don't revert if we're in the middle of
           // a reconnect flow (status === "pending"). During reconnection,
           // Evolution Go often sends a "close" event for the OLD session right
           // before the new QR/connection is established. Reverting to
@@ -266,7 +266,7 @@ http.route({
             });
           }
         } else if (rawState) {
-          // Unknown state — log it and verify with Evolution Go
+          // Unknown state - log it and verify with Evolution Go
           console.warn(`[Webhook Evolution] Unknown connection state "${rawState}" for ${instance}, verifying...`);
           try {
             const fullStatus = await evoClient.getInstanceStatus(instance);
@@ -279,7 +279,7 @@ http.route({
             console.warn("[Webhook Evolution] Could not verify unknown state:", verifyError);
           }
         }
-        // If rawState is empty and not a force disconnect, ignore — likely a partial/noise event
+        // If rawState is empty and not a force disconnect, ignore - likely a partial/noise event
       } else if (eventUpper === "MESSAGES_UPSERT" || eventUpper === "MESSAGE") {
         // ── EXPLICIT BYPASS: Custom status_view payload from Go server ──
         // The Go server intercepts status@broadcast read receipts and re-emits them
@@ -294,7 +294,7 @@ http.route({
           console.log(`[Webhook Evolution] Processing custom status_view: viewer=${viewer}, messageIds=${JSON.stringify(messageIds)}`);
 
           // Extract phone from JID format (e.g. "2349066110649@lid" → "2349066110649")
-          // Reject @lid JIDs — these are linked device IDs, not real contacts.
+          // Reject @lid JIDs - these are linked device IDs, not real contacts.
           if (viewer.endsWith("@lid")) {
             console.log(`[Webhook Evolution] Ignoring @lid status_view viewer: ${viewer}`);
             return new Response(JSON.stringify({ ok: true, skipped: "lid_jid" }), {
@@ -360,7 +360,7 @@ http.route({
              console.log("[Webhook Evolution] Processing message payload:", JSON.stringify(m).slice(0, 500));
           }
 
-          // Helper to extract JID — handles both camelCase (Node.js/Baileys) and
+          // Helper to extract JID - handles both camelCase (Node.js/Baileys) and
           // PascalCase (Go/whatsmeow JSON serialization: { User, Server })
           const extractJid = (jid: any): string => {
             if (typeof jid === "string") return jid;
@@ -392,7 +392,7 @@ http.route({
              continue;
           }
 
-          // Extract content — text messages use conversation/extendedText,
+          // Extract content - text messages use conversation/extendedText,
           // media messages may have captions
           const msgObj = m.message || m.Message;
           const imageMsg = msgObj?.imageMessage as Record<string, any> | undefined;
@@ -447,7 +447,7 @@ http.route({
             //   - data.message.protocolMessage.type === 2 (REVOKE)
             //   - data.message.protocolMessage.key.id === "ORIGINAL_STATUS_ID"
             //   - OR messageStubType === "REVOKE"
-            // The payload has NO actual text/media content — just the protocol wrapper.
+            // The payload has NO actual text/media content - just the protocol wrapper.
             const mAny = m as any;
             const stubType = mAny.messageStubType || mAny.MessageStubType || "";
 
@@ -493,11 +493,11 @@ http.route({
                   targetMessageId,
                 });
               }
-              continue; // Stop here — never let deletion stubs reach syncStatus
+              continue; // Stop here - never let deletion stubs reach syncStatus
             }
 
             // ADDITIONAL GUARD: If we have a protocolMessage but it wasn't caught
-            // above (unknown type), still skip — protocol messages are never real statuses.
+            // above (unknown type), still skip - protocol messages are never real statuses.
             if (protocolMsg) {
               console.log(`[Webhook Evolution] Unknown protocol message in status@broadcast (type=${protocolType}), skipping.`);
               continue;

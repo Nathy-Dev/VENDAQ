@@ -118,7 +118,7 @@ function StatusCard({ status, businessId, onSelectCustomer, segmentPhones }: { s
   // Filter views to only show viewers that match the selected segment
   const filteredViews = React.useMemo(() => {
     if (!views) return null;
-    if (!segmentPhones) return views; // segments still loading — show all
+    if (!segmentPhones) return views; // segments still loading - show all
     return views.filter((view: StatusViewDoc) => segmentPhones.has(view.viewerPhone));
   }, [views, segmentPhones]);
 

@@ -284,7 +284,7 @@ export default function DashboardPage() {
               <p className={styles.alertDesc}>
                 {isReconnecting || isPending
                   ? "Open WhatsApp on your phone → Linked Devices → Link a Device, then scan the QR code below."
-                  : "Your WhatsApp session ended. Tap Reconnect to re-link — all your data is safe."}
+                  : "Your WhatsApp session ended. Tap Reconnect to re-link. All your data is safe."}
               </p>
               {reconnectError && <p className={styles.alertError}>{reconnectError}</p>}
 

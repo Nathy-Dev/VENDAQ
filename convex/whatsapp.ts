@@ -295,7 +295,7 @@ export const receiveMessage = mutation({
     if (!customer) {
       // For NOISE from an unknown sender, don't create a lead record at all
       if (!args.fromMe && classification === "NOISE") {
-        console.log(`[receiveMessage] NOISE message from unknown sender ${args.sender} — no lead record created.`);
+        console.log(`[receiveMessage] NOISE message from unknown sender ${args.sender} - no lead record created.`);
         return { success: true, discarded: true };
       }
       const customerId = await ctx.db.insert("customers", {
@@ -341,7 +341,7 @@ export const receiveMessage = mutation({
 
     // For existing customers receiving NOISE, still skip interaction recording
     if (!args.fromMe && classification === "NOISE") {
-      console.log(`[receiveMessage] NOISE message from existing sender ${args.sender} — skipping interaction.`);
+      console.log(`[receiveMessage] NOISE message from existing sender ${args.sender} - skipping interaction.`);
       return { success: true, discarded: true };
     }
 
@@ -747,7 +747,7 @@ export const syncStatusView = mutation({
   },
   handler: async (ctx, args) => {
     blockLegacyOperation();
-    // Reject @lid JIDs — these are WhatsApp privacy-layer linked device IDs, not real
+    // Reject @lid JIDs - these are WhatsApp privacy-layer linked device IDs, not real
     // phone contacts. Evolution Go sometimes emits read receipts with @lid sender JIDs
     // when a contact's device reads a status. Messaging these would fire at random
     // people (or bounce) and is the primary cause of unsolicited messages.
@@ -756,7 +756,7 @@ export const syncStatusView = mutation({
       return;
     }
     // Strip the @s.whatsapp.net suffix if the caller passed the full JID instead of
-    // just the phone number (defensive normalisation — http.ts already strips it, but
+    // just the phone number (defensive normalisation - http.ts already strips it, but
     // other callers might not).
     const normalizedPhone = args.viewerPhone.includes("@")
       ? args.viewerPhone.split("@")[0]
@@ -768,7 +768,7 @@ export const syncStatusView = mutation({
         .withIndex("by_whatsapp_id", (q) => q.eq("whatsappMessageId", args.whatsappStatusId))
         .first();
 
-    // 2. Deduplicate this exact (statusId, viewer) pair — blocks the same webhook
+    // 2. Deduplicate this exact (statusId, viewer) pair - blocks the same webhook
     //    path from double-firing for the same status message.
     const existing = await ctx.db
         .query("statusViews")
@@ -1385,14 +1385,14 @@ export const processBuyingSignalFollowUp = action({
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// STATUS-TO-CASH ENGINE — Automated follow-up for status viewers who don't DM
+// STATUS-TO-CASH ENGINE - Automated follow-up for status viewers who don't DM
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
  * Returns the count of inbound (customer-authored) interactions for a customer
  * after the given timestamp. Used by `processViewedNoDmFollowUp` to detect if
  * a viewer has DM'd the business since the follow-up was scheduled (in which
- * case we cancel the follow-up — they're already in the funnel).
+ * case we cancel the follow-up - they're already in the funnel).
  */
 export const getCustomerInboundSince = query({
   args: {
@@ -1431,7 +1431,7 @@ function buildViewedNoDmFollowUp(customerName: string, template?: string): strin
  *
  * Fires when a `viewed_no_dm` follow-up task becomes due (default 2h after
  * the status view). Sends an AI-personalised opener to the viewer to pull
- * them into a real conversation — turning a passive status viewer into an
+ * them into a real conversation - turning a passive status viewer into an
  * active lead.
  *
  * Guardrails (production safety):
@@ -1458,7 +1458,7 @@ export const processViewedNoDmFollowUp = action({
     }
 
     // 2. If the viewer has DM'd us since the view, they're already engaged.
-    //    Cancel the follow-up — no need to nudge someone who reached out.
+    //    Cancel the follow-up - no need to nudge someone who reached out.
     const inboundCount = await ctx.runQuery(api.whatsapp.getCustomerInboundSince, {
       customerId: args.customerId,
       since: task.createdAt,
@@ -1516,7 +1516,7 @@ export const processViewedNoDmFollowUp = action({
       return { sent: false, reason: "group_chat_not_supported" };
     }
 
-    // 6. Compose the message — AI-first with a graceful fallback
+    // 6. Compose the message - AI-first with a graceful fallback
     const biz = await ctx.runQuery(api.whatsapp.getBusinessForAssistantAuth, {
       businessId: args.businessId,
     });
@@ -1676,7 +1676,7 @@ export const sendRetargetMessage = action({
     const biz = await ctx.runQuery(api.whatsapp.getBusinessForAssistantAuth, { businessId: args.businessId });
     const instanceName = biz?.evolutionInstanceName || getEvolutionInstanceName(biz?.name || "pipelixr", args.businessId);
 
-    // Show "typing..." before sending — makes AI replies feel human-paced.
+    // Show "typing..." before sending - makes AI replies feel human-paced.
     // The 3-12s delay inside sendText() means the customer sees "typing..."
     // for a natural duration before the message appears.
     await evoClient.setChatPresence(instanceName, customer.phone, "composing");
@@ -2759,7 +2759,7 @@ export const pollConnectionStatus = action({
     } catch (e: any) {
       console.warn("[pollConnectionStatus] error:", e?.message);
       // If the status endpoint fails with a 4xx while pending, the instance
-      // may have been deleted — revert to disconnected to unstick the UI.
+      // may have been deleted - revert to disconnected to unstick the UI.
       const msg = e?.message || "";
       const is4xx = /-> 4\d{2}:/.test(msg);
       if (is4xx && business.whatsappStatus === "pending") {
@@ -2792,7 +2792,7 @@ export const checkConnectionHealth = action({
       businessId: args.businessId,
     });
 
-    // No business or no instance configured — nothing to check
+    // No business or no instance configured - nothing to check
     if (!business || !business.evolutionInstanceName) {
       return { status: business?.whatsappStatus as any || "disconnected", changed: false };
     }
@@ -2801,7 +2801,7 @@ export const checkConnectionHealth = action({
     const instanceName = business.evolutionInstanceName;
 
     try {
-      // Hit the status endpoint directly — it authenticates via the instance
+      // Hit the status endpoint directly - it authenticates via the instance
       // token and is the single source of truth for connection state.
       const status = await evoClient.getInstanceStatus(instanceName);
       const isFullyAuthenticated = status.connected && status.loggedIn;
@@ -2877,7 +2877,7 @@ export const checkConnectionHealth = action({
 
 /**
  * Reconnects an existing Evolution Go instance that was disconnected.
- * Unlike provisionEvolutionGoInstance, this does NOT create a new instance —
+ * Unlike provisionEvolutionGoInstance, this does NOT create a new instance -
  * it reuses the existing one, which means the user doesn't need to go through
  * full onboarding again. It just triggers a new connect/QR flow.
  *
@@ -2916,7 +2916,7 @@ export const reconnectInstance = action({
       const exists = await evoClient.instanceExists(instanceName);
 
       if (!exists) {
-        // Instance was removed from Evolution Go — need to recreate it
+        // Instance was removed from Evolution Go - need to recreate it
         console.log(`[reconnectInstance] Instance ${instanceName} not found on Evolution Go, recreating...`);
         try {
           await evoClient.createInstance(instanceName, {
@@ -2950,14 +2950,14 @@ export const reconnectInstance = action({
         }
       }
 
-      // Clear any stale session before reconnecting — Evolution Go may refuse
+      // Clear any stale session before reconnecting - Evolution Go may refuse
       // to generate a fresh QR if an old (dead) session is still cached.
       try {
         await evoClient.logoutInstance(instanceName);
         // Give Evolution Go a moment to clean up the old session
         await new Promise((r) => setTimeout(r, 2000));
       } catch (logoutErr: any) {
-        // Logout may fail if the instance wasn't logged in — that's fine
+        // Logout may fail if the instance wasn't logged in - that's fine
         console.warn("[reconnectInstance] logoutInstance (pre-cleanup) error:", logoutErr?.message);
       }
 
@@ -2971,7 +2971,7 @@ export const reconnectInstance = action({
         console.warn("[reconnectInstance] connectInstance error:", connectErr?.message);
       }
 
-      // Wait for Evolution Go to start generating the QR code —
+      // Wait for Evolution Go to start generating the QR code -
       // calling /instance/qr immediately after connect often returns
       // 400 "no QR code available" because generation is still in progress.
       await new Promise((r) => setTimeout(r, 3000));
@@ -3029,7 +3029,7 @@ export const reconnectInstance = action({
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// MEDIA & MESSAGING ACTIONS — markAsRead, sendMedia, presence
+// MEDIA & MESSAGING ACTIONS - markAsRead, sendMedia, presence
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
@@ -3042,7 +3042,7 @@ export const reconnectInstance = action({
  * to an already-connected instance. Use this after upgrading subscription
  * lists (e.g. adding STATUS events) without needing to re-provision/QR scan.
  *
- * Calling connectInstance on an already-connected session is safe — Evolution Go
+ * Calling connectInstance on an already-connected session is safe - Evolution Go
  * updates the webhook config without dropping the WhatsApp WS connection.
  */
 export const refreshInstanceSubscriptions = action({

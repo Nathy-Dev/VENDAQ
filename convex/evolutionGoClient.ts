@@ -304,7 +304,7 @@ export async function evoFetch(path: string, method: string, body?: unknown, cus
  * This is more reliable than listing all instances because the instance's
  * *display name* (set during createInstance) may differ from the token we
  * store as `evolutionInstanceName`.  For example, the display name might
- * be "My Business" while the token is "mybiz-abc12345" — the list-based
+ * be "My Business" while the token is "mybiz-abc12345" - the list-based
  * lookup would fail to match, but the status endpoint authenticates by
  * token and works regardless of display name.
  *
@@ -317,7 +317,7 @@ export async function instanceExists(instanceName: string): Promise<boolean> {
     await evoFetch("/instance/status", "GET", undefined, instanceName);
     return true;
   } catch (_statusErr) {
-    // Status endpoint failed — could mean the instance doesn't exist,
+    // Status endpoint failed - could mean the instance doesn't exist,
     // OR it could be in a transitional state. Try list as fallback.
   }
 
@@ -411,7 +411,7 @@ export async function getConnectionArtifacts(instanceName: string): Promise<Conn
     }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    // 400 "no QR code available" is a transient state — the QR is still being
+    // 400 "no QR code available" is a transient state - the QR is still being
     // generated after connect. Log at debug level so it doesn't alarm users
     // in the Convex logs. The caller (waitForConnectionArtifacts) will retry.
     if (msg.includes("400") && msg.includes("no QR code available")) {
@@ -565,7 +565,7 @@ export async function downloadMedia(
 
   logEvolutionGoDebug("downloadMedia request", messageData);
 
-  // Try multiple endpoint paths — Evolution Go versions vary
+  // Try multiple endpoint paths - Evolution Go versions vary
   const endpoints = [
     "/message/downloadmedia",
     "/message/download",
@@ -585,7 +585,7 @@ export async function downloadMedia(
         body: JSON.stringify({ message: messageData.message }),
       });
 
-      // 404 or 405 means this endpoint doesn't exist — try next
+      // 404 or 405 means this endpoint doesn't exist - try next
       if (res.status === 404 || res.status === 405) {
         logEvolutionGoDebug(`downloadMedia ${endpoint} -> ${res.status}, trying next endpoint`);
         continue;
@@ -620,7 +620,7 @@ export async function downloadMedia(
         return { base64, mimetype };
       }
 
-      // Binary response — convert ArrayBuffer to base64
+      // Binary response - convert ArrayBuffer to base64
       const buffer = await res.arrayBuffer();
       const bytes = new Uint8Array(buffer);
 
@@ -693,7 +693,7 @@ export async function sendMedia(
  * Marks messages as read (shows blue ticks to the sender).
  * POST /message/markread
  *
- * Non-critical — failures are logged but do not throw.
+ * Non-critical - failures are logged but do not throw.
  */
 export async function markAsRead(
   instanceName: string,
@@ -724,7 +724,7 @@ export async function markAsRead(
  * Use "composing" before an AI reply, then let WhatsApp clear it
  * automatically when the message is sent.
  *
- * Non-critical — failures are logged but do not throw.
+ * Non-critical - failures are logged but do not throw.
  */
 export async function setChatPresence(
   instanceName: string,
@@ -747,7 +747,7 @@ export async function setChatPresence(
  * Fetches all groups the connected WhatsApp account is a member of.
  * GET /group/fetchAllGroups (Evolution Go / Baileys)
  *
- * Response shape varies slightly between builds — we normalise to a common
+ * Response shape varies slightly between builds - we normalise to a common
  * `WhatsAppGroup` list. Silently returns [] if the endpoint isn't available
  * (e.g. Evolution Go build without group listing) so the caller can gracefully
  * fall back to the "groups we've seen in inbound traffic" strategy.
@@ -764,7 +764,7 @@ export async function fetchAllGroups(instanceName: string): Promise<WhatsAppGrou
   // The connected number is authoritative for role detection. Evolution Go
   // returns it as part of /instance/status → `Name`, but the actual JID we
   // need to match against `participant.jid` isn't always exposed. As a
-  // pragmatic fallback we let the caller pass it in — but the endpoint
+  // pragmatic fallback we let the caller pass it in - but the endpoint
   // itself is best-effort.
   // Try /group/list first (Evolution Go canonical endpoint), then fall back
   // to /group/fetchAllGroups (older Baileys-based builds).
@@ -880,7 +880,7 @@ function normaliseGroupList(raw: unknown): WhatsAppGroup[] {
  *
  * Pass an empty string as reaction to remove an existing reaction.
  *
- * Non-critical — failures are logged but do not throw.
+ * Non-critical - failures are logged but do not throw.
  */
 export async function reactToMessage(
   instanceName: string,

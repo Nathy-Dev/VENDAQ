@@ -50,7 +50,7 @@ export default function InvisibleCrmPanel({ businessId }: InvisibleCrmPanelProps
         {!actions ? (
           <div className={styles.empty}>Preparing your action list…</div>
         ) : actions.length === 0 ? (
-          <div className={styles.empty}>No urgent actions right now — you&apos;re all caught up! 🎉</div>
+          <div className={styles.empty}>No urgent actions right now. You&apos;re all caught up! 🎉</div>
         ) : (
           actions.map((item) => (
             <article className={styles.item} key={item.customerId}>

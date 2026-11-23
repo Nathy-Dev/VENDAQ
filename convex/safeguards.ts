@@ -2,7 +2,7 @@ import { blockLegacyOperation } from "./lib/policy";
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 
-/** Minimum downtime (ms) before creating an alert — PRD: 10 minutes. */
+/** Minimum downtime (ms) before creating an alert - PRD: 10 minutes. */
 const DISCONNECTION_ALERT_THRESHOLD_MS = 10 * 60 * 1000;
 
 // ── Disconnection Alert Mutations ──
@@ -17,7 +17,7 @@ export const createDisconnectionAlert = mutation({
   },
   handler: async (ctx, args) => {
     blockLegacyOperation();
-    // Don't create duplicates — only one active alert per business
+    // Don't create duplicates - only one active alert per business
     const existing = await ctx.db
       .query("disconnectionAlerts")
       .withIndex("by_business_status", (q) =>
