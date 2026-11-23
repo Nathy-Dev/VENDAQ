@@ -13,9 +13,11 @@ import {
   Banknote,
   Bell,
   Bot,
+  Brain,
   Building2,
   CheckCircle2,
   ChevronRight,
+  Clock3,
   CircleDollarSign,
   Download,
   ExternalLink,
@@ -42,10 +44,11 @@ import type { Id } from "../../../convex/_generated/dataModel";
 import styles from "./AdminConsole.module.css";
 
 type RangeDays = 7 | 30 | 90;
-type Section = "overview" | "businesses" | "operations" | "billing";
+type Section = "overview" | "learning" | "businesses" | "operations" | "billing";
 
 const navItems: Array<{ section: Section; label: string; icon: LucideIcon }> = [
   { section: "overview", label: "Overview", icon: LayoutDashboard },
+  { section: "learning", label: "Learning", icon: Brain },
   { section: "businesses", label: "Businesses", icon: Building2 },
   { section: "operations", label: "Operations", icon: Activity },
   { section: "billing", label: "Billing", icon: WalletCards },
@@ -104,6 +107,7 @@ export default function AdminConsole() {
         </header>
         <div className={styles.content}>
           {section === "overview" && <Overview />}
+          {section === "learning" && <Learning />}
           {section === "businesses" && <Businesses />}
           {section === "operations" && <Operations />}
           {section === "billing" && <Billing />}
@@ -263,11 +267,11 @@ function Operations() {
   const data = useQuery(api.admin.operations, {});
   if (data === undefined) return <AdminLoading label="Loading operations" embedded />;
   return <div className={styles.page}>
-    <PageHeading title="Operations" description="Connection health, ingestion failures, and payment webhook diagnostics." controls={<span className={styles.liveLarge}><i /> Realtime monitoring</span>} />
+    <PageHeading title="Operations" description="Connection health, provider uncertainty, support requests, and processing diagnostics." controls={<span className={styles.liveLarge}><i /> Realtime monitoring</span>} />
     <section className={styles.metricsGridThree}>
       <MetricCard label="Unhealthy workspaces" value={number(data.unhealthyBusinesses.length)} helper="Disconnected, pending, or errored" icon={WifiOff} tone="red" />
       <MetricCard label="Dead-letter events" value={number(data.deadLetters.length)} helper="Exhausted ingestion retries" icon={RefreshCw} tone="amber" />
-      <MetricCard label="Failed webhooks" value={number(data.failedWebhooks.length)} helper="Paystack events requiring review" icon={AlertCircle} tone="violet" />
+      <MetricCard label="Unknown or duplicate sends" value={number(data.unknownDispatches.length + data.duplicateDispatches.length)} helper="Never auto-retried; verify in WhatsApp" icon={AlertCircle} tone="violet" />
     </section>
     <section className={styles.opsGrid}>
       <article className={styles.card}><CardHeader title="Connection incidents" description="Workspaces outside a connected state" icon={WifiOff} />
@@ -276,9 +280,46 @@ function Operations() {
       <article className={styles.card}><CardHeader title="Dead-letter queue" description="Events that exhausted processing retries" icon={RefreshCw} />
         <div className={styles.compactTable}>{data.deadLetters.map((item) => <div key={item.id}><span><strong>{item.businessName}</strong><small>{item.errorCode ?? "Unclassified failure"}</small></span><span><b>{item.attempts} attempts</b><small>{relative(item.receivedAt)}</small></span></div>)}{!data.deadLetters.length && <HealthyState label="No dead-letter events" />}</div>
       </article>
+      <article className={styles.card}><CardHeader title="Send uncertainty" description="Unknown outcomes and duplicate-provider evidence" icon={AlertCircle} />
+        <div className={styles.compactTable}>{data.unknownDispatches.map((item) => <div key={item.id}><span><strong>{item.businessName}</strong><small>{item.errorCode ?? "Provider did not confirm delivery"}</small></span><span><b>Unknown</b><small>{relative(item.createdAt)}</small></span></div>)}{data.duplicateDispatches.map((item) => <div key={item.id}><span><strong>{item.businessName}</strong><small>{item.providerMessageId ?? "Repeated provider message ID"}</small></span><span><b>Duplicate</b><small>{relative(item.detectedAt)}</small></span></div>)}{!data.unknownDispatches.length && !data.duplicateDispatches.length && <HealthyState label="No uncertain or duplicate sends" />}</div>
+      </article>
+      <article className={styles.card}><CardHeader title="Support and incidents" description="Structured reports and active connection incidents" icon={LifeBuoy} />
+        <div className={styles.compactTable}>{data.openSupportRequests.map((item) => <div key={item.id}><span><strong>{item.businessName}: {item.summary}</strong><small>{title(item.category)} · {title(item.severity)}</small></span><span><b>Open</b><small>{relative(item.createdAt)}</small></span></div>)}{data.activeIncidents.map((item) => <div key={item.id}><span><strong>{item.businessName}</strong><small>{item.code ?? title(item.kind)}</small></span><span><b>Incident</b><small>{relative(item.startedAt)}</small></span></div>)}{!data.openSupportRequests.length && !data.activeIncidents.length && <HealthyState label="No active support or connection incidents" />}</div>
+      </article>
       <article className={`${styles.card} ${styles.fullWidth}`}><CardHeader title="Failed billing webhooks" description="Sanitized provider event metadata; payment secrets are never exposed" icon={ShieldCheck} />
         <div className={styles.tableWrap}><table className={styles.table}><thead><tr><th>Business</th><th>Event</th><th>Error code</th><th>Received</th></tr></thead><tbody>{data.failedWebhooks.map((item) => <tr key={item.id}><td>{item.businessName}</td><td><code>{item.eventType}</code></td><td><Badge value={item.code ?? "unknown"} /></td><td>{dateTime(item.receivedAt)}</td></tr>)}</tbody></table>{!data.failedWebhooks.length && <HealthyState label="No failed webhooks" />}</div>
       </article>
+    </section>
+  </div>;
+}
+
+function Learning() {
+  const [rangeDays, setRangeDays] = useState<RangeDays>(30);
+  const data = useQuery(api.admin.learning, { rangeDays });
+  if (data === undefined) return <AdminLoading label="Loading product learning metrics" embedded />;
+  const metric = data.metrics;
+  return <div className={styles.page}>
+    <PageHeading title="Learning & safer growth" description="Real usage evidence to guide automation quality, activation, and provider operations." controls={<RangeControl value={rangeDays} onChange={setRangeDays} />} />
+    {!data.dataComplete && <DataNotice />}
+    <section className={styles.metricsGrid}>
+      <MetricCard label="WhatsApp connection completion" value={percent(metric.connectionCompletion)} helper={`${metric.connectedBusinesses} of ${metric.totalBusinesses} businesses`} icon={Wifi} tone="green" />
+      <MetricCard label="Time to first useful opportunity" value={duration(metric.averageTimeToFirstOpportunityMs)} helper={`${metric.opportunityBusinesses} businesses reached one`} icon={TrendingUp} tone="blue" />
+      <MetricCard label="Completed a suggested action" value={percent(metric.suggestedActionCompletion)} helper={`${metric.businessesCompletingActions} of ${metric.businessesReceivingSuggestions} with suggestions`} icon={CheckCircle2} tone="violet" />
+      <MetricCard label="Weekly retained businesses" value={number(metric.weeklyRetainedBusinesses)} helper={`${metric.previousWeekActiveBusinesses} active in the prior week`} icon={UsersRound} tone="amber" />
+      <MetricCard label="Buying-signal precision" value={nullablePercent(metric.buyingSignalPrecision)} helper={`${metric.labeledMessages} labelled · ${nullablePercent(metric.falsePositiveRate)} false positive`} icon={Gauge} tone="green" />
+      <MetricCard label="Response-time reduction" value={signedPercent(metric.responseTimeReduction)} helper={`${duration(metric.earlierResponseMs)} earlier → ${duration(metric.recentResponseMs)} recent`} icon={Clock3} tone="blue" />
+      <MetricCard label="Automation opt-in rate" value={percent(metric.automationOptInRate)} helper={`${metric.automationOptedIn} businesses explicitly opted in`} icon={Bot} tone="violet" />
+      <MetricCard label="Wrong / unsupported replies" value={nullablePercent(metric.wrongUnsupportedReplyRate)} helper={`${metric.replyFeedbackSamples} seller-rated assistant replies`} icon={AlertCircle} tone="red" />
+    </section>
+    <section className={styles.metricsGridThree}>
+      <MetricCard label="Connection incidents" value={number(metric.connectionIncidents)} helper={`Recorded in the last ${rangeDays} days`} icon={WifiOff} tone="red" />
+      <MetricCard label="Duplicate sends" value={number(metric.duplicateSends)} helper="Provider-message duplication evidence" icon={RefreshCw} tone="amber" />
+      <MetricCard label="Response samples" value={number(metric.responseSamples)} helper="Inbound-to-reply pairs" icon={MessageCircleMore} tone="blue" />
+    </section>
+    <section className={styles.opsGrid}>
+      <article className={styles.card}><CardHeader title="Language and ambiguity evidence" description="Labels collected while businesses use automation" icon={Brain} /><div className={styles.evidenceGrid}><Evidence label="English" value={data.evidence.english} /><Evidence label="Pidgin" value={data.evidence.pidgin} /><Evidence label="Mixed language" value={data.evidence.mixed} /><Evidence label="Ambiguous buying language" value={data.evidence.ambiguousLanguage} /></div></article>
+      <article className={styles.card}><CardHeader title="Media evidence" description="Real-world samples reviewed by sellers" icon={MessageCircleMore} /><div className={styles.evidenceGrid}><Evidence label="Voice notes" value={data.evidence.voiceNotes} /><Evidence label="Product images" value={data.evidence.productImages} /><Evidence label="Payment receipts" value={data.evidence.paymentReceipts} /></div></article>
+      <article className={`${styles.card} ${styles.fullWidth}`}><CardHeader title="Seller vertical coverage" description="Use this to choose the next one or two focused verticals" icon={Building2} /><div className={styles.verticalList}>{data.evidence.sellerVerticals.map((item) => <div key={item.vertical}><strong>{item.vertical}</strong><span>{number(item.samples)} labelled samples</span></div>)}{!data.evidence.sellerVerticals.length && <HealthyState label="Vertical labels will appear as sellers review messages" />}</div></article>
     </section>
   </div>;
 }
@@ -312,6 +353,7 @@ function CardHeader({ title: heading, description, icon: Icon }: { title: string
 function LegendItem({ label, value, tone }: { label: string; value: number; tone: string }) { return <div className={styles.legendItem} data-tone={tone}><span><i />{label}</span><strong>{number(value)}</strong></div>; }
 function StatusRow({ label, value, total, tone }: { label: string; value: number; total: number; tone: string }) { return <div className={styles.statusRow} data-tone={tone}><span><i />{label}</span><div><b style={{ width: `${(value / total) * 100}%` }} /></div><strong>{value}</strong></div>; }
 function AttentionItem({ icon: Icon, label, value, tone }: { icon: LucideIcon; label: string; value: number; tone: string }) { return <div className={styles.attentionItem} data-tone={tone}><span><Icon size={16} /></span><strong>{label}</strong><b>{value}</b></div>; }
+function Evidence({ label, value }: { label: string; value: number }) { return <div className={styles.evidenceItem}><strong>{number(value)}</strong><span>{label}</span></div>; }
 function Badge({ value }: { value: string }) { const normalized = value.toLowerCase(); return <span className={styles.badge} data-status={normalized}>{title(value)}</span>; }
 function HealthyState({ label }: { label: string }) { return <div className={styles.healthy}><CheckCircle2 size={19} /><span>{label}</span></div>; }
 function EmptyState({ title: heading, description }: { title: string; description: string }) { return <div className={styles.empty}><Search size={21} /><strong>{heading}</strong><p>{description}</p></div>; }
@@ -324,6 +366,10 @@ function title(value: string) { return value.replaceAll("_", " ").replace(/\b\w/
 function compactId(value: string) { return value.length > 24 ? `${value.slice(0, 12)}…${value.slice(-6)}` : value; }
 function number(value: number) { return new Intl.NumberFormat("en-NG").format(value); }
 function money(kobo: number) { return new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN", maximumFractionDigits: 0 }).format(kobo / 100); }
+function percent(value: number) { return `${Math.round(value * 100)}%`; }
+function nullablePercent(value: number | null) { return value === null ? "—" : percent(value); }
+function signedPercent(value: number | null) { return value === null ? "—" : `${value < 0 ? "−" : ""}${Math.abs(Math.round(value * 100))}%`; }
+function duration(value: number | null) { if (value === null) return "—"; const minutes = Math.round(value / 60_000); if (minutes < 60) return `${minutes}m`; const hours = Math.round(minutes / 60); if (hours < 48) return `${hours}h`; return `${Math.round(hours / 24)}d`; }
 function date(timestamp: number) { return new Intl.DateTimeFormat("en-NG", { day: "2-digit", month: "short", year: "numeric" }).format(timestamp); }
 function shortDate(timestamp: number) { return new Intl.DateTimeFormat("en-NG", { day: "numeric", month: "short" }).format(timestamp); }
 function dateTime(timestamp: number) { return new Intl.DateTimeFormat("en-NG", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }).format(timestamp); }

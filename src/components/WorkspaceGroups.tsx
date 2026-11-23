@@ -39,7 +39,7 @@ export default function WorkspaceGroups({ workspace }: { workspace: Workspace })
     try {
       await setEnabled({ businessId: workspace.businessId, groupJid, isEnabled: enabled });
     } catch {
-      setFeedback({ text: "We couldn't update that group. Complete the business AI brief and group authorization first.", error: true });
+      setFeedback({ text: "We couldn't update that group. Complete Teach Pipelixr and group authorization first.", error: true });
     } finally {
       setBusy(null);
     }

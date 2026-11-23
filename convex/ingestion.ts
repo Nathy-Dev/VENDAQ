@@ -7,6 +7,7 @@ import { keywordClassifier } from "./lib/classifier";
 import { journeyAfterInbound, type JourneyStage } from "./lib/journey";
 import { createStalledInquiryTask } from "./sellerActions";
 import { BUSINESS_SYSTEM_PROMPT_MIN_LENGTH, STATUS_TO_CASH_ENABLED } from "./lib/launch";
+import { recordBusinessActivity, recordConnectionTransition, recordResponseTime } from "./productAnalytics";
 
 export const enqueue = internalMutation({
   args: { sessionId: v.id("whatsappSessions"), generation: v.number(), tokenHash: v.string(), eventKey: v.string(), correlationId: v.string(), payload: normalizedEvent, quarantineCode: v.optional(v.string()) },
@@ -43,6 +44,7 @@ export const enqueue = internalMutation({
           ...(args.payload.qrCiphertext ? { qrCiphertext: args.payload.qrCiphertext, qrExpiresAt: now + foundationPolicy().qrLifetimeMs } : {}),
         });
         await ctx.db.patch(session.businessId, { whatsappStatus: state === "connected" ? "connected" : state === "pending" ? "pending" : state === "error" ? "error" : "disconnected" });
+        if (session.state !== state || event === "QRTimeout") await recordConnectionTransition(ctx, { businessId: session.businessId, sessionId: session._id, previousState: session.state, currentState: state, ...(event === "QRTimeout" ? { code: "QR_TIMEOUT" } : {}), at: now });
       }
       if (state === "connected" && session.providerInstanceId) {
         await ctx.scheduler.runAfter(0, internal.directorySync.sync, { sessionId: session._id, generation: session.generation });
@@ -157,6 +159,8 @@ export const applyEvent = internalMutation({
         }
         const expiresAt = payload.eventAt + (business.messageRetentionDays ?? foundationPolicy().messageRetentionDays) * 86400000;
         const interactionId = await ctx.db.insert("interactions", { businessId: business._id, customerId: customer._id, conversationId: conversation._id, sessionId: session._id, role: payload.fromMe ? "owner" : "customer", content: payload.text, timestamp: payload.eventAt, receivedAt: event.receivedAt, providerEventKey: messageKey, whatsappMessageId: payload.messageId, ...(payload.mediaType !== "unsupported" ? { messageType: payload.mediaType } : {}), manualReviewRequired: payload.manualReview, isGroup: payload.isGroup, wasMentioned: payload.mentioned, ...(payload.participantJid ? { participantJid: payload.participantJid } : {}), ...(payload.participantName ? { participantName: payload.participantName } : {}), ...(classification ? { classifierLabel: classification.label, classifierVersion: classification.version, classifierConfidence: classification.confidence, classifierRuleIds: classification.ruleIds, classifiedAt: Date.now() } : {}), expiresAt });
+        await recordBusinessActivity(ctx, business._id, payload.eventAt);
+        if (payload.fromMe) await recordResponseTime(ctx, { businessId: business._id, conversationId: conversation._id, responseInteractionId: interactionId, responseAt: payload.eventAt, source: "owner" });
         if (payload.isGroup) await ctx.scheduler.runAfter(0, internal.groups.upsertDiscovered, { businessId: business._id, groupJid: payload.chat, ...(payload.name ? { groupName: payload.name } : {}) });
         if (!payload.fromMe && payload.mediaType === "audio" && payload.mediaPayload) {
           await ctx.scheduler.runAfter(0, internal.transcription.transcribe, { interactionId, mediaPayload: payload.mediaPayload, ...(payload.mediaMimeType ? { mediaMimeType: payload.mediaMimeType } : {}) });

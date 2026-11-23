@@ -5,6 +5,7 @@ import { requireBusiness, requireIdentity } from "./lib/authorization";
 import { BUSINESS_SYSTEM_PROMPT_MAX_LENGTH, BUSINESS_SYSTEM_PROMPT_MIN_LENGTH } from "./lib/launch";
 import { businessSystemPromptMessages, cleanBusinessText, promptSourceMaximum, promptSourceMinimum } from "./lib/businessPrompt";
 import { billingAccess } from "./lib/billingAccess";
+import { recordBusinessActivity, recordMilestone } from "./productAnalytics";
 
 const qualificationField = v.union(v.literal("need"), v.literal("budget"), v.literal("location"), v.literal("timeline"), v.literal("readiness"));
 const businessAiUsageKind = v.union(v.literal("prompt_generation"), v.literal("voice_transcription"));
@@ -83,6 +84,8 @@ export const save = mutation({
       killSwitch: !(args.customerAutoReplyEnabled || args.groupAutoReplyEnabled),
       onboardingStep: 3,
     });
+    if (args.customerAutoReplyEnabled || args.groupAutoReplyEnabled) await recordMilestone(ctx, args.businessId, "automationOptInAt", now);
+    await recordBusinessActivity(ctx, args.businessId, now);
     return null;
   },
 });

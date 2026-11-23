@@ -221,16 +221,25 @@ export const operations = query({
     unhealthyBusinesses: v.array(v.object({ id: v.id("businesses"), name: v.string(), status: businessStatus, sessionState: v.union(v.string(), v.null()), lastHealthAt: v.union(v.number(), v.null()), lastError: v.union(v.string(), v.null()), updatedAt: v.union(v.number(), v.null()) })),
     deadLetters: v.array(v.object({ id: v.id("inboundEvents"), businessId: v.id("businesses"), businessName: v.string(), attempts: v.number(), errorCode: v.union(v.string(), v.null()), receivedAt: v.number(), dueAt: v.number() })),
     failedWebhooks: v.array(v.object({ id: v.id("billingWebhookEvents"), businessId: v.union(v.id("businesses"), v.null()), businessName: v.string(), eventType: v.string(), code: v.union(v.string(), v.null()), receivedAt: v.number() })),
+    unknownDispatches: v.array(v.object({ id: v.id("assistantDispatches"), businessId: v.id("businesses"), businessName: v.string(), target: v.string(), errorCode: v.union(v.string(), v.null()), createdAt: v.number() })),
+    duplicateDispatches: v.array(v.object({ id: v.id("assistantDispatches"), businessId: v.id("businesses"), businessName: v.string(), providerMessageId: v.union(v.string(), v.null()), detectedAt: v.number() })),
+    activeIncidents: v.array(v.object({ id: v.id("connectionIncidents"), businessId: v.id("businesses"), businessName: v.string(), kind: v.string(), code: v.union(v.string(), v.null()), startedAt: v.number() })),
+    openSupportRequests: v.array(v.object({ id: v.id("supportRequests"), businessId: v.id("businesses"), businessName: v.string(), category: v.string(), severity: v.string(), summary: v.string(), createdAt: v.number() })),
   }),
   handler: async (ctx) => {
     await requireAdmin(ctx);
-    const [disconnected, pending, errors, deadLetters, failedWebhooks] = await Promise.all([
+    const [disconnected, pending, errors, deadLetters, failedWebhooks, unknownDispatches, duplicateDispatches, activeIncidents, openSupportRequests] = await Promise.all([
       businessesByStatus(ctx, "disconnected", 40),
       businessesByStatus(ctx, "pending", 40),
       businessesByStatus(ctx, "error", 40),
       ctx.db.query("inboundEvents").withIndex("by_due", (builder) => builder.eq("state", "dead_letter")).order("desc").take(40),
       ctx.db.query("billingWebhookEvents").withIndex("by_state_received", (builder) => builder.eq("state", "failed")).order("desc").take(40),
+      ctx.db.query("assistantDispatches").withIndex("by_state_updated", (builder) => builder.eq("state", "unknown")).order("desc").take(40),
+      ctx.db.query("assistantDispatches").withIndex("by_duplicate_detected", (builder) => builder.gte("duplicateDetectedAt", 0)).order("desc").take(40),
+      ctx.db.query("connectionIncidents").withIndex("by_status_started", (builder) => builder.eq("status", "active")).order("desc").take(40),
+      ctx.db.query("supportRequests").withIndex("by_status_created", (builder) => builder.eq("status", "open")).order("desc").take(40),
     ]);
+    const unknown = unknownDispatches;
     const unhealthy = [...errors, ...pending, ...disconnected].slice(0, 60);
     const unhealthyBusinesses = await Promise.all(unhealthy.map(async (business) => {
       const session = await ctx.db.query("whatsappSessions").withIndex("by_business", (builder) => builder.eq("businessId", business._id)).unique();
@@ -239,6 +248,9 @@ export const operations = query({
     const businessIds = new Set<Id<"businesses">>();
     for (const event of deadLetters) businessIds.add(event.businessId);
     for (const event of failedWebhooks) if (event.businessId) businessIds.add(event.businessId);
+    for (const dispatch of [...unknown, ...duplicateDispatches]) businessIds.add(dispatch.businessId);
+    for (const incident of activeIncidents) businessIds.add(incident.businessId);
+    for (const request of openSupportRequests) businessIds.add(request.businessId);
     const names = new Map<Id<"businesses">, string>();
     await Promise.all([...businessIds].map(async (id) => {
       const business = await ctx.db.get(id);
@@ -248,6 +260,101 @@ export const operations = query({
       unhealthyBusinesses,
       deadLetters: deadLetters.map((event) => ({ id: event._id, businessId: event.businessId, businessName: names.get(event.businessId) ?? "Unknown business", attempts: event.attempts, errorCode: event.errorCode ?? null, receivedAt: event.receivedAt, dueAt: event.dueAt })),
       failedWebhooks: failedWebhooks.map((event) => ({ id: event._id, businessId: event.businessId ?? null, businessName: event.businessId ? names.get(event.businessId) ?? "Unknown business" : "Unmatched event", eventType: event.eventType, code: event.code ?? null, receivedAt: event.receivedAt })),
+      unknownDispatches: unknown.map((dispatch) => ({ id: dispatch._id, businessId: dispatch.businessId, businessName: names.get(dispatch.businessId) ?? "Unknown business", target: dispatch.target, errorCode: dispatch.errorCode ?? null, createdAt: dispatch.createdAt })),
+      duplicateDispatches: duplicateDispatches.map((dispatch) => ({ id: dispatch._id, businessId: dispatch.businessId, businessName: names.get(dispatch.businessId) ?? "Unknown business", providerMessageId: dispatch.providerMessageId ?? null, detectedAt: dispatch.duplicateDetectedAt ?? dispatch.updatedAt })),
+      activeIncidents: activeIncidents.map((incident) => ({ id: incident._id, businessId: incident.businessId, businessName: names.get(incident.businessId) ?? "Unknown business", kind: incident.kind, code: incident.code ?? null, startedAt: incident.startedAt })),
+      openSupportRequests: openSupportRequests.map((request) => ({ id: request._id, businessId: request.businessId, businessName: names.get(request.businessId) ?? "Unknown business", category: request.category, severity: request.severity, summary: request.summary, createdAt: request.createdAt })),
+    };
+  },
+});
+
+export const learning = query({
+  args: { rangeDays: v.number() },
+  returns: v.object({
+    generatedAt: v.number(),
+    rangeDays: v.number(),
+    dataComplete: v.boolean(),
+    metrics: v.object({
+      connectionCompletion: v.number(), connectedBusinesses: v.number(), totalBusinesses: v.number(),
+      averageTimeToFirstOpportunityMs: v.union(v.number(), v.null()), opportunityBusinesses: v.number(),
+      suggestedActionCompletion: v.number(), businessesReceivingSuggestions: v.number(), businessesCompletingActions: v.number(),
+      weeklyRetainedBusinesses: v.number(), previousWeekActiveBusinesses: v.number(),
+      buyingSignalPrecision: v.union(v.number(), v.null()), falsePositiveRate: v.union(v.number(), v.null()), labeledMessages: v.number(),
+      responseTimeReduction: v.union(v.number(), v.null()), earlierResponseMs: v.union(v.number(), v.null()), recentResponseMs: v.union(v.number(), v.null()), responseSamples: v.number(),
+      automationOptInRate: v.number(), automationOptedIn: v.number(),
+      wrongUnsupportedReplyRate: v.union(v.number(), v.null()), replyFeedbackSamples: v.number(),
+      connectionIncidents: v.number(), duplicateSends: v.number(),
+    }),
+    evidence: v.object({ english: v.number(), pidgin: v.number(), mixed: v.number(), voiceNotes: v.number(), productImages: v.number(), paymentReceipts: v.number(), ambiguousLanguage: v.number(), sellerVerticals: v.array(v.object({ vertical: v.string(), samples: v.number() })) }),
+  }),
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+    const rangeDays = Math.min(90, Math.max(7, Math.floor(args.rangeDays)));
+    const now = Date.now();
+    const since = now - rangeDays * 86_400_000;
+    const currentWeekStart = startOfDay(now) - (((new Date(now).getUTCDay() || 7) - 1) * 86_400_000);
+    const previousWeekStart = currentWeekStart - 7 * 86_400_000;
+    const [metricRecords, currentActivity, previousActivity, labels, responseSamples, feedback, incidents, duplicates] = await Promise.all([
+      ctx.db.query("businessProductMetrics").withIndex("by_business_created", (builder) => builder.gte("businessCreatedAt", since)).order("desc").take(BUSINESS_LIMIT),
+      ctx.db.query("businessActivityWeeks").withIndex("by_week_start", (builder) => builder.eq("weekStart", currentWeekStart)).take(BUSINESS_LIMIT),
+      ctx.db.query("businessActivityWeeks").withIndex("by_week_start", (builder) => builder.eq("weekStart", previousWeekStart)).take(BUSINESS_LIMIT),
+      ctx.db.query("messageLabels").withIndex("by_labeled_at", (builder) => builder.gte("labeledAt", since)).order("desc").take(BUSINESS_LIMIT),
+      ctx.db.query("responseTimeSamples").withIndex("by_response_at", (builder) => builder.gte("responseAt", since)).order("asc").take(BUSINESS_LIMIT),
+      ctx.db.query("assistantReplyFeedback").withIndex("by_recorded_at", (builder) => builder.gte("recordedAt", since)).order("desc").take(BUSINESS_LIMIT),
+      ctx.db.query("connectionIncidents").withIndex("by_started", (builder) => builder.gte("startedAt", since)).order("desc").take(BUSINESS_LIMIT),
+      ctx.db.query("assistantDispatches").withIndex("by_duplicate_detected", (builder) => builder.gte("duplicateDetectedAt", since)).order("desc").take(BUSINESS_LIMIT),
+    ]);
+    const totalBusinesses = metricRecords.length;
+    const connectedBusinesses = metricRecords.filter((record) => record.firstConnectedAt !== undefined).length;
+    const opportunityDurations = metricRecords.filter((record) => record.firstUsefulOpportunityAt !== undefined).map((record) => Math.max(0, record.firstUsefulOpportunityAt! - record.businessCreatedAt));
+    const receivingSuggestions = metricRecords.filter((record) => record.firstSuggestedActionAt !== undefined);
+    const completingActions = receivingSuggestions.filter((record) => record.firstSuggestedActionCompletedAt !== undefined);
+    const currentBusinesses = new Set(currentActivity.map((record) => record.businessId));
+    const retained = new Set(previousActivity.map((record) => record.businessId)).size ? new Set(previousActivity.filter((record) => currentBusinesses.has(record.businessId)).map((record) => record.businessId)).size : 0;
+    const classifiedLabels = labels.filter((label) => label.predictedLabel !== undefined);
+    const actualPositive = (label: Doc<"messageLabels">) => label.label === "buying_signal" || label.label === "payment_related";
+    const predictedPositive = (label: Doc<"messageLabels">) => label.predictedLabel === "buying_signal" || label.predictedLabel === "payment_related";
+    const truePositive = classifiedLabels.filter((label) => actualPositive(label) && predictedPositive(label)).length;
+    const falsePositive = classifiedLabels.filter((label) => !actualPositive(label) && predictedPositive(label)).length;
+    const trueNegative = classifiedLabels.filter((label) => !actualPositive(label) && !predictedPositive(label)).length;
+    const midpoint = Math.ceil(responseSamples.length / 2);
+    const earlier = responseSamples.slice(0, midpoint);
+    const recent = responseSamples.slice(midpoint);
+    const average = (values: number[]) => values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
+    const earlierResponseMs = average(earlier.map((sample) => sample.responseMs));
+    const recentResponseMs = average(recent.map((sample) => sample.responseMs));
+    const optedIn = metricRecords.filter((record) => record.automationOptInAt !== undefined).length;
+    const wrongUnsupported = feedback.filter((record) => record.rating === "wrong" || record.rating === "unsupported").length;
+    const verticals = new Map<string, number>();
+    for (const label of labels) if (label.sellerVertical) verticals.set(label.sellerVertical, (verticals.get(label.sellerVertical) ?? 0) + 1);
+    return {
+      generatedAt: now,
+      rangeDays,
+      dataComplete: [metricRecords, currentActivity, previousActivity, labels, responseSamples, feedback, incidents, duplicates].every((records) => records.length < BUSINESS_LIMIT),
+      metrics: {
+        connectionCompletion: totalBusinesses ? connectedBusinesses / totalBusinesses : 0, connectedBusinesses, totalBusinesses,
+        averageTimeToFirstOpportunityMs: average(opportunityDurations), opportunityBusinesses: opportunityDurations.length,
+        suggestedActionCompletion: receivingSuggestions.length ? completingActions.length / receivingSuggestions.length : 0, businessesReceivingSuggestions: receivingSuggestions.length, businessesCompletingActions: completingActions.length,
+        weeklyRetainedBusinesses: retained, previousWeekActiveBusinesses: new Set(previousActivity.map((record) => record.businessId)).size,
+        buyingSignalPrecision: truePositive + falsePositive ? truePositive / (truePositive + falsePositive) : null,
+        falsePositiveRate: falsePositive + trueNegative ? falsePositive / (falsePositive + trueNegative) : null,
+        labeledMessages: classifiedLabels.length,
+        responseTimeReduction: earlierResponseMs !== null && recentResponseMs !== null && earlierResponseMs > 0 ? (earlierResponseMs - recentResponseMs) / earlierResponseMs : null,
+        earlierResponseMs, recentResponseMs, responseSamples: responseSamples.length,
+        automationOptInRate: totalBusinesses ? optedIn / totalBusinesses : 0, automationOptedIn: optedIn,
+        wrongUnsupportedReplyRate: feedback.length ? wrongUnsupported / feedback.length : null, replyFeedbackSamples: feedback.length,
+        connectionIncidents: incidents.length, duplicateSends: duplicates.length,
+      },
+      evidence: {
+        english: labels.filter((label) => label.language === "english").length,
+        pidgin: labels.filter((label) => label.language === "pidgin").length,
+        mixed: labels.filter((label) => label.language === "mixed").length,
+        voiceNotes: labels.filter((label) => label.evidenceTags?.includes("voice_note")).length,
+        productImages: labels.filter((label) => label.evidenceTags?.includes("product_image")).length,
+        paymentReceipts: labels.filter((label) => label.evidenceTags?.includes("payment_receipt")).length,
+        ambiguousLanguage: labels.filter((label) => label.evidenceTags?.includes("ambiguous_language")).length,
+        sellerVerticals: [...verticals.entries()].sort((left, right) => right[1] - left[1]).slice(0, 12).map(([vertical, samples]) => ({ vertical, samples })),
+      },
     };
   },
 });

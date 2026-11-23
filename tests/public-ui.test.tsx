@@ -16,7 +16,7 @@ describe("public UI", () => {
   it("describes the consent-gated Launch 1 assistant accurately", () => {
     const html = renderToStaticMarkup(<LandingPage />);
     expect(html).toContain("You control customer authorization and every enabled group");
-    expect(html).toContain("save a detailed business system prompt");
+    expect(html).toContain("Complete Teach Pipelixr");
     expect(html).toContain("Groups stay silent until enabled individually");
     expect(html).toContain("feature remains in the product code but is blocked for Launch 1");
     expect(html).toContain("an unofficial provider");

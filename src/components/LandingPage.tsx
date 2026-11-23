@@ -55,12 +55,12 @@ const outcomes = [
 
 const steps = [
   { number: "01", title: "Teach it your business", text: "Add your products, prices, delivery details, policies, and preferred tone. Review the business prompt before it is used." },
-  { number: "02", title: "Connect your WhatsApp", text: "Pair an authorized number after reviewing the provider risk. Creating your workspace does not require a connection." },
+  { number: "02", title: "Connect your WhatsApp", text: "Pair an authorized number after reviewing the connection terms. Creating your workspace does not require a connection." },
   { number: "03", title: "Work the right conversations", text: "See buying signals, suggested next steps, and eligible replies—then keep control of where the assistant is allowed to act." },
 ];
 
 const questions = [
-  { question: "Does Pipelixr send messages for me?", answer: "Only after explicit setup. You must save a detailed business system prompt and separately authorize one-to-one or group replies. Groups stay silent until enabled individually." },
+  { question: "Does Pipelixr send messages for me?", answer: "Only after explicit setup. Complete Teach Pipelixr, then separately authorize one-to-one or group replies. Groups stay silent until enabled individually." },
   { question: "How does the WhatsApp connection work?", answer: "You can pair an authorized number using a QR code. The connection uses Evolution Go, an unofficial provider—not the official WhatsApp Business API. WhatsApp may restrict or ban the number. You must review and accept those risks before pairing." },
   { question: "Is Status-to-Cash available at launch?", answer: "No. That feature remains in the product code but is blocked for Launch 1 while the focus is accurate replies to customer messages and explicitly enabled groups." },
   { question: "What does recovered revenue mean here?", answer: "Claimed recovered revenue is based on seller-recorded outcomes and attribution rules. It is kept separate from independently confirmed recovered revenue. Recording an order as paid is not independent payment verification." },
@@ -251,7 +251,7 @@ export default function LandingPage() {
 
         <aside id="privacy" className={styles.connectionNote}>
           <ShieldCheck size={21} strokeWidth={1.8} aria-hidden="true" />
-          <div><h2>A transparent note on the WhatsApp connection</h2><p>Pipelixr uses an unofficial Evolution Go connection. Your number may be restricted or banned. Connect only a number you are authorized to manage, and review retention and processing details before pairing. No connection is required to create your workspace.</p></div>
+          <div><h2>Connection health and control</h2><p>Create a workspace before connecting WhatsApp. Pair only a number you are authorized to manage; full provider and retention terms are shown once at connection and require explicit consent.</p></div>
         </aside>
 
         <section className={styles.finalCta} aria-labelledby="start-title">

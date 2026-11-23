@@ -239,6 +239,7 @@ export default defineSchema({
     transcriptConfidence: v.optional(v.number()),
     transcribedAt: v.optional(v.number()),
     transcriptionErrorCode: v.optional(v.string()),
+    assistantDispatchId: v.optional(v.id("assistantDispatches")),
   }).index("by_business", ["businessId"])
     .index("by_customer", ["customerId"])
     .index("by_whatsapp_id", ["whatsappMessageId"])
@@ -524,13 +525,18 @@ export default defineSchema({
     attempts: v.number(),
     providerMessageId: v.optional(v.string()),
     errorCode: v.optional(v.string()),
+    duplicateOfDispatchId: v.optional(v.id("assistantDispatches")),
+    duplicateDetectedAt: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
   }).index("by_interaction", ["interactionId"])
     .index("by_business", ["businessId"])
+    .index("by_state_updated", ["state", "updatedAt"])
     .index("by_owner_rescue", ["ownerRescueId", "createdAt"])
     .index("by_business_time", ["businessId", "createdAt"])
-    .index("by_business_target_time", ["businessId", "target", "createdAt"]),
+    .index("by_business_target_time", ["businessId", "target", "createdAt"])
+    .index("by_business_provider_message", ["businessId", "providerMessageId"])
+    .index("by_duplicate_detected", ["duplicateDetectedAt"]),
 
   dailySnapshots: defineTable({
     businessId: v.id("businesses"),
@@ -833,10 +839,16 @@ export default defineSchema({
   messageLabels: defineTable({
     businessId: v.id("businesses"), customerId: v.id("customers"), interactionId: v.id("interactions"),
     label: v.union(v.literal("buying_signal"), v.literal("inquiry"), v.literal("payment_related"), v.literal("casual_noise"), v.literal("manual_review")),
+    predictedLabel: v.optional(v.union(v.literal("buying_signal"), v.literal("inquiry"), v.literal("payment_related"), v.literal("casual_noise"), v.literal("manual_review"))),
+    messageType: v.optional(v.string()),
+    language: v.optional(v.union(v.literal("english"), v.literal("pidgin"), v.literal("mixed"), v.literal("other"))),
+    evidenceTags: v.optional(v.array(v.union(v.literal("voice_note"), v.literal("product_image"), v.literal("payment_receipt"), v.literal("ambiguous_language")))),
+    sellerVertical: v.optional(v.string()),
     labeledBy: v.string(), labeledAt: v.number(),
   }).index("by_interaction", ["interactionId"])
     .index("by_business", ["businessId"])
     .index("by_business_time", ["businessId", "labeledAt"])
+    .index("by_labeled_at", ["labeledAt"])
     .index("by_customer", ["customerId"]),
 
   businessKnowledge: defineTable({
@@ -1053,6 +1065,91 @@ export default defineSchema({
     .index("by_business_outcome_occurred", ["businessId", "outcome", "occurredAt"])
     .index("by_conversation_occurred", ["conversationId", "occurredAt"])
     .index("by_ad_occurred", ["businessId", "sourceAdId", "occurredAt"]),
+
+  businessProductMetrics: defineTable({
+    businessId: v.id("businesses"),
+    businessCreatedAt: v.number(),
+    firstConnectedAt: v.optional(v.number()),
+    firstUsefulOpportunityAt: v.optional(v.number()),
+    firstSuggestedActionAt: v.optional(v.number()),
+    firstSuggestedActionCompletedAt: v.optional(v.number()),
+    automationOptInAt: v.optional(v.number()),
+    demoCompletedAt: v.optional(v.number()),
+    demoDismissedAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_business", ["businessId"])
+    .index("by_created", ["createdAt"])
+    .index("by_business_created", ["businessCreatedAt"]),
+
+  businessActivityWeeks: defineTable({
+    businessId: v.id("businesses"),
+    weekStart: v.number(),
+    firstSeenAt: v.number(),
+    lastSeenAt: v.number(),
+    activityCount: v.number(),
+  }).index("by_business_week", ["businessId", "weekStart"])
+    .index("by_business", ["businessId"])
+    .index("by_week_start", ["weekStart"]),
+
+  responseTimeSamples: defineTable({
+    businessId: v.id("businesses"),
+    conversationId: v.id("conversations"),
+    inboundInteractionId: v.id("interactions"),
+    responseInteractionId: v.id("interactions"),
+    source: v.union(v.literal("owner"), v.literal("assistant")),
+    inboundAt: v.number(),
+    responseAt: v.number(),
+    responseMs: v.number(),
+  }).index("by_response_interaction", ["responseInteractionId"])
+    .index("by_inbound_interaction", ["inboundInteractionId"])
+    .index("by_business_response", ["businessId", "responseAt"])
+    .index("by_business", ["businessId"])
+    .index("by_response_at", ["responseAt"]),
+
+  assistantReplyFeedback: defineTable({
+    businessId: v.id("businesses"),
+    interactionId: v.id("interactions"),
+    dispatchId: v.id("assistantDispatches"),
+    rating: v.union(v.literal("correct"), v.literal("wrong"), v.literal("unsupported")),
+    recordedBy: v.string(),
+    recordedAt: v.number(),
+  }).index("by_interaction", ["interactionId"])
+    .index("by_business", ["businessId"])
+    .index("by_business_time", ["businessId", "recordedAt"])
+    .index("by_recorded_at", ["recordedAt"]),
+
+  connectionIncidents: defineTable({
+    businessId: v.id("businesses"),
+    sessionId: v.id("whatsappSessions"),
+    status: v.union(v.literal("active"), v.literal("resolved")),
+    kind: v.union(v.literal("disconnection"), v.literal("provider_error"), v.literal("health_failure")),
+    previousState: v.string(),
+    currentState: v.string(),
+    code: v.optional(v.string()),
+    startedAt: v.number(),
+    updatedAt: v.number(),
+    resolvedAt: v.optional(v.number()),
+  }).index("by_business_status", ["businessId", "status", "startedAt"])
+    .index("by_business", ["businessId"])
+    .index("by_status_started", ["status", "startedAt"])
+    .index("by_started", ["startedAt"]),
+
+  supportRequests: defineTable({
+    businessId: v.id("businesses"),
+    category: v.union(v.literal("connection"), v.literal("duplicate_send"), v.literal("reply_quality"), v.literal("data_processing"), v.literal("other")),
+    severity: v.union(v.literal("normal"), v.literal("urgent")),
+    status: v.union(v.literal("open"), v.literal("investigating"), v.literal("resolved")),
+    summary: v.string(),
+    details: v.string(),
+    createdBy: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    resolvedAt: v.optional(v.number()),
+  }).index("by_business_status", ["businessId", "status", "createdAt"])
+    .index("by_business", ["businessId"])
+    .index("by_status_created", ["status", "createdAt"])
+    .index("by_created", ["createdAt"]),
 
   adminAccountDeletionJobs: defineTable({
     businessId: v.id("businesses"),

@@ -64,6 +64,7 @@ import type * as measurement from "../measurement.js";
 import type * as migrations from "../migrations.js";
 import type * as orders from "../orders.js";
 import type * as pipeline from "../pipeline.js";
+import type * as productAnalytics from "../productAnalytics.js";
 import type * as readOnly from "../readOnly.js";
 import type * as safeguards from "../safeguards.js";
 import type * as sellerActions from "../sellerActions.js";
@@ -136,6 +137,7 @@ declare const fullApi: ApiFromModules<{
   migrations: typeof migrations;
   orders: typeof orders;
   pipeline: typeof pipeline;
+  productAnalytics: typeof productAnalytics;
   readOnly: typeof readOnly;
   safeguards: typeof safeguards;
   sellerActions: typeof sellerActions;

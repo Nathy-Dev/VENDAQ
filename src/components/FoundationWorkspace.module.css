@@ -40,6 +40,19 @@
 .infoBanner { display: flex; gap: 10px; align-items: flex-start; border: 1px solid var(--dash-border); background: #fafafa; padding: 13px 15px; border-radius: 8px; font-size: 12px; color: #525252; line-height: 1.7; }
 .infoBanner svg { margin-top: 2px; }
 .infoBanner strong { color: #171717; font-weight: 600; }
+.demoCard { display: grid; gap: 15px; padding: 20px; border: 1px solid var(--accent-border); border-radius: 12px; background: linear-gradient(140deg, #f7fcfa, #fff); box-shadow: 0 12px 30px rgb(16 112 82 / 6%); }
+.demoHeader { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.demoHeader span { color: var(--dash-accent); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; }
+.demoHeader h2 { margin-top: 4px; font-size: 15px; }
+.demoHeader button { display: grid; place-items: center; width: 32px; height: 32px; color: var(--dash-text-muted); border-radius: 7px; }
+.demoHeader button:hover { background: #fff; }
+.demoProgress { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; }
+.demoProgress i { height: 4px; border-radius: 5px; background: #e7eeeb; }
+.demoProgress i[data-current="true"] { background: var(--dash-accent); }
+.demoScene { min-height: 135px; padding: 18px; border: 1px solid var(--dash-border); border-radius: 10px; background: #fff; }
+.demoScene h3 { margin-top: 14px; font-size: 14px; }
+.demoScene p { margin-top: 8px; color: var(--dash-text-muted); font-size: 12px; line-height: 1.75; }
+.demoActions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
 .notice { display: flex; align-items: flex-start; gap: 8px; padding: 11px 13px; border: 1px solid var(--dash-border); border-radius: 7px; background: #fafafa; font-size: 12px; line-height: 1.6; }
 .notice[data-error="true"] { color: var(--dash-danger); background: var(--dash-danger-soft); border-color: #efdbdb; }
 .notice svg { margin-top: 2px; }
@@ -214,6 +227,9 @@
 .message[data-role="owner"] .messageBubble { background: var(--dash-accent-soft); color: #075f46; border-radius: 14px 0 14px 14px; }
 .messageMeta { display: flex; align-items: center; gap: 6px; font-size: 10px; color: #737373; margin-top: 5px; }
 .message[data-role="owner"] .messageMeta { justify-content: flex-end; }
+.replyRating { margin-top: 7px; display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 5px; color: var(--dash-text-muted); font-size: 9px; }
+.replyRating button { display: inline-flex; align-items: center; gap: 4px; min-height: 27px; padding: 0 8px; border: 1px solid var(--dash-border); border-radius: 99px; background: #fff; color: #666; }
+.replyRating button[aria-pressed="true"] { border-color: var(--dash-accent); background: var(--dash-accent-soft); color: var(--dash-accent); }
 .conversationFooter { padding: 13px 20px; border-top: 1px solid var(--dash-border); display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 11px; color: #737373; background: #fafafa; }
 .conversationIntelligence { border-top: 1px solid var(--dash-border); padding: 10px 20px; background: #fff; max-height: 220px; overflow-y: auto; }
 .conversationIntelligence summary { display: flex; align-items: center; gap: 7px; cursor: pointer; font-size: 11px; font-weight: 600; color: var(--dash-accent); }
@@ -235,6 +251,9 @@
 .labelRow .quote { margin-top: 10px; }
 .labelRow .inlineForm { margin-top: 15px; }
 .labelRow .input { width: 210px; }
+.labelForm { display: grid; gap: 12px; margin-top: 15px; }
+.labelTags { display: flex; flex-wrap: wrap; gap: 7px; }
+.labelTags label { display: inline-flex; align-items: center; gap: 6px; min-height: 31px; padding: 0 9px; border: 1px solid var(--dash-border); border-radius: 99px; color: var(--dash-text-muted); font-size: 10px; }
 .viewerKey { display: inline-block; max-width: 220px; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; font-family: var(--font-geist-mono), monospace; font-size: 11px; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes fade { 50% { opacity: .55; } }

@@ -6,8 +6,10 @@ import type { Id } from "./_generated/dataModel";
 import { createForMissedOpportunity } from "./followUps";
 
 const messageClass = v.union(v.literal("buying_signal"), v.literal("inquiry"), v.literal("payment_related"), v.literal("casual_noise"), v.literal("manual_review"));
+const messageLanguage = v.union(v.literal("english"), v.literal("pidgin"), v.literal("mixed"), v.literal("other"));
+const evidenceTag = v.union(v.literal("voice_note"), v.literal("product_image"), v.literal("payment_receipt"), v.literal("ambiguous_language"));
 type ReportRow = { opportunityId: Id<"missedRevenueOpportunities">; interactionId: Id<"interactions">; customerId: Id<"customers">; customerName: string; identity: string; message: string; triggerAt: number; dueAt: number; responseWindowMinutes: number; classifierVersion: string; classifierConfidence: number; ruleIds: string[] };
-type LabelQueueRow = { interactionId: Id<"interactions">; customerId: Id<"customers">; customerName: string; message: string; timestamp: number; messageType: string; prediction: MessageClass; confidence: number; ruleIds: string[]; classifierVersion: string; humanLabel: MessageClass | null };
+type LabelQueueRow = { interactionId: Id<"interactions">; customerId: Id<"customers">; customerName: string; message: string; timestamp: number; messageType: string; prediction: MessageClass; confidence: number; ruleIds: string[]; classifierVersion: string; humanLabel: MessageClass | null; language: "english" | "pidgin" | "mixed" | "other" | null; evidenceTags: Array<"voice_note" | "product_image" | "payment_receipt" | "ambiguous_language">; sellerVertical: string | null };
 
 export const promoteOpportunity = internalMutation({
   args: { opportunityId: v.id("missedRevenueOpportunities") },
@@ -49,7 +51,7 @@ export const missedRevenueReport = query({
 
 export const labelQueue = query({
   args: { businessId: v.id("businesses") },
-  returns: v.array(v.object({ interactionId: v.id("interactions"), customerId: v.id("customers"), customerName: v.string(), message: v.string(), timestamp: v.number(), messageType: v.string(), prediction: messageClass, confidence: v.number(), ruleIds: v.array(v.string()), classifierVersion: v.string(), humanLabel: v.union(messageClass, v.null()) })),
+  returns: v.array(v.object({ interactionId: v.id("interactions"), customerId: v.id("customers"), customerName: v.string(), message: v.string(), timestamp: v.number(), messageType: v.string(), prediction: messageClass, confidence: v.number(), ruleIds: v.array(v.string()), classifierVersion: v.string(), humanLabel: v.union(messageClass, v.null()), language: v.union(messageLanguage, v.null()), evidenceTags: v.array(evidenceTag), sellerVertical: v.union(v.string(), v.null()) })),
   handler: async (ctx, args) => {
     await requireBusiness(ctx, args.businessId);
     const interactions = await ctx.db.query("interactions").withIndex("by_business", (builder) => builder.eq("businessId", args.businessId)).order("desc").take(100);
@@ -59,7 +61,7 @@ export const labelQueue = query({
       const customer = await ctx.db.get(interaction.customerId);
       if (!customer || customer.businessId !== args.businessId || customer.deletedAt !== undefined) continue;
       const label = await ctx.db.query("messageLabels").withIndex("by_interaction", (builder) => builder.eq("interactionId", interaction._id)).unique();
-      output.push({ interactionId: interaction._id, customerId: customer._id, customerName: customer.name ?? "Unnamed customer", message: interaction.content, timestamp: interaction.timestamp, messageType: interaction.messageType ?? "unsupported", prediction: interaction.classifierLabel, confidence: interaction.classifierConfidence ?? 0, ruleIds: interaction.classifierRuleIds ?? [], classifierVersion: interaction.classifierVersion, humanLabel: label?.label ?? null });
+      output.push({ interactionId: interaction._id, customerId: customer._id, customerName: customer.name ?? "Unnamed customer", message: interaction.content, timestamp: interaction.timestamp, messageType: interaction.messageType ?? "unsupported", prediction: interaction.classifierLabel, confidence: interaction.classifierConfidence ?? 0, ruleIds: interaction.classifierRuleIds ?? [], classifierVersion: interaction.classifierVersion, humanLabel: label?.label ?? null, language: label?.language ?? null, evidenceTags: label?.evidenceTags ?? [], sellerVertical: label?.sellerVertical ?? null });
       if (output.length === 50) break;
     }
     return output;
@@ -67,7 +69,7 @@ export const labelQueue = query({
 });
 
 export const setLabel = mutation({
-  args: { businessId: v.id("businesses"), interactionId: v.id("interactions"), label: messageClass },
+  args: { businessId: v.id("businesses"), interactionId: v.id("interactions"), label: messageClass, language: v.optional(messageLanguage), evidenceTags: v.optional(v.array(evidenceTag)), sellerVertical: v.optional(v.string()) },
   returns: v.id("messageLabels"),
   handler: async (ctx, args) => {
     await requireBusiness(ctx, args.businessId);
@@ -77,7 +79,8 @@ export const setLabel = mutation({
     const customer = await ctx.db.get(interaction.customerId);
     if (!customer || customer.businessId !== args.businessId || customer.deletedAt !== undefined) throw new ConvexError({ code: "NOT_FOUND" });
     const existing = await ctx.db.query("messageLabels").withIndex("by_interaction", (builder) => builder.eq("interactionId", interaction._id)).unique();
-    const values = { businessId: args.businessId, customerId: customer._id, interactionId: interaction._id, label: args.label, labeledBy: identity.subject, labeledAt: Date.now() };
+    const sellerVertical = (args.sellerVertical ?? "").replaceAll("\u0000", "").trim().slice(0, 80);
+    const values = { businessId: args.businessId, customerId: customer._id, interactionId: interaction._id, label: args.label, predictedLabel: interaction.classifierLabel, messageType: interaction.messageType ?? "unsupported", ...(args.language ? { language: args.language } : {}), evidenceTags: [...new Set(args.evidenceTags ?? [])], ...(sellerVertical ? { sellerVertical } : {}), labeledBy: identity.subject, labeledAt: Date.now() };
     if (existing) { await ctx.db.patch(existing._id, values); return existing._id; }
     return await ctx.db.insert("messageLabels", values);
   },

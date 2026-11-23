@@ -49,6 +49,11 @@ export const deleteCustomerBatch = internalMutation({
     const messages = await ctx.db.query("interactions").withIndex("by_customer", (builder) => builder.eq("customerId", job.customerId)).take(foundationPolicy().batchSize);
     for (const message of messages) {
       if (message.businessId !== job.businessId) throw new Error("CROSS_TENANT_DELETION_BLOCKED");
+      const feedback = await ctx.db.query("assistantReplyFeedback").withIndex("by_interaction", (builder) => builder.eq("interactionId", message._id)).unique();
+      if (feedback) await ctx.db.delete(feedback._id);
+      const responseSample = await ctx.db.query("responseTimeSamples").withIndex("by_response_interaction", (builder) => builder.eq("responseInteractionId", message._id)).unique()
+        ?? await ctx.db.query("responseTimeSamples").withIndex("by_inbound_interaction", (builder) => builder.eq("inboundInteractionId", message._id)).unique();
+      if (responseSample) await ctx.db.delete(responseSample._id);
       const dispatches = await ctx.db.query("assistantDispatches").withIndex("by_interaction", (builder) => builder.eq("interactionId", message._id)).take(20);
       for (const dispatch of dispatches) await ctx.db.delete(dispatch._id);
       await ctx.db.delete(message._id);
@@ -180,6 +185,11 @@ export const sweep = internalMutation({
     }
     const expiredMessages = await ctx.db.query("interactions").withIndex("by_expiry", (builder) => builder.gt("expiresAt", 0).lte("expiresAt", now)).take(batchSize);
     for (const message of expiredMessages) {
+      const feedback = await ctx.db.query("assistantReplyFeedback").withIndex("by_interaction", (builder) => builder.eq("interactionId", message._id)).unique();
+      if (feedback) await ctx.db.delete(feedback._id);
+      const responseSample = await ctx.db.query("responseTimeSamples").withIndex("by_response_interaction", (builder) => builder.eq("responseInteractionId", message._id)).unique()
+        ?? await ctx.db.query("responseTimeSamples").withIndex("by_inbound_interaction", (builder) => builder.eq("inboundInteractionId", message._id)).unique();
+      if (responseSample) await ctx.db.delete(responseSample._id);
       const label = await ctx.db.query("messageLabels").withIndex("by_interaction", (builder) => builder.eq("interactionId", message._id)).unique();
       if (label) await ctx.db.delete(label._id);
       const opportunity = await ctx.db.query("missedRevenueOpportunities").withIndex("by_interaction", (builder) => builder.eq("interactionId", message._id)).unique();

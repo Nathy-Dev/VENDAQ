@@ -73,7 +73,8 @@ describe("Phase 2 read-only revenue evidence", () => {
     await webhook(harness, message(source));
     await drain(harness);
     const [entry] = await source.owner.query(api.readOnly.labelQueue, { businessId: source.businessId });
-    const labelId = await source.owner.mutation(api.readOnly.setLabel, { businessId: source.businessId, interactionId: entry.interactionId, label: "buying_signal" });
+    const labelId = await source.owner.mutation(api.readOnly.setLabel, { businessId: source.businessId, interactionId: entry.interactionId, label: "buying_signal", language: "pidgin", evidenceTags: ["ambiguous_language"], sellerVertical: "fashion" });
+    expect((await source.owner.query(api.readOnly.labelQueue, { businessId: source.businessId }))[0]).toMatchObject({ language: "pidgin", evidenceTags: ["ambiguous_language"], sellerVertical: "fashion" });
     expect(await source.owner.mutation(api.readOnly.setLabel, { businessId: source.businessId, interactionId: entry.interactionId, label: "inquiry" })).toBe(labelId);
     expect((await harness.run((ctx) => ctx.db.get(entry.interactionId)))?.classifierLabel).toBe("buying_signal");
     const evaluation = await source.owner.query(api.readOnly.evaluation, { businessId: source.businessId });

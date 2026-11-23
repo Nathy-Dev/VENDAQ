@@ -41,7 +41,7 @@ describe("Phase 5 measurement and Phase 6 extensions", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it("reports risk while keeping dispatch unqualified", async () => {
+  it("reports health while keeping unauthorized dispatch paused", async () => {
     const harness = createHarness();
     const source = await tenant(harness);
     await harness.run(async (ctx) => {
@@ -52,7 +52,7 @@ describe("Phase 5 measurement and Phase 6 extensions", () => {
     expect(readiness.dispatchQualified).toBe(false);
     expect(readiness.killSwitch).toBe(true);
     expect(readiness.recentRiskEvents).toBeGreaterThanOrEqual(2);
-    expect(readiness.reasons.join(" ")).toContain("idempotency");
+    expect(readiness.reasons.join(" ")).toContain("kill switch");
     expect(fetch).not.toHaveBeenCalled();
   });
 });

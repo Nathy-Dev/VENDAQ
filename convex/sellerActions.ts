@@ -9,6 +9,7 @@ import type { JourneyStage } from "./lib/journey";
 import { foundationPolicy } from "./lib/policy";
 import { renderSafeSuggestion, SUGGESTION_VERSION } from "./lib/suggestions";
 import { cappedAvailableAt, policyForBusiness } from "./followUps";
+import { recordBusinessActivity, recordMilestone } from "./productAnalytics";
 
 const orderStatus = v.union(v.literal("pending"), v.literal("awaiting_payment"), v.literal("paid"), v.literal("payment_failed"), v.literal("expired"), v.literal("processing"), v.literal("shipped"), v.literal("delivered"), v.literal("cancelled"));
 const taskReason = v.union(v.literal("buying_signal"), v.literal("asked_no_order"), v.literal("awaiting_payment"));
@@ -42,7 +43,7 @@ async function createTask(ctx: MutationCtx, args: {
   const policy = policyForBusiness(args.business);
   const availableAt = await cappedAvailableAt(ctx, args.business._id, args.requestedAt, policy);
   const draft = renderSafeSuggestion(args.template, args.customer.name);
-  return ctx.db.insert("followUpTasks", {
+  const taskId = await ctx.db.insert("followUpTasks", {
     businessId: args.business._id,
     customerId: args.customer._id,
     reason: args.reason,
@@ -69,6 +70,8 @@ async function createTask(ctx: MutationCtx, args: {
     reasonSnapshot: args.reasonSnapshot,
     policySnapshot: policy,
   });
+  await recordMilestone(ctx, args.business._id, "firstSuggestedActionAt", Date.now());
+  return taskId;
 }
 
 export async function createStalledInquiryTask(ctx: MutationCtx, args: { businessId: Id<"businesses">; customerId: Id<"customers">; conversationId: Id<"conversations">; interactionId: Id<"interactions"> }) {
@@ -172,6 +175,8 @@ export const recordManualSend = mutation({
     const at = Date.now();
     await ctx.db.patch(task._id, { status: "done", completedAt: at, manuallySentAt: at, sellerApprovedDraftHash: task.draftHash });
     await ctx.db.insert("sellerActionEvents", { businessId: args.businessId, customerId: task.customerId, taskId: task._id, ...(task.orderId ? { orderId: task.orderId } : {}), type: "manual_send_claim", idempotencyKey: args.idempotencyKey, at });
+    await recordMilestone(ctx, args.businessId, "firstSuggestedActionCompletedAt", at);
+    await recordBusinessActivity(ctx, args.businessId, at);
     return null;
   },
 });

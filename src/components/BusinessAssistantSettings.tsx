@@ -15,7 +15,7 @@ type ScopedFeedback = Exclude<Feedback, null> & { scope: FeedbackScope };
 export default function BusinessAssistantSettings({ workspace, compact = false }: { workspace: Workspace; compact?: boolean }) {
   const profile = useQuery(api.businessProfile.get, { businessId: workspace.businessId });
   const qualificationPolicy = useQuery(api.leadQualification.policy, { businessId: workspace.businessId });
-  if (!profile || !qualificationPolicy) return <div className={styles.loading} role="status">Loading business AI settings...</div>;
+  if (!profile || !qualificationPolicy) return <div className={styles.loading} role="status">Loading Teach Pipelixr...</div>;
   return <BusinessAssistantForm key={`${profile.updatedAt ?? 0}:${profile.customerAutoReplyEnabled}:${profile.groupAutoReplyEnabled}`} workspace={workspace} compact={compact} profile={profile} qualificationPolicy={qualificationPolicy} />;
 }
 
@@ -185,7 +185,7 @@ function BusinessAssistantForm({ workspace, compact, profile, qualificationPolic
       const complete = generated.replaceAll("\u0000", "").trim().slice(0, 8_000);
       if (complete.length < 120) throw new Error("AI_GENERATION_FAILED");
       setSystemPrompt(complete);
-      setFeedback({ scope: "generate", text: "Your business prompt is ready. Review it, use Edit if anything needs changing, then save." });
+      setFeedback({ scope: "generate", text: "Your Pipelixr playbook is ready. Review it, use Edit if anything needs changing, then save." });
     } catch (error) {
       setSystemPrompt(previousPrompt);
       setFeedback({ scope: "generate", text: error instanceof Error && error.message === "BUSINESS_AI_RATE_LIMITED" ? "You've generated several prompts this hour. Please try again later. Your existing prompt has not been changed." : "We couldn't generate the prompt right now. Your existing prompt has not been changed.", error: true });
@@ -196,7 +196,7 @@ function BusinessAssistantForm({ workspace, compact, profile, qualificationPolic
 
   async function saveProfile() {
     if (systemPrompt.trim().length < 120) {
-      setFeedback({ scope: "save", text: "The system prompt needs more detail before Pipelixr can reply accurately.", error: true });
+      setFeedback({ scope: "save", text: "The reply playbook needs more detail before Pipelixr can reply accurately.", error: true });
       return;
     }
     setBusy("save"); setFeedback(null);
@@ -219,12 +219,12 @@ function BusinessAssistantForm({ workspace, compact, profile, qualificationPolic
 
   return <div className={styles.stack}>
     <section className={styles.card}>
-      <div className={styles.sectionHeading}><div><h2>{compact ? "Teach Pipelixr about your business" : "Business AI brief"}</h2><p>Pipelixr will not reply unless this system prompt is complete and you explicitly authorize it.</p></div><Bot size={18} aria-hidden="true" /></div>
+      <div className={styles.sectionHeading}><div><h2>Teach Pipelixr</h2><p>Give Pipelixr a complete business playbook, then explicitly choose where it may reply.</p></div><Bot size={18} aria-hidden="true" /></div>
       <div className={styles.infoBanner}><ShieldCheck size={17} aria-hidden="true" /><p>Only include business information you are comfortable using in customer conversations. Do not paste passwords, private keys, card details, or customer data.</p></div>
       <div className={styles.form}>
         <label className={styles.field}>Describe your business in your own words
           <textarea className={`${styles.input} ${styles.textarea}`} rows={compact ? 5 : 7} maxLength={4000} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="What do you sell? Who do you serve? What are your prices or price rules? Where do you deliver? How do customers order and pay? What should Pipelixr never promise?" />
-          <span className={styles.fieldHelp}>Type, record, or combine both. This source material is only used to create the prompt below.</span>
+          <span className={styles.fieldHelp}>Type, record, or combine both. This source material is only used to create the reply playbook below.</span>
         </label>
         <div className={styles.voiceComposer} data-recording={recording}>
           <div className={styles.voiceComposerMain}>
@@ -235,11 +235,11 @@ function BusinessAssistantForm({ workspace, compact, profile, qualificationPolic
           <button type="button" className={recording ? buttonClass.danger : buttonClass.secondary} disabled={busy !== null} onClick={recording ? stopRecording : () => void startRecording()}>{recording ? <><Square size={13} fill="currentColor" />Stop recording</> : <><Mic size={14} />Record description</>}</button>
         </div>
         <Notice feedback={feedback?.scope === "voice" ? feedback : null} />
-        <div className={styles.generatorRow}><button type="button" className={buttonClass.secondary} disabled={busy !== null || recording || description.trim().length < 40} onClick={() => void generatePrompt()}><Sparkles size={14} />{busy === "generate" ? "Writing your business prompt..." : "Generate comprehensive system prompt"}</button><span>Uses everything in your description above.</span></div>
+        <div className={styles.generatorRow}><button type="button" className={buttonClass.secondary} disabled={busy !== null || recording || description.trim().length < 40} onClick={() => void generatePrompt()}><Sparkles size={14} />{busy === "generate" ? "Creating your Pipelixr playbook..." : "Create my Pipelixr playbook"}</button><span>Uses everything in your description above.</span></div>
         <Notice feedback={feedback?.scope === "generate" ? feedback : null} />
         <div className={styles.promptField}>
-          <div className={styles.promptHeader}><div><span>System prompt used for every reply</span><small>{editingPrompt ? "Editing is on. Save when your changes are ready." : "Locked to prevent accidental changes."}</small></div><button type="button" className={buttonClass.ghost} disabled={streamingPrompt || busy === "save"} onClick={() => setEditingPrompt((value) => !value)}>{editingPrompt ? <><Check size={14} />Done editing</> : <><Pencil size={14} />Edit prompt</>}</button></div>
-          {editingPrompt ? <textarea autoFocus className={`${styles.input} ${styles.textarea} ${styles.promptTextarea}`} rows={compact ? 12 : 18} minLength={120} maxLength={8000} required value={systemPrompt} onChange={(event) => setSystemPrompt(event.target.value)} placeholder="Define the business, products, sales process, policies, tone, escalation rules, and what the assistant must never invent." /> : <div className={styles.promptViewer} data-streaming={streamingPrompt} data-empty={!systemPrompt}><pre>{systemPrompt || "Your generated system prompt will appear here."}{streamingPrompt && <span className={styles.streamingCursor} aria-hidden="true" />}</pre></div>}
+          <div className={styles.promptHeader}><div><span>Reply playbook used for every response</span><small>{editingPrompt ? "Editing is on. Save when your changes are ready." : "Locked to prevent accidental changes."}</small></div><button type="button" className={buttonClass.ghost} disabled={streamingPrompt || busy === "save"} onClick={() => setEditingPrompt((value) => !value)}>{editingPrompt ? <><Check size={14} />Done editing</> : <><Pencil size={14} />Edit playbook</>}</button></div>
+          {editingPrompt ? <textarea autoFocus className={`${styles.input} ${styles.textarea} ${styles.promptTextarea}`} rows={compact ? 12 : 18} minLength={120} maxLength={8000} required value={systemPrompt} onChange={(event) => setSystemPrompt(event.target.value)} placeholder="Define the business, products, sales process, policies, tone, escalation rules, and what Pipelixr must never invent." /> : <div className={styles.promptViewer} data-streaming={streamingPrompt} data-empty={!systemPrompt}><pre>{systemPrompt || "Your Pipelixr reply playbook will appear here."}{streamingPrompt && <span className={styles.streamingCursor} aria-hidden="true" />}</pre></div>}
           <div className={styles.promptMeta}><span>{systemPrompt.trim().length.toLocaleString()} / 8,000 characters</span><span>{streamingPrompt ? "Generating live" : editingPrompt ? "Editable" : "Protected"}</span></div>
         </div>
         <fieldset className={styles.fieldset}>
@@ -251,7 +251,7 @@ function BusinessAssistantForm({ workspace, compact, profile, qualificationPolic
           <legend>Automatic lead qualification</legend>
           <label className={styles.checkLabel}><input type="checkbox" role="switch" checked={qualificationEnabled} onChange={(event) => setQualificationEnabled(event.target.checked)} /><span><strong>Automatically qualify one-to-one leads</strong><p>Pipelixr gathers only missing details during normal conversation and marks a lead qualified when your requirements are met.</p></span></label>
           {qualificationEnabled && <>
-            <label className={styles.field}>What makes someone a good lead for your business?<textarea className={`${styles.input} ${styles.textarea}`} rows={5} minLength={30} maxLength={2000} value={qualificationCriteria} onChange={(event) => setQualificationCriteria(event.target.value)} placeholder="Describe who is a good fit, where you serve, workable budgets, timing, and what ready to proceed means for your business." /><span className={styles.fieldHelp}>Use simple words. Pipelixr uses this together with your business system prompt and never tells customers an internal score.</span></label>
+            <label className={styles.field}>What makes someone a good lead for your business?<textarea className={`${styles.input} ${styles.textarea}`} rows={5} minLength={30} maxLength={2000} value={qualificationCriteria} onChange={(event) => setQualificationCriteria(event.target.value)} placeholder="Describe who is a good fit, where you serve, workable budgets, timing, and what ready to proceed means for your business." /><span className={styles.fieldHelp}>Use simple words. Pipelixr uses this together with your reply playbook and never tells customers an internal score.</span></label>
             <div className={styles.field}><span>Details Pipelixr should confirm</span><div className={styles.qualificationFields}>{qualificationPolicy.availableFields.map((entry) => <label className={styles.checkLabel} key={entry.field}><input type="checkbox" checked={qualificationFields.includes(entry.field)} onChange={(event) => setQualificationFields((current) => event.target.checked ? [...new Set([...current, entry.field])] : current.filter((field) => field !== entry.field))} /><span><strong>{entry.label}</strong><p>{entry.question}</p></span></label>)}</div><span className={styles.fieldHelp}>Pipelixr asks at most one missing qualification question in a reply and does not keep repeating the same question.</span></div>
           </>}
         </fieldset>

@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery } from "convex/react";
 import { usePathname, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, Check, Link2, ShieldCheck } from "lucide-react";
 import { api } from "../../convex/_generated/api";
@@ -22,8 +22,11 @@ import styles from "./FoundationWorkspace.module.css";
 
 export default function FoundationWorkspace() {
   const workspace = useQuery(api.foundation.workspace, {});
+  const touchWorkspace = useMutation(api.productAnalytics.touchWorkspace);
   const pathname = usePathname();
   const screen = workspaceScreen(pathname);
+  const businessId = workspace?.businessId;
+  useEffect(() => { if (businessId) void touchWorkspace({ businessId }); }, [touchWorkspace, businessId]);
 
   if (workspace === undefined) return <DashboardShell><div className={styles.loading} role="status"><span className={styles.spinner} aria-hidden="true" />Loading your workspace…</div></DashboardShell>;
   if (!workspace) return <DashboardShell><BusinessSetup /></DashboardShell>;
@@ -46,7 +49,7 @@ export default function FoundationWorkspace() {
             <div className={styles.steps}>
               <span><b><Check size={12} /></b>Business created</span>
               <span className={stage === "connection" ? styles.current : undefined}><b>{stage === "connection" ? "2" : <Check size={12} />}</b>Connect WhatsApp</span>
-              {stage !== "connection" && <span className={stage === "business_ai" ? styles.current : undefined}><b>{stage === "business_ai" ? "3" : <Check size={12} />}</b>Business AI</span>}
+              {stage !== "connection" && <span className={stage === "business_ai" ? styles.current : undefined}><b>{stage === "business_ai" ? "3" : <Check size={12} />}</b>Teach Pipelixr</span>}
               {stage === "groups" && <span className={styles.current}><b>4</b>Groups</span>}
             </div>
             {stage === "connection" && <ConnectionPanel workspace={workspace} />}
@@ -72,7 +75,7 @@ function BusinessSetup() {
       <Brand />
       <h1>A space for your business.</h1>
       <p>Start with your business name. Next you will connect WhatsApp and teach Pipelixr how to represent you.</p>
-      <div className={styles.steps}><span className={styles.current}><b>1</b>Your business</span><span><b>2</b>Connect WhatsApp</span><span><b>3</b>Business AI</span></div>
+      <div className={styles.steps}><span className={styles.current}><b>1</b>Your business</span><span><b>2</b>Connect WhatsApp</span><span><b>3</b>Teach Pipelixr</span></div>
       <form className={styles.form} onSubmit={async (event) => {
         event.preventDefault();
         if (busy) return;

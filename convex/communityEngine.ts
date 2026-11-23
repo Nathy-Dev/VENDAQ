@@ -3,6 +3,7 @@ import { internalMutation, mutation, query } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { requireBusiness } from "./lib/authorization";
 import { BUSINESS_SYSTEM_PROMPT_MAX_LENGTH, BUSINESS_SYSTEM_PROMPT_MIN_LENGTH } from "./lib/launch";
+import { recordMilestone } from "./productAnalytics";
 
 const opportunityState = v.union(v.literal("open"), v.literal("in_progress"), v.literal("won"), v.literal("lost"), v.literal("dismissed"));
 const handoffState = v.union(v.literal("not_needed"), v.literal("suggested"), v.literal("consented"), v.literal("declined"), v.literal("completed"));
@@ -82,6 +83,7 @@ export const captureFromInteraction = internalMutation({
       createdAt: now,
       updatedAt: now,
     });
+    await recordMilestone(ctx, business._id, "firstUsefulOpportunityAt", now);
     if (category === "question") {
       const prior = await ctx.db.query("knowledgeSuggestions").withIndex("by_interaction", (builder) => builder.eq("interactionId", interaction._id)).unique();
       if (!prior) await ctx.db.insert("knowledgeSuggestions", {

@@ -6,6 +6,7 @@ import { DISCLOSURE_VERSION, foundationPolicy } from "./lib/policy";
 import { connectionState, sessionDocument } from "./lib/validators";
 import type { Id } from "./_generated/dataModel";
 import { TRIAL_DAYS } from "./lib/billingPlans";
+import { recordBusinessActivity, recordConnectionTransition } from "./productAnalytics";
 
 export const workspace = query({
   args: {},
@@ -35,6 +36,8 @@ export const createBusiness = mutation({
     }
     const businessId = await ctx.db.insert("businesses", { name, ownerId: identity.subject, whatsappStatus: "disconnected", whatsappMode: "unofficial", onboardingStep: 1, foundationVersion: 1, timezone: "Africa/Lagos", messageRetentionDays: foundationPolicy().messageRetentionDays, killSwitch: true, aiEnabled: false, customerAutoReplyEnabled: false, groupAutoReplyEnabled: false, statusViewerListEnabled: false });
     const now = Date.now();
+    await ctx.db.insert("businessProductMetrics", { businessId, businessCreatedAt: now, createdAt: now, updatedAt: now });
+    await recordBusinessActivity(ctx, businessId, now);
     await ctx.db.insert("businessSubscriptions", { businessId, provider: "paystack", plan: "growth", billingInterval: "monthly", status: "trialing", currency: "NGN", amountKobo: 0, trialStartedAt: now, trialEndsAt: now + TRIAL_DAYS * 86_400_000, currentPeriodStart: now, currentPeriodEnd: now + TRIAL_DAYS * 86_400_000, cancelAtPeriodEnd: false, createdAt: now, updatedAt: now });
     return businessId;
   },
@@ -71,7 +74,7 @@ export const customers = query({
 
 export const messages = query({
   args: { businessId: v.id("businesses"), customerId: v.id("customers") },
-  returns: v.array(v.object({ messageId: v.id("interactions"), role: v.union(v.literal("customer"), v.literal("owner"), v.literal("system")), text: v.string(), timestamp: v.number(), manualReview: v.boolean(), type: v.string(), transcript: v.union(v.string(), v.null()), transcriptionState: v.union(v.literal("pending"), v.literal("completed"), v.literal("failed"), v.null()), imageAnalysisState: v.union(v.literal("pending"), v.literal("completed"), v.literal("failed"), v.null()) })),
+  returns: v.array(v.object({ messageId: v.id("interactions"), role: v.union(v.literal("customer"), v.literal("owner"), v.literal("system")), text: v.string(), timestamp: v.number(), manualReview: v.boolean(), type: v.string(), transcript: v.union(v.string(), v.null()), transcriptionState: v.union(v.literal("pending"), v.literal("completed"), v.literal("failed"), v.null()), imageAnalysisState: v.union(v.literal("pending"), v.literal("completed"), v.literal("failed"), v.null()), assistantGenerated: v.boolean(), replyFeedback: v.union(v.literal("correct"), v.literal("wrong"), v.literal("unsupported"), v.null()) })),
   handler: async (ctx, args) => {
     await requireBusiness(ctx, args.businessId);
     const customer = await ctx.db.get(args.customerId);
@@ -86,7 +89,11 @@ export const messages = query({
       }
     }
     const batches = await Promise.all(linkedCustomers.map((linked) => ctx.db.query("interactions").withIndex("by_customer", (builder) => builder.eq("customerId", linked._id)).order("desc").take(100)));
-    return batches.flat().filter((message) => message.businessId === args.businessId).sort((a, b) => b.timestamp - a.timestamp).slice(0, 100).map((message) => ({ messageId: message._id, role: message.role, text: message.content, timestamp: message.timestamp, manualReview: message.manualReviewRequired ?? false, type: message.messageType ?? "unsupported", transcript: message.transcript ?? null, transcriptionState: message.transcriptionState ?? null, imageAnalysisState: message.imageAnalysisState ?? null }));
+    const messages = batches.flat().filter((message) => message.businessId === args.businessId).sort((a, b) => b.timestamp - a.timestamp).slice(0, 100);
+    return await Promise.all(messages.map(async (message) => {
+      const feedback = message.assistantDispatchId ? await ctx.db.query("assistantReplyFeedback").withIndex("by_interaction", (builder) => builder.eq("interactionId", message._id)).unique() : null;
+      return { messageId: message._id, role: message.role, text: message.content, timestamp: message.timestamp, manualReview: message.manualReviewRequired ?? false, type: message.messageType ?? "unsupported", transcript: message.transcript ?? null, transcriptionState: message.transcriptionState ?? null, imageAnalysisState: message.imageAnalysisState ?? null, assistantGenerated: message.assistantDispatchId !== undefined, replyFeedback: feedback?.rating ?? null };
+    }));
   },
 });
 
@@ -205,15 +212,17 @@ export const updateSession = internalMutation({
       if (args.providerInstanceId) await ctx.db.patch(session._id, { providerInstanceId: args.providerInstanceId });
       return null;
     }
+    const now = Date.now();
     await ctx.db.patch(session._id, {
-      state: args.state, updatedAt: Date.now(), lastError: args.code,
+      state: args.state, updatedAt: now, lastError: args.code,
       ...(args.completeOperation ? { operationLeaseUntil: undefined } : {}),
       ...(args.providerInstanceId ? { providerInstanceId: args.providerInstanceId } : {}),
-      ...(args.health ? { lastHealthAt: Date.now(), nextHealthAt: Date.now() + foundationPolicy().healthIntervalMs } : {}),
-      ...(args.qrCiphertext ? { qrCiphertext: args.qrCiphertext, qrExpiresAt: Date.now() + foundationPolicy().qrLifetimeMs } : {}),
+      ...(args.health ? { lastHealthAt: now, nextHealthAt: now + foundationPolicy().healthIntervalMs } : {}),
+      ...(args.qrCiphertext ? { qrCiphertext: args.qrCiphertext, qrExpiresAt: now + foundationPolicy().qrLifetimeMs } : {}),
       ...(args.state === "connected" || args.state === "disconnected" ? { qrCiphertext: undefined, qrExpiresAt: undefined } : {}),
     });
     await ctx.db.patch(session.businessId, { whatsappStatus: args.state === "connected" ? "connected" : args.state === "error" ? "error" : args.state === "pending" ? "pending" : "disconnected" });
+    if (session.state !== args.state || args.code) await recordConnectionTransition(ctx, { businessId: session.businessId, sessionId: session._id, previousState: session.state, currentState: args.state, code: args.code, at: now });
     return null;
   },
 });

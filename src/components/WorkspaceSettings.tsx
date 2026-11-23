@@ -22,7 +22,7 @@ export { ViewersPanel, ProfilePanel } from "./WorkspaceAccount";
 const sections = [
   { value: "general", label: "General" },
   { value: "connection", label: "Connection" },
-  { value: "assistant", label: "Business AI" },
+  { value: "assistant", label: "Teach Pipelixr" },
   { value: "knowledge", label: "Business knowledge" },
   { value: "groups", label: "Groups & communities" },
   { value: "rules", label: "Follow-up rules" },
@@ -78,6 +78,6 @@ function GeneralSettings({ workspace }: { workspace: Workspace }) {
         <Notice feedback={feedback} /><div className={styles.formFooter}><button type="submit" className={buttonClass.primary} disabled={busy || Number(windowMinutes) === workspace.responseWindowMinutes}>{busy ? "Saving…" : "Save changes"}</button></div>
       </form>
     </section>
-    <div className={styles.infoBanner}><ShieldCheck size={17} aria-hidden="true" /><p>Opening a conversation never marks it read. Automated replies are controlled separately by the saved business prompt, one-to-one authorization, and per-group opt-in.</p></div>
+    <div className={styles.infoBanner}><ShieldCheck size={17} aria-hidden="true" /><p>Opening a conversation never marks it read. Automated replies are controlled by the saved Pipelixr playbook, one-to-one authorization, and per-group opt-in.</p></div>
   </>;
 }

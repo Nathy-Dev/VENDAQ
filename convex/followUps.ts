@@ -8,6 +8,8 @@ import { sha256 } from "./lib/crypto";
 import { foundationPolicy } from "./lib/policy";
 import { DEFAULT_FOLLOW_UP_TEMPLATE, SUGGESTION_VERSION, localDayBounds, nextAllowedSuggestionAt, renderSafeSuggestion, validateSuggestion, type SuggestionPolicy } from "./lib/suggestions";
 import { reserveAssistedConversation } from "./lib/billingAccess";
+import { recordMilestone } from "./productAnalytics";
+import { recordBusinessActivity } from "./productAnalytics";
 
 const journeyStage = v.union(v.literal("viewer"), v.literal("engaged"), v.literal("intent"), v.literal("order_created"), v.literal("awaiting_payment"), v.literal("paid"), v.literal("lost"));
 type QueueRow = {
@@ -109,6 +111,7 @@ export async function createForMissedOpportunity(ctx: MutationCtx, opportunityId
     expiresAt: interaction.expiresAt,
     policySnapshot: policy,
   });
+  await recordMilestone(ctx, business._id, "firstSuggestedActionAt", Date.now());
   if (aiEnabled) await ctx.scheduler.runAfter(0, internal.followUps.generateAiSuggestion, { taskId });
   return taskId;
 }
@@ -170,7 +173,12 @@ async function closeTask(ctx: MutationCtx, businessId: Id<"businesses">, taskId:
   await requireBusiness(ctx, businessId);
   const task = await ctx.db.get(taskId);
   if (!task || task.businessId !== businessId || !task.opportunityId) throw new ConvexError({ code: "NOT_FOUND" });
-  if (task.status === "pending") await ctx.db.patch(task._id, { status, completedAt: Date.now() });
+  if (task.status === "pending") {
+    const at = Date.now();
+    await ctx.db.patch(task._id, { status, completedAt: at });
+    if (status === "done") await recordMilestone(ctx, businessId, "firstSuggestedActionCompletedAt", at);
+    await recordBusinessActivity(ctx, businessId, at);
+  }
 }
 
 export const markHandled = mutation({ args: { businessId: v.id("businesses"), taskId: v.id("followUpTasks") }, returns: v.null(), handler: async (ctx, args) => { await closeTask(ctx, args.businessId, args.taskId, "done"); return null; } });

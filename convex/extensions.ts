@@ -49,10 +49,13 @@ export const readiness = query({
       ctx.db.query("inboundEvents").withIndex("by_business_state", (builder) => builder.eq("businessId", args.businessId).eq("state", "dead_letter").gte("receivedAt", since)).take(policy.dashboardRecordLimit),
     ]);
     const recentRiskEvents = audits.filter((entry) => entry.kind.includes("dead_letter") || entry.code !== undefined).length + failures.length + (session?.lastError ? 1 : 0);
-    const reasons = ["Provider send idempotency is unqualified.", "Provider timeout reconciliation is unqualified."];
+    const reasons: string[] = [];
     if (business.killSwitch ?? true) reasons.push("The business kill switch is active.");
     if (session?.state !== "connected") reasons.push("The WhatsApp session is not connected.");
     if (recentRiskEvents >= policy.riskWarningCount) reasons.push(`Recent provider or processing risk events reached ${recentRiskEvents}.`);
-    return { connectionState: session?.state ?? "disconnected", killSwitch: business.killSwitch ?? true, recentRiskEvents, warning: recentRiskEvents >= policy.riskWarningCount, dispatchQualified: false, reasons };
+    if (!(business.customerAutoReplyEnabled || business.groupAutoReplyEnabled)) reasons.push("No automated reply scope has been authorized.");
+    if ((business.businessSystemPrompt?.trim().length ?? 0) < 120) reasons.push("Teach Pipelixr is not complete.");
+    const dispatchQualified = session?.state === "connected" && !(business.killSwitch ?? true) && (business.customerAutoReplyEnabled === true || business.groupAutoReplyEnabled === true) && (business.businessSystemPrompt?.trim().length ?? 0) >= 120;
+    return { connectionState: session?.state ?? "disconnected", killSwitch: business.killSwitch ?? true, recentRiskEvents, warning: recentRiskEvents >= policy.riskWarningCount, dispatchQualified, reasons: reasons.length ? reasons : ["Authorized automation is available within the current rollout limits."] };
   },
 });

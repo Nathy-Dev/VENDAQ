@@ -11,6 +11,7 @@ import { groupMayAutoReply } from "./lib/groupGovernance";
 import { CUSTOMER_SPEECH_STYLE_RULES, normalizeAssistantReply } from "./lib/assistantStyle";
 import { reserveAssistedConversation } from "./lib/billingAccess";
 import { billingAccess } from "./lib/billingAccess";
+import { recordDuplicateDispatch, recordResponseTime } from "./productAnalytics";
 
 const candidate = v.object({
   businessId: v.id("businesses"),
@@ -189,6 +190,7 @@ export const finish = internalMutation({
     const dispatch = await ctx.db.get(args.dispatchId);
     if (!dispatch || !["reserved", "submitting"].includes(dispatch.state)) return null;
     await ctx.db.patch(dispatch._id, { state: args.state, providerMessageId: args.providerMessageId, errorCode: args.errorCode, updatedAt: Date.now() });
+    if (args.state === "accepted") await recordDuplicateDispatch(ctx, dispatch._id, args.providerMessageId);
     if (dispatch.ownerRescueId) {
       const rescue = await ctx.db.get(dispatch.ownerRescueId);
       if (rescue?.state === "sending") {
@@ -209,7 +211,8 @@ export const finish = internalMutation({
     if (args.state === "accepted") {
       const now = Date.now();
       const inbound = await ctx.db.get(dispatch.interactionId);
-      const interactionId = await ctx.db.insert("interactions", { businessId: dispatch.businessId, customerId: dispatch.customerId, ...(inbound?.conversationId ? { conversationId: inbound.conversationId } : {}), sessionId: dispatch.sessionId, role: "owner", content: dispatch.content, timestamp: now, receivedAt: now, isGroup: dispatch.isGroup, messageType: "text", aiProcessedAt: now, expiresAt: now + foundationPolicy().messageRetentionDays * 86_400_000 });
+      const interactionId = await ctx.db.insert("interactions", { businessId: dispatch.businessId, customerId: dispatch.customerId, ...(inbound?.conversationId ? { conversationId: inbound.conversationId } : {}), sessionId: dispatch.sessionId, role: "owner", content: dispatch.content, timestamp: now, receivedAt: now, isGroup: dispatch.isGroup, messageType: "text", aiProcessedAt: now, assistantDispatchId: dispatch._id, expiresAt: now + foundationPolicy().messageRetentionDays * 86_400_000 });
+      if (inbound?.conversationId) await recordResponseTime(ctx, { businessId: dispatch.businessId, conversationId: inbound.conversationId, responseInteractionId: interactionId, responseAt: now, source: "assistant" });
       const customer = await ctx.db.get(dispatch.customerId);
       if (customer) await ctx.db.patch(customer._id, { lastInteraction: Math.max(customer.lastInteraction, now), lastOutboundAt: now });
       if (inbound?.conversationId) {
