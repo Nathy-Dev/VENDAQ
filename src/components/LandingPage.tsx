@@ -4,8 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import {
-  ArrowRight, Check, ChevronDown, Clock3, ListFilter, Menu, MessageCircleMore,
-  MessageSquareText, ShieldCheck, Sparkles, Target, TrendingUp,
+  ArrowRight, Boxes, CakeSlice, Check, ChevronDown, Clock3, House, ListFilter, Menu, MessageCircleMore,
+  MessageSquareText, ShieldCheck, Shirt, Sparkles, Target, TrendingUp,
   UserRoundCheck, UsersRound, X,
 } from "lucide-react";
 import Brand from "./Brand";
@@ -13,9 +13,9 @@ import styles from "./LandingPage.module.css";
 
 const navigation = [
   { href: "#product", label: "Product" },
+  { href: "#businesses", label: "Who it’s for" },
   { href: "#how-it-works", label: "How it works" },
   { href: "#pricing", label: "Pricing" },
-  { href: "#safety", label: "Safety" },
   { href: "#questions", label: "FAQ" },
 ];
 
@@ -49,23 +49,31 @@ const pricingPlans = [
 ];
 
 const outcomes = [
-  { icon: Target, title: "Know who is ready to buy", text: "Bring likely buyers to the top instead of rereading every chat to find the serious ones." },
-  { icon: MessageSquareText, title: "Reply with the right context", text: "Give Pipelixr your prices, policies, and voice so every eligible answer starts informed." },
-  { icon: TrendingUp, title: "Follow the sale through", text: "Keep next steps and seller-recorded outcomes beside the conversation that created them." },
+  { icon: Target, title: "Spot serious buyers sooner", text: "Bring likely buyers to the top instead of rereading every chat to find the conversations that matter." },
+  { icon: MessageSquareText, title: "Give every reply context", text: "Use your products, prices, delivery details, policies, and tone to answer customers more consistently." },
+  { icon: TrendingUp, title: "Keep the sale moving", text: "Know the next step, follow up at the right time, and record what happened without leaving the conversation." },
+];
+
+const businessTypes = [
+  { icon: Shirt, title: "Fashion, beauty & personal care", text: "Handle questions about sizes, shades, stock, prices, and delivery without losing ready buyers." },
+  { icon: CakeSlice, title: "Food, cakes & event vendors", text: "Qualify dates, quantities, locations, and custom requests, then keep each quote moving." },
+  { icon: House, title: "Home, gadgets & specialty retail", text: "Answer product questions, compare options, share delivery details, and follow up on purchase intent." },
+  { icon: Boxes, title: "Wholesalers & distributors", text: "Capture quantities, qualify bulk orders, prepare the next step, and revisit quotes before they go cold." },
 ];
 
 const steps = [
-  { number: "01", title: "Teach it your business", text: "Add your products, prices, delivery details, policies, and preferred tone. Review the business prompt before it is used." },
-  { number: "02", title: "Connect your WhatsApp", text: "Pair an authorized number after reviewing the connection terms. Creating your workspace does not require a connection." },
-  { number: "03", title: "Work the right conversations", text: "See buying signals, suggested next steps, and eligible replies—then keep control of where the assistant is allowed to act." },
+  { number: "01", title: "Teach Pipelixr your business", text: "Add your products, prices, delivery details, policies, and preferred tone so replies start with the right context." },
+  { number: "02", title: "Connect your WhatsApp", text: "Pair an authorized number after reviewing the connection terms. You can explore your workspace before connecting." },
+  { number: "03", title: "Choose how it helps", text: "Start with suggested replies or enable automation for approved chats. Pipelixr surfaces buying signals and keeps the next step visible." },
 ];
 
 const questions = [
-  { question: "Does Pipelixr send messages for me?", answer: "Only after explicit setup. Complete Teach Pipelixr, then separately authorize one-to-one or group replies. Groups stay silent until enabled individually." },
+  { question: "What kinds of businesses is Pipelixr best for?", answer: "Pipelixr is built for chat-first businesses that sell through WhatsApp and regularly answer questions about products, prices, availability, quantities, delivery, bookings, or payment. It is especially useful when strong buying intent and follow-ups are getting buried in a busy inbox." },
+  { question: "Does Pipelixr send messages for me?", answer: "Only when you choose it. Complete Teach Pipelixr, then separately authorize one-to-one replies or enable individual groups. You can use AI-assisted drafts first, and groups stay silent until enabled individually." },
+  { question: "Can it understand Pidgin, voice notes, and images?", answer: "Pipelixr can work with English and Pidgin conversations, transcribe supported voice notes, and analyse supported product images and payment receipts. Unclear, unsupported, or sensitive cases can be held for review instead of forcing a confident reply." },
   { question: "How does the WhatsApp connection work?", answer: "You can pair an authorized number using a QR code. The connection uses Evolution Go, an unofficial provider—not the official WhatsApp Business API. WhatsApp may restrict or ban the number. You must review and accept those risks before pairing." },
-  { question: "Is Status-to-Cash available at launch?", answer: "No. That feature remains in the product code but is blocked for Launch 1 while the focus is accurate replies to customer messages and explicitly enabled groups." },
-  { question: "What does recovered revenue mean here?", answer: "Claimed recovered revenue is based on seller-recorded outcomes and attribution rules. It is kept separate from independently confirmed recovered revenue. Recording an order as paid is not independent payment verification." },
-  { question: "Can I control the data in my workspace?", answer: "Your workspace shows its message-retention period and privacy controls. You can request deletion of a contact and related workspace records from the Inbox, then track the background deletion job in Settings. This does not delete messages from WhatsApp." },
+  { question: "What counts as an AI-assisted customer chat?", answer: "A customer conversation counts when Pipelixr assists it during your billing period. More messages in that same conversation are not counted again during the same period." },
+  { question: "Can I control replies and customer data?", answer: "Yes. You choose where replies are allowed, can pause automation, and can review connection health. Your workspace shows its retention settings and privacy controls, including requests to delete a contact’s related workspace records." },
 ];
 
 const salesScenarios = [
@@ -146,7 +154,7 @@ export default function LandingPage() {
           </nav>
           <div className={styles.navActions}>
             <Link href="/login" className={styles.signIn}>Sign in</Link>
-            <Link href="/signup" className={`${styles.primaryButton} ${styles.navCta}`}>Start selling smarter<ArrowRight size={15} aria-hidden="true" /></Link>
+            <Link href="/signup" className={`${styles.primaryButton} ${styles.navCta}`}>Start free trial<ArrowRight size={15} aria-hidden="true" /></Link>
             <button ref={menuButton} type="button" className={styles.menuButton} aria-label={menuOpen ? "Close menu" : "Open menu"} aria-expanded={menuOpen} aria-controls="landing-navigation" onClick={() => setMenuOpen((current) => !current)}>
               {menuOpen ? <X size={22} aria-hidden="true" /> : <Menu size={22} aria-hidden="true" />}
             </button>
@@ -154,7 +162,7 @@ export default function LandingPage() {
         </div>
         <nav id="landing-navigation" className={styles.mobileNav} aria-label="Mobile navigation" hidden={!menuOpen}>
           {navigation.map((entry) => <a key={entry.href} href={entry.href} onClick={() => setMenuOpen(false)}>{entry.label}<ArrowRight size={15} aria-hidden="true" /></a>)}
-          <Link href="/signup" onClick={() => setMenuOpen(false)}>Create your workspace<ArrowRight size={15} aria-hidden="true" /></Link>
+          <Link href="/signup" onClick={() => setMenuOpen(false)}>Start free trial<ArrowRight size={15} aria-hidden="true" /></Link>
         </nav>
       </header>
 
@@ -166,12 +174,13 @@ export default function LandingPage() {
             <h1 id="hero-title">Turn busy WhatsApp chats <span>into sales.</span></h1>
             <p className={styles.heroLead}>Pipelixr finds serious buyers in your WhatsApp conversations, qualifies leads, replies using your business details, follows up on opportunities, and tracks which conversations turn into sales.</p>
             <div className={styles.heroActions}>
-              <Link href="/signup" className={`${styles.primaryButton} ${styles.heroPrimary}`}>Create my workspace<ArrowRight size={17} aria-hidden="true" /></Link>
-              <a href="#product" className={styles.secondaryButton}>See how it works</a>
+              <Link href="/signup" className={`${styles.primaryButton} ${styles.heroPrimary}`}>Start my free trial<ArrowRight size={17} aria-hidden="true" /></Link>
+              <a href="#product" className={styles.secondaryButton}>See Pipelixr in action</a>
             </div>
             <ul className={styles.heroTrust} aria-label="Pipelixr product assurances">
-              <li><Check size={14} aria-hidden="true" /> Uses your business details</li>
-              <li><ShieldCheck size={14} aria-hidden="true" /> Seller-controlled automation</li>
+              <li><Check size={14} aria-hidden="true" /> 14-day Growth trial</li>
+              <li><Check size={14} aria-hidden="true" /> No card required</li>
+              <li><ShieldCheck size={14} aria-hidden="true" /> You control automation</li>
             </ul>
           </div>
           <figure className={styles.heroVisual}>
@@ -180,7 +189,7 @@ export default function LandingPage() {
         </section>
 
         <section className={styles.signalStrip} aria-label="Pipelixr product summary">
-          <p>One calm workspace for the conversations that can move your business forward.</p>
+          <p>From first question to recorded sale, keep every promising chat moving.</p>
           <div>
             <span><MessageCircleMore size={17} aria-hidden="true" /> Buying signals</span>
             <span><Sparkles size={17} aria-hidden="true" /> Context-aware replies</span>
@@ -190,9 +199,9 @@ export default function LandingPage() {
 
         <section id="product" className={styles.problemSection} aria-labelledby="problem-title">
           <div className={styles.sectionHeading}>
-            <span className={styles.overline}>More signal. Less chat archaeology.</span>
-            <h2 id="problem-title">Your next sale may already be waiting in your inbox.</h2>
-            <p>When every conversation looks equally urgent, strong buying intent gets buried. Pipelixr turns message activity into a focused list of people and actions worth your attention.</p>
+            <span className={styles.overline}>Stop losing intent in the scroll</span>
+            <h2 id="problem-title">Your next sale may already be buried in your inbox.</h2>
+            <p>When every chat looks equally urgent, serious buyers get missed and follow-ups slip. Pipelixr turns message activity into a focused list of conversations and actions worth your attention.</p>
           </div>
           <div className={styles.outcomeGrid}>
             {outcomes.map(({ icon: Icon, title, text }, index) => (
@@ -204,28 +213,54 @@ export default function LandingPage() {
           </div>
         </section>
 
+        <section id="businesses" className={styles.businessSection} aria-labelledby="businesses-title">
+          <div className={styles.businessHeader}>
+            <div>
+              <span className={styles.overline}>Built for chat-first selling</span>
+              <h2 id="businesses-title">If customers ask, order, and follow up on WhatsApp, Pipelixr is built for you.</h2>
+            </div>
+            <p>Especially when your team repeats the same answers, promising buyers disappear in the scroll, or no one is sure who needs a follow-up next.</p>
+          </div>
+          <div className={styles.businessGrid}>
+            {businessTypes.map(({ icon: Icon, title, text }) => (
+              <article className={styles.businessCard} key={title}>
+                <span><Icon size={22} strokeWidth={1.7} aria-hidden="true" /></span>
+                <h3>{title}</h3>
+                <p>{text}</p>
+              </article>
+            ))}
+          </div>
+          <div className={styles.fitStrip}>
+            <strong>A strong fit if:</strong>
+            <span><Check size={14} aria-hidden="true" /> WhatsApp is a key sales channel</span>
+            <span><Check size={14} aria-hidden="true" /> Customers ask repeat questions</span>
+            <span><Check size={14} aria-hidden="true" /> Follow-ups decide whether you close</span>
+          </div>
+          <p className={styles.fitNote}>Best for businesses already selling in chat—not teams looking for a general customer-support chatbot.</p>
+        </section>
+
         <section className={styles.focusSection} aria-labelledby="focus-title">
           <div className={styles.focusVisual}>
             <ConversationCard />
             <div className={styles.focusBadge}><span><Sparkles size={15} aria-hidden="true" /></span><div><strong>Buying intent found</strong><small>Ready for your next step</small></div></div>
           </div>
           <div className={styles.focusCopy}>
-            <span className={styles.overline}>Know where to start</span>
-            <h2 id="focus-title">Open your workspace. See what needs you.</h2>
-            <p>Pipelixr organizes conversations around action—not noise. See who asked about price, who went quiet, and what your business should do next.</p>
+            <span className={styles.overline}>Know what deserves attention</span>
+            <h2 id="focus-title">Know who to reply to—and what to do next.</h2>
+            <p>Pipelixr organizes conversations around action, not noise. See who is asking to buy, who is waiting for an answer, and which opportunity needs a follow-up.</p>
             <ul>
               <li><Check size={16} aria-hidden="true" /><span><strong>Priority conversations</strong> surface likely buying intent.</span></li>
               <li><Check size={16} aria-hidden="true" /><span><strong>Business-aware context</strong> keeps replies accurate.</span></li>
-              <li><Check size={16} aria-hidden="true" /><span><strong>Seller-recorded outcomes</strong> keep claims honest and traceable.</span></li>
+              <li><Check size={16} aria-hidden="true" /><span><strong>Tracked outcomes</strong> connect conversations to the orders you record.</span></li>
             </ul>
-            <Link href="/signup" className={styles.inlineLink}>Build my workspace <ArrowRight size={16} aria-hidden="true" /></Link>
+            <Link href="/signup" className={styles.inlineLink}>Start my free trial <ArrowRight size={16} aria-hidden="true" /></Link>
           </div>
         </section>
 
         <section id="how-it-works" className={styles.processSection} aria-labelledby="process-title">
           <div className={styles.processHeader}>
-            <div><span className={styles.overline}>From setup to signal</span><h2 id="process-title">Useful in three clear steps.</h2></div>
-            <p>Set the context once. Keep control of the connection. Spend your attention on the conversations most likely to matter.</p>
+            <div><span className={styles.overline}>From setup to selling</span><h2 id="process-title">Give Pipelixr context. Let it help with the follow-through.</h2></div>
+            <p>Set up the business details once, choose how the assistant can act, and focus your attention on the conversations most likely to convert.</p>
           </div>
           <ol className={styles.steps}>
             {steps.map((step) => <li key={step.number}><span className={styles.stepNumber}>{step.number}</span><div><h3>{step.title}</h3><p>{step.text}</p></div></li>)}
@@ -236,8 +271,8 @@ export default function LandingPage() {
           <div className={styles.pricingHeader}>
             <div>
               <span className={styles.overline}>Simple, naira-first pricing</span>
-              <h2 id="pricing-title">Start small. Upgrade when the chats demand it.</h2>
-              <p>Every new workspace starts with a 14-day Growth trial, including up to 100 AI-assisted customer chats.</p>
+              <h2 id="pricing-title">Start with the inbox you have. Scale when the conversations grow.</h2>
+              <p>Every new workspace starts with a free 14-day Growth trial, including up to 100 AI-assisted customer conversations. No card is required.</p>
             </div>
             <div className={styles.billingToggle} role="group" aria-label="Billing interval">
               <button type="button" aria-pressed={billingInterval === "monthly"} onClick={() => setBillingInterval("monthly")}>Monthly</button>
@@ -272,18 +307,18 @@ export default function LandingPage() {
               );
             })}
           </div>
-          <p className={styles.pricingFootnote}>All prices are in Nigerian naira. Payments are processed securely by Paystack. Trial access is bounded by time and usage.</p>
+          <p className={styles.pricingFootnote}>Allowances reset monthly, including on annual plans. Each customer conversation counts once per billing month when Pipelixr assists it. Prices are in Nigerian naira and payments are processed by Paystack.</p>
         </section>
 
         <section id="safety" className={styles.controlSection} aria-labelledby="control-title">
           <div className={styles.controlCopy}>
-            <span className={styles.darkOverline}>Control is a product feature</span>
-            <h2 id="control-title">Helpful automation should never feel mysterious.</h2>
-            <p>Pipelixr stays quiet until you provide business context and choose where replies are allowed. One-to-one chats and every group have separate controls.</p>
-            <Link href="/signup" className={styles.lightButton}>Start with a workspace <ArrowRight size={16} aria-hidden="true" /></Link>
+            <span className={styles.darkOverline}>Set the boundaries</span>
+            <h2 id="control-title">You decide where the AI helps—and where it stays quiet.</h2>
+            <p>Start with suggested replies, then enable automation only where you are comfortable. One-to-one chats and each WhatsApp group have separate controls, and connection health is monitored in your workspace.</p>
+            <Link href="/signup" className={styles.lightButton}>Start my free trial <ArrowRight size={16} aria-hidden="true" /></Link>
           </div>
           <div className={styles.controlPanel}>
-            <div className={styles.controlPanelHeader}><div><ShieldCheck size={19} aria-hidden="true" /><strong>Reply controls</strong></div><span>Protected</span></div>
+            <div className={styles.controlPanelHeader}><div><ShieldCheck size={19} aria-hidden="true" /><strong>Automation controls</strong></div><span>Seller controlled</span></div>
             <ControlRow icon={UserRoundCheck} title="One-to-one customers" note="Requires separate authorization" enabled />
             <ControlRow icon={UsersRound} title="Customer community" note="Enabled individually" enabled />
             <ControlRow icon={UsersRound} title="Wholesale network" note="Silent by default" />
@@ -292,7 +327,7 @@ export default function LandingPage() {
         </section>
 
         <section id="questions" className={styles.faqSection} aria-labelledby="faq-title">
-          <div className={styles.faqIntro}><span className={styles.overline}>Straight answers</span><h2 id="faq-title">Know what you’re connecting.</h2><p>Clear limits build better tools—and better decisions.</p></div>
+          <div className={styles.faqIntro}><span className={styles.overline}>Questions before you start</span><h2 id="faq-title">The practical details, clearly answered.</h2><p>What it is for, how it helps, what counts toward usage, and where you stay in control.</p></div>
           <div className={styles.questions}>
             {questions.map((entry) => <details key={entry.question}><summary>{entry.question}<span><ChevronDown size={17} aria-hidden="true" /></span></summary><p>{entry.answer}</p></details>)}
           </div>
@@ -300,13 +335,13 @@ export default function LandingPage() {
 
         <aside id="privacy" className={styles.connectionNote}>
           <ShieldCheck size={21} strokeWidth={1.8} aria-hidden="true" />
-          <div><h2>Connection health and control</h2><p>Create a workspace before connecting WhatsApp. Pair only a number you are authorized to manage; full provider and retention terms are shown once at connection and require explicit consent.</p></div>
+          <div><h2>Connection health is monitored</h2><p>Pipelixr records connection interruptions and uncertain sends so they can be reviewed. Pair only a number you are authorized to manage; full provider and retention terms are shown before connection.</p></div>
         </aside>
 
         <section className={styles.finalCta} aria-labelledby="start-title">
           <div className={styles.finalCtaGlow} aria-hidden="true" />
-          <div><span className={styles.finalEyebrow}>Your inbox is already busy</span><h2 id="start-title">Make every promising conversation easier to act on.</h2><p>Create your Pipelixr workspace first. Connect WhatsApp only when you are ready.</p></div>
-          <Link href="/signup" className={styles.finalButton}>Create my workspace <ArrowRight size={17} aria-hidden="true" /></Link>
+          <div><span className={styles.finalEyebrow}>Your buyers are already chatting</span><h2 id="start-title">Give every serious buyer a clear next step.</h2><p>Start free for 14 days. Teach Pipelixr your business, explore the workspace, and connect WhatsApp when you are ready.</p></div>
+          <Link href="/signup" className={styles.finalButton}>Start my free trial <ArrowRight size={17} aria-hidden="true" /></Link>
         </section>
       </main>
 

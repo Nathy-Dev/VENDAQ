@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: { default: "Pipelixr — AI Sales Assistant for WhatsApp Businesses", template: "%s | Pipelixr" },
+  title: { default: "Pipelixr — AI Sales Assistant for Businesses on WhatsApp", template: "%s | Pipelixr" },
   description: "Find serious buyers, qualify leads, reply using your business details, follow up on opportunities, and track which WhatsApp conversations turn into sales.",
 };
 

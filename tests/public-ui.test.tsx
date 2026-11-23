@@ -22,15 +22,27 @@ describe("public UI", () => {
     expect(html).toContain("Buyer detected");
     expect(html).toContain("reply ready");
     expect(html).toContain("Follow-up scheduled");
+    expect(html).toContain("Start my free trial");
+    expect(html).toContain("No card required");
   });
 
-  it("describes the consent-gated Launch 1 assistant accurately", () => {
+  it("describes seller-controlled automation and connection limits accurately", () => {
     const html = renderToStaticMarkup(<LandingPage />);
     expect(html).toContain("You control customer authorization and every enabled group");
     expect(html).toContain("Complete Teach Pipelixr");
-    expect(html).toContain("Groups stay silent until enabled individually");
-    expect(html).toContain("feature remains in the product code but is blocked for Launch 1");
+    expect(html).toContain("groups stay silent until enabled individually");
     expect(html).toContain("an unofficial provider");
+    expect(html).toContain("Unclear, unsupported, or sensitive cases can be held for review");
+  });
+
+  it("shows which WhatsApp-selling businesses Pipelixr is for", () => {
+    const html = renderToStaticMarkup(<LandingPage />);
+    expect(html).toContain("Built for chat-first selling");
+    expect(html).toContain("Fashion, beauty &amp; personal care");
+    expect(html).toContain("Food, cakes &amp; event vendors");
+    expect(html).toContain("Home, gadgets &amp; specialty retail");
+    expect(html).toContain("Wholesalers &amp; distributors");
+    expect(html).toContain("WhatsApp is a key sales channel");
   });
 
   it("renders accessible login fields and password visibility control", () => {
