@@ -133,6 +133,18 @@ export default defineSchema({
     memoryLastObjection: v.optional(v.string()),
     memoryIgnoredOffers: v.optional(v.array(v.string())),
     memorySummaryUpdatedAt: v.optional(v.number()),
+    communicationState: v.optional(v.union(
+      v.literal("unknown"),
+      v.literal("service_only"),
+      v.literal("marketing_opted_in"),
+      v.literal("opted_out"),
+    )),
+    serviceConsentAt: v.optional(v.number()),
+    marketingConsentAt: v.optional(v.number()),
+    marketingConsentSource: v.optional(v.string()),
+    marketingConsentEvidence: v.optional(v.string()),
+    optedOutAt: v.optional(v.number()),
+    optOutSource: v.optional(v.string()),
     tags: v.array(v.string()),
   }).index("by_business_phone", ["businessId", "phone"])
     .index("by_business", ["businessId"])
@@ -690,6 +702,58 @@ export default defineSchema({
     businessId: v.id("businesses"), identityKey: v.string(), createdAt: v.number(),
   }).index("by_business_identity", ["businessId", "identityKey"])
     .index("by_business", ["businessId"]),
+  legalAcceptances: defineTable({
+    subject: v.string(),
+    businessId: v.optional(v.id("businesses")),
+    document: v.union(v.literal("terms"), v.literal("privacy"), v.literal("dpa"), v.literal("billing"), v.literal("acceptable_use")),
+    version: v.string(),
+    acceptedAt: v.number(),
+    acceptanceMethod: v.union(v.literal("account_gate"), v.literal("checkout_gate")),
+  }).index("by_subject_document", ["subject", "document", "acceptedAt"])
+    .index("by_subject", ["subject", "acceptedAt"])
+    .index("by_business", ["businessId"]),
+  communicationConsents: defineTable({
+    businessId: v.id("businesses"),
+    customerId: v.id("customers"),
+    identityKey: v.string(),
+    scope: v.union(v.literal("service"), v.literal("marketing")),
+    state: v.union(v.literal("granted"), v.literal("withdrawn")),
+    source: v.union(v.literal("inbound_message"), v.literal("seller_recorded"), v.literal("customer_keyword"), v.literal("imported_evidence")),
+    evidence: v.optional(v.string()),
+    policyVersion: v.string(),
+    recordedBy: v.string(),
+    recordedAt: v.number(),
+  }).index("by_business_identity_scope_time", ["businessId", "identityKey", "scope", "recordedAt"])
+    .index("by_customer_scope_time", ["customerId", "scope", "recordedAt"])
+    .index("by_business", ["businessId"]),
+  privacyRequests: defineTable({
+    businessId: v.id("businesses"),
+    requesterType: v.union(v.literal("account_owner"), v.literal("customer")),
+    ownerSubject: v.optional(v.string()),
+    customerId: v.optional(v.id("customers")),
+    identityKey: v.optional(v.string()),
+    requestType: v.union(v.literal("access"), v.literal("export"), v.literal("correction"), v.literal("restriction"), v.literal("objection"), v.literal("erasure"), v.literal("account_deletion")),
+    status: v.union(v.literal("open"), v.literal("in_progress"), v.literal("completed"), v.literal("rejected")),
+    details: v.optional(v.string()),
+    requestedAt: v.number(),
+    dueAt: v.number(),
+    completedAt: v.optional(v.number()),
+    resolutionNote: v.optional(v.string()),
+  }).index("by_business_status_time", ["businessId", "status", "requestedAt"])
+    .index("by_business", ["businessId"])
+    .index("by_owner_time", ["ownerSubject", "requestedAt"])
+    .index("by_customer_time", ["customerId", "requestedAt"]),
+  complianceAudit: defineTable({
+    businessId: v.optional(v.id("businesses")),
+    actor: v.string(),
+    action: v.string(),
+    subjectType: v.union(v.literal("account"), v.literal("customer"), v.literal("billing"), v.literal("privacy_request"), v.literal("consent")),
+    subjectRef: v.optional(v.string()),
+    at: v.number(),
+    metadata: v.optional(v.string()),
+  }).index("by_business_time", ["businessId", "at"])
+    .index("by_business", ["businessId"])
+    .index("by_actor_time", ["actor", "at"]),
   deletionJobs: defineTable({
     businessId: v.id("businesses"), customerId: v.id("customers"), requestedAt: v.number(),
     state: v.union(v.literal("pending"), v.literal("done"), v.literal("dead_letter")), completedAt: v.optional(v.number()),

@@ -14,6 +14,7 @@ import WorkspaceHealth from "./WorkspaceHealth";
 import BusinessAssistantSettings from "./BusinessAssistantSettings";
 import WorkspaceGroups from "./WorkspaceGroups";
 import BusinessKnowledgeSettings from "./BusinessKnowledgeSettings";
+import PrivacyCenter from "./PrivacyCenter";
 import styles from "./FoundationWorkspace.module.css";
 
 export { default as ConnectionPanel } from "./WorkspaceConnection";
@@ -26,7 +27,8 @@ const sections = [
   { value: "knowledge", label: "Business knowledge" },
   { value: "groups", label: "Groups & communities" },
   { value: "rules", label: "Follow-up rules" },
-  { value: "privacy", label: "Privacy & health" },
+  { value: "privacy", label: "Privacy center" },
+  { value: "health", label: "System health" },
   { value: "preferences", label: "Preferences" },
 ] as const;
 
@@ -44,7 +46,8 @@ export default function WorkspaceSettings({ workspace }: { workspace: Workspace 
           {section === "knowledge" && <BusinessKnowledgeSettings workspace={workspace} />}
           {section === "groups" && <WorkspaceGroups workspace={workspace} />}
           {section === "rules" && <FollowUpRules workspace={workspace} />}
-          {section === "privacy" && <WorkspaceHealth workspace={workspace} />}
+          {section === "privacy" && <PrivacyCenter workspace={workspace} />}
+          {section === "health" && <WorkspaceHealth workspace={workspace} />}
           {section === "preferences" && <ExtensionPreferences workspace={workspace} />}
         </div>
       </div>

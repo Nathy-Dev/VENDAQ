@@ -1,6 +1,7 @@
 "use client";
 
-import { useAction, useQuery } from "convex/react";
+import Link from "next/link";
+import { useAction, useMutation, useQuery } from "convex/react";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, CreditCard, ExternalLink, ShieldCheck } from "lucide-react";
@@ -28,6 +29,7 @@ export default function BillingWorkspace() {
   const [billingNow, setBillingNow] = useState(() => Date.now());
   const overview = useQuery(api.billing.overview, { now: billingNow });
   const createCheckout = useAction(api.billing.createCheckout);
+  const acceptLegal = useMutation(api.compliance.acceptLegal);
   const verifyCheckout = useAction(api.billing.verifyCheckout);
   const cancelSubscription = useAction(api.billing.cancelSubscription);
   const searchParams = useSearchParams();
@@ -36,6 +38,7 @@ export default function BillingWorkspace() {
   const [interval, setInterval] = useState<Interval>("monthly");
   const [busy, setBusy] = useState<Plan | "cancel" | "verify" | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [billingAccepted, setBillingAccepted] = useState(false);
   const usagePercent = useMemo(() => overview?.assistedConversationLimit ? Math.min(100, Math.round(overview.assistedConversationsUsed / overview.assistedConversationLimit * 100)) : 0, [overview]);
 
   useEffect(() => {
@@ -53,8 +56,10 @@ export default function BillingWorkspace() {
   }, [reference, verifyCheckout]);
 
   async function checkout(plan: Plan) {
+    if (!billingAccepted) { setMessage("Review and accept the Billing and Refund Terms before checkout."); return; }
     setBusy(plan); setMessage(null);
     try {
+      await acceptLegal({ documents: ["billing"], method: "checkout_gate" });
       const result = await createCheckout({ plan, billingInterval: interval });
       window.location.assign(result.authorizationUrl);
     } catch {
@@ -78,7 +83,7 @@ export default function BillingWorkspace() {
   const periodEnd = overview.trialEndsAt ?? overview.graceEndsAt ?? overview.currentPeriodEnd;
 
   return <div className={styles.page}>
-    <PageHeader eyebrow="Billing" title="A plan that pays for itself." description="Manage your subscription, usage and renewal. All charges are in naira and processed securely by Paystack." />
+    <PageHeader eyebrow="Billing" title="Choose the plan that fits your workload." description="Manage your subscription, usage and renewal. All charges are in naira and processed securely by Paystack. Results and revenue are not guaranteed." />
     {message && <div className={styles.notice} role="status">{message}</div>}
     {overview.readOnly && <div className={styles.warning} role="alert"><ShieldCheck size={18} /><div><strong>Your workspace is read-only.</strong><p>Choose a plan to resume AI processing and automation. Your existing records remain available.</p></div></div>}
     <StatGrid>
@@ -89,6 +94,11 @@ export default function BillingWorkspace() {
     </StatGrid>
 
     <div className={styles.controls}><Segmented value={interval} onChange={setInterval} label="Billing interval" options={[{ value: "monthly", label: "Monthly" }, { value: "annual", label: "Annual, 2 months free" }]} /></div>
+    <section className={styles.checkoutDisclosure}>
+      <strong>Before checkout</strong>
+      <p>Monthly plans renew monthly; annual plans are charged upfront and renew yearly. Cancel before renewal to stop the next charge. Included usage resets monthly, overages are not charged automatically, and refunds are limited as described in the terms.</p>
+      <label><input type="checkbox" checked={billingAccepted} onChange={(event) => setBillingAccepted(event.target.checked)} /><span>I have reviewed and accept the <Link href="/legal/billing" target="_blank">Billing and Refund Terms</Link>, including recurring renewal, cancellation, usage, and refund rules.</span></label>
+    </section>
     <div className={styles.planGrid}>
       {(Object.keys(plans) as Plan[]).map((key) => {
         const plan = plans[key];
@@ -102,7 +112,7 @@ export default function BillingWorkspace() {
             <li><Check size={15} />{plan.automation ? "Automated replies, qualification and follow-ups" : "AI-assisted reply drafts"}</li>
             <li><Check size={15} />{plan.groups ? `${plan.groups} enabled groups` : "One-to-one conversations"}</li>
           </ul>
-          <button className={buttonClass.primary} onClick={() => void checkout(key)} disabled={busy !== null}>{busy === key ? "Opening secure checkout…" : `Choose ${plan.name}`}</button>
+          <button className={buttonClass.primary} onClick={() => void checkout(key)} disabled={busy !== null || !billingAccepted}>{busy === key ? "Opening secure checkout…" : `Choose ${plan.name}`}</button>
         </Panel>;
       })}
       <Panel title="Scale" description="For multi-number businesses that need higher limits, onboarding and operational support." action={<Pill>Custom</Pill>}>
@@ -113,6 +123,6 @@ export default function BillingWorkspace() {
     </div>
 
     {overview.canCancel && !overview.cancelAtPeriodEnd && <section className={styles.manage}><div><strong>Cancel renewal</strong><p>Your workspace remains active until {date(overview.currentPeriodEnd)}. It then becomes read-only; records are retained for 30 days before deletion eligibility.</p></div><button className={buttonClass.danger} onClick={() => void cancel()} disabled={busy !== null}>{busy === "cancel" ? "Cancelling…" : "Cancel renewal"}</button></section>}
-    <p className={styles.finePrint}>Payments are confirmed from Paystack’s API and signed webhooks. Usage add-ons are never charged without approval.</p>
+    <p className={styles.finePrint}>Payments are confirmed from Paystack&apos;s API and signed webhooks. Usage add-ons are never charged without approval. Seller-entered revenue and outcomes are not independently verified. <Link href="/legal/billing">Billing terms</Link> · <Link href="/legal/terms">Service terms</Link></p>
   </div>;
 }

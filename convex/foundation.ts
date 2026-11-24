@@ -36,6 +36,8 @@ export const createBusiness = mutation({
     }
     const businessId = await ctx.db.insert("businesses", { name, ownerId: identity.subject, whatsappStatus: "disconnected", whatsappMode: "unofficial", onboardingStep: 1, foundationVersion: 1, timezone: "Africa/Lagos", messageRetentionDays: foundationPolicy().messageRetentionDays, killSwitch: true, aiEnabled: false, customerAutoReplyEnabled: false, groupAutoReplyEnabled: false, statusViewerListEnabled: false });
     const now = Date.now();
+    const legalAcceptances = await ctx.db.query("legalAcceptances").withIndex("by_subject", (builder) => builder.eq("subject", identity.subject)).take(20);
+    for (const acceptance of legalAcceptances) if (!acceptance.businessId) await ctx.db.patch(acceptance._id, { businessId });
     await ctx.db.insert("businessProductMetrics", { businessId, businessCreatedAt: now, createdAt: now, updatedAt: now });
     await recordBusinessActivity(ctx, businessId, now);
     await ctx.db.insert("businessSubscriptions", { businessId, provider: "paystack", plan: "growth", billingInterval: "monthly", status: "trialing", currency: "NGN", amountKobo: 0, trialStartedAt: now, trialEndsAt: now + TRIAL_DAYS * 86_400_000, currentPeriodStart: now, currentPeriodEnd: now + TRIAL_DAYS * 86_400_000, cancelAtPeriodEnd: false, createdAt: now, updatedAt: now });

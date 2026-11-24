@@ -73,6 +73,7 @@ export function ProfilePanel({ workspace }: { workspace: Workspace }) {
           <div><dt>Message retention</dt><dd>{workspace.retentionDays} days</dd></div>
         </dl>
         <div className={styles.details}><p className={styles.helper}>Account details come from your sign-in provider. Manage your connection, follow-up rules, and privacy controls in Settings.</p><div className={styles.actions}><button type="button" className={buttonClass.ghost} disabled={busy} onClick={async () => { if (busy) return; setBusy(true); try { await signOut({ callbackUrl: "/login" }); } catch { setFeedback({ text: "We couldn't sign you out. Please try again.", error: true }); setBusy(false); } }}>{busy ? "Signing out…" : "Sign out"}</button></div></div>
+        <div className={styles.legalLinks}><Link href="/legal/terms">Terms</Link><Link href="/legal/privacy">Privacy</Link><Link href="/legal/dpa">DPA</Link><Link href="/legal/billing">Billing</Link><Link href="/legal/subprocessors">Subprocessors</Link></div>
         <Notice feedback={feedback} />
       </section>
     </div>

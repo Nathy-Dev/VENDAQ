@@ -339,7 +339,7 @@ export default function LandingPage() {
               );
             })}
           </div>
-          <p className={styles.pricingFootnote}>Allowances reset monthly, including on annual plans. Each customer conversation counts once per billing month when Pipelixr assists it. Prices are in Nigerian naira and payments are processed by Paystack.</p>
+          <p className={styles.pricingFootnote}>Allowances reset monthly, including on annual plans. Each customer conversation counts once per billing month when Pipelixr assists it. Prices are in Nigerian naira and payments are processed by Paystack. Paid plans renew until cancelled; see the Billing Terms. Results are not guaranteed.</p>
         </section>
 
         <section id="safety" className={styles.controlSection} aria-labelledby="control-title">
@@ -379,7 +379,7 @@ export default function LandingPage() {
 
       <footer className={styles.footer}>
         <Link href="/" aria-label="Pipelixr home"><Brand /></Link><p>Built for the business happening in your chats.</p>
-        <nav aria-label="Footer navigation"><a href="#privacy">Connection & privacy</a><Link href="/login">Sign in</Link></nav>
+        <nav aria-label="Footer navigation"><Link href="/legal/terms">Terms</Link><Link href="/legal/privacy">Privacy</Link><Link href="/legal/billing">Billing</Link><Link href="/legal/subprocessors">Subprocessors</Link><Link href="/login">Sign in</Link></nav>
         <small>© {new Date().getFullYear()} Pipelixr</small>
       </footer>
     </div>

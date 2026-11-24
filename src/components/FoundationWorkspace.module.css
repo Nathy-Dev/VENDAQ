@@ -184,6 +184,17 @@
 .gateCard p { font-size: 13px; line-height: 1.8; color: var(--dash-text-muted); }
 .gateCard .loadingLabel { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 24px; font-size: 12px; }
 .gateCard .actions { justify-content: center; margin-top: 22px; }
+.legalGate { max-width: 520px; text-align: left; padding: 30px; border: 1px solid var(--dash-border); border-radius: 12px; background: #fff; }
+.legalGate > a:first-child { display: inline-flex; }
+.legalGate h1, .legalGate > p { text-align: left; }
+.gateIcon { display: inline-flex; align-items: center; justify-content: center; width: 42px; height: 42px; margin-top: 26px; border-radius: 50%; color: var(--dash-accent); background: var(--dash-accent-soft); }
+.legalLinks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px 16px; padding: 0; margin: 22px 0; list-style: none; font-size: 12px; }
+.legalLinks a { color: var(--dash-accent); text-decoration: underline; text-underline-offset: 3px; }
+.legalCheck { display: flex; align-items: flex-start; gap: 10px; padding: 14px; border: 1px solid var(--dash-border); border-radius: 8px; background: #fafafa; font-size: 12px; line-height: 1.7; }
+.legalCheck input { flex-shrink: 0; margin-top: 4px; }
+.legalGate .infoBanner { margin: 14px 0; text-align: left; }
+.legalGate > button { width: 100%; justify-content: center; }
+.gateError { margin: 0 0 12px; color: var(--dash-danger) !important; text-align: left !important; }
 .loading { display: flex; align-items: center; justify-content: center; gap: 9px; min-height: 230px; color: var(--dash-text-muted); font-size: 12px; }
 .spinner { display: inline-block; width: 17px; height: 17px; border: 2px solid #dcebe5; border-top-color: var(--dash-accent); border-radius: 50%; animation: spin 750ms linear infinite; }
 .skeletonGrid { display: grid; gap: 12px; }
@@ -328,6 +339,9 @@
 .groupControls { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 10px; flex-shrink: 0; }
 .compactCheck { display: inline-flex; align-items: center; gap: 6px; color: var(--dash-text-muted); font-size: 11px; }
 .compactCheck input { width: 15px; height: 15px; }
+.legalLinks { display: flex; flex-wrap: wrap; gap: 8px 16px; padding-top: 16px; border-top: 1px solid var(--dash-border); }
+.legalLinks a { color: var(--dash-accent); font-size: 11px; font-weight: 600; }
+.dangerZone { border-color: #efd2d2; background: #fffafa; }
 @media (max-width: 700px) {
   .groupRow { align-items: stretch; flex-direction: column; }
   .groupControls { justify-content: space-between; }

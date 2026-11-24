@@ -2,9 +2,12 @@
 .main { margin-left: var(--sidebar-width); min-height: 100dvh; padding: 38px clamp(24px, 4vw, 64px) 40px; background: radial-gradient(circle at 100% 0%, rgb(15 159 112 / 5%), transparent 26rem); transition: margin-left 220ms ease; }
 .main:focus { outline: none; }
 .content { width: 100%; max-width: 1096px; margin-inline: auto; min-width: 0; }
+.footer { margin-left: var(--sidebar-width); display: flex; justify-content: center; flex-wrap: wrap; gap: 8px 18px; padding: 0 24px 28px; color: var(--dash-text-muted); font-size: 10px; }
+.footer a:hover { color: var(--dash-accent); }
 .settingsShell { height: 100dvh; min-height: 0; overflow: hidden; }
 .settingsMain { height: 100dvh; min-height: 0; overflow: hidden; }
 .settingsContent { height: 100%; min-height: 0; }
 @media (max-width: 767px) {
   .main { margin-left: 0; padding: 82px 16px calc(92px + env(safe-area-inset-bottom)); }
+  .footer { margin-left: 0; padding-bottom: calc(100px + env(safe-area-inset-bottom)); }
 }

@@ -31,6 +31,14 @@ describe("production billing", () => {
     expect(await harness.run((ctx) => ctx.db.query("businessSubscriptions").collect())).toHaveLength(1);
   });
 
+  it("requires current billing terms before checkout eligibility", async () => {
+    const harness = createHarness();
+    const source = await tenant(harness, "checkout-terms");
+    expect(await harness.query(internal.billing.checkoutLegalAccepted, { ownerId: "google:checkout-terms" })).toBe(false);
+    await source.owner.mutation(api.compliance.acceptLegal, { documents: ["billing"], method: "checkout_gate" });
+    expect(await harness.query(internal.billing.checkoutLegalAccepted, { ownerId: "google:checkout-terms" })).toBe(true);
+  });
+
   it("counts an AI-assisted customer chat once and stops at the trial limit", async () => {
     const harness = createHarness();
     const source = await tenant(harness, "usage-metering");

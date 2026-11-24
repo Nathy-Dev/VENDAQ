@@ -1,0 +1,17 @@
+.page { min-height: 100vh; background: #f7faf8; color: #17231f; }
+.header { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; justify-content: space-between; gap: 24px; min-height: 70px; padding: 14px max(24px, calc((100vw - 1080px) / 2)); border-bottom: 1px solid #dce7e2; background: rgb(247 250 248 / 94%); backdrop-filter: blur(14px); }
+.back { color: #176f55; font-size: 13px; font-weight: 650; }
+.main { width: min(calc(100% - 40px), 820px); margin: 0 auto; padding: 64px 0 96px; }
+.eyebrow { color: #087a57; font-size: 11px; font-weight: 750; letter-spacing: .12em; text-transform: uppercase; }
+.main h1 { margin: 13px 0 12px; font-size: clamp(38px, 6vw, 58px); line-height: 1.02; letter-spacing: -.045em; }
+.updated { color: #6b7a74; font-size: 12px; }
+.notice { margin: 28px 0; padding: 16px 18px; border: 1px solid #e0b863; border-radius: 10px; background: #fff9ec; color: #71500e; font-size: 13px; line-height: 1.6; }
+.intro { margin: 30px 0 46px; color: #45554f; font-size: 17px; line-height: 1.75; }
+.section { padding: 30px 0; border-top: 1px solid #dce7e2; }
+.section h2 { margin-bottom: 13px; font-size: 22px; letter-spacing: -.02em; }
+.section p, .section li { color: #45554f; font-size: 14px; line-height: 1.8; }
+.section ul { display: grid; gap: 7px; margin-top: 12px; padding-left: 22px; }
+.nav { display: flex; flex-wrap: wrap; gap: 9px 16px; padding-top: 34px; border-top: 1px solid #dce7e2; }
+.nav a { color: #087a57; font-size: 12px; font-weight: 650; }
+.contact { margin-top: 34px; padding: 18px; border-radius: 10px; background: #edf5f1; color: #45554f; font-size: 13px; line-height: 1.7; }
+@media (max-width: 600px) { .header { padding-inline: 20px; } .main { padding-top: 44px; } }

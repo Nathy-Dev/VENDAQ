@@ -8,6 +8,7 @@ import { journeyAfterInbound, type JourneyStage } from "./lib/journey";
 import { createStalledInquiryTask } from "./sellerActions";
 import { BUSINESS_SYSTEM_PROMPT_MIN_LENGTH, STATUS_TO_CASH_ENABLED } from "./lib/launch";
 import { recordBusinessActivity, recordConnectionTransition, recordResponseTime } from "./productAnalytics";
+import { COMMUNICATION_POLICY_VERSION, isMarketingOptInKeyword, isOptOutKeyword } from "./lib/compliance";
 
 export const enqueue = internalMutation({
   args: { sessionId: v.id("whatsappSessions"), generation: v.number(), tokenHash: v.string(), eventKey: v.string(), correlationId: v.string(), payload: normalizedEvent, quarantineCode: v.optional(v.string()) },
@@ -139,6 +140,23 @@ export const applyEvent = internalMutation({
         }
         await ctx.db.patch(customer._id, { expiresAt: Math.max(customer.lastInteraction, payload.eventAt) + (business.messageRetentionDays ?? foundationPolicy().messageRetentionDays) * 86400000 });
         await ctx.db.patch(customer._id, { lastInteraction: Math.max(customer.lastInteraction, payload.eventAt), ...(payload.fromMe ? { lastOutboundAt: Math.max(customer.lastOutboundAt ?? 0, payload.eventAt) } : { firstInboundAt: customer.firstInboundAt === undefined ? payload.eventAt : Math.min(customer.firstInboundAt, payload.eventAt), lastInboundAt: Math.max(customer.lastInboundAt ?? 0, payload.eventAt), leadSource: "dm" }), ...(!savedName && !payload.fromMe && payload.name && !customer.name ? { name: payload.name } : {}) });
+        if (!payload.fromMe && !payload.isGroup && payload.mediaType === "text" && payload.text.trim()) {
+          const optedOut = isOptOutKeyword(payload.text);
+          const optedIn = isMarketingOptInKeyword(payload.text);
+          const serviceAlreadyRecorded = customer.serviceConsentAt !== undefined;
+          if (!serviceAlreadyRecorded) {
+            await ctx.db.insert("communicationConsents", { businessId: business._id, customerId: customer._id, identityKey: canonicalIdentityKey, scope: "service", state: "granted", source: "inbound_message", evidence: "Customer initiated a one-to-one WhatsApp conversation.", policyVersion: COMMUNICATION_POLICY_VERSION, recordedBy: "system", recordedAt: payload.eventAt });
+          }
+          if (optedOut) {
+            await ctx.db.insert("communicationConsents", { businessId: business._id, customerId: customer._id, identityKey: canonicalIdentityKey, scope: "marketing", state: "withdrawn", source: "customer_keyword", evidence: payload.text.slice(0, 500), policyVersion: COMMUNICATION_POLICY_VERSION, recordedBy: "customer", recordedAt: payload.eventAt });
+            await ctx.db.patch(customer._id, { communicationState: "opted_out", serviceConsentAt: customer.serviceConsentAt ?? payload.eventAt, optedOutAt: payload.eventAt, optOutSource: "customer_keyword", marketingConsentAt: undefined, marketingConsentSource: undefined, marketingConsentEvidence: undefined });
+          } else if (optedIn) {
+            await ctx.db.insert("communicationConsents", { businessId: business._id, customerId: customer._id, identityKey: canonicalIdentityKey, scope: "marketing", state: "granted", source: "customer_keyword", evidence: payload.text.slice(0, 500), policyVersion: COMMUNICATION_POLICY_VERSION, recordedBy: "customer", recordedAt: payload.eventAt });
+            await ctx.db.patch(customer._id, { communicationState: "marketing_opted_in", serviceConsentAt: customer.serviceConsentAt ?? payload.eventAt, marketingConsentAt: payload.eventAt, marketingConsentSource: "customer_keyword", marketingConsentEvidence: payload.text.slice(0, 500), optedOutAt: undefined, optOutSource: undefined });
+          } else if (!serviceAlreadyRecorded && customer.communicationState !== "marketing_opted_in") {
+            await ctx.db.patch(customer._id, { communicationState: "service_only", serviceConsentAt: payload.eventAt });
+          }
+        }
         let conversation = await ctx.db.query("conversations").withIndex("by_business_identity", (builder) => builder.eq("businessId", business._id).eq("identityKey", canonicalIdentityKey)).unique();
         if (!conversation && canonicalIdentityKey !== payload.identityKey) conversation = await ctx.db.query("conversations").withIndex("by_business_identity", (builder) => builder.eq("businessId", business._id).eq("identityKey", payload.identityKey)).unique();
         if (!conversation) {
@@ -182,7 +200,7 @@ export const applyEvent = internalMutation({
         if (!payload.isGroup && payload.fromMe && payload.mediaType === "text" && payload.text.trim()) {
           await ctx.scheduler.runAfter(0, internal.commerceIntelligence.captureFromInteraction, { interactionId });
         }
-        if (!payload.fromMe && !payload.manualReview && payload.mediaType === "text" && payload.text.trim() && !(business.killSwitch ?? true) && (business.businessSystemPrompt?.trim().length ?? 0) >= BUSINESS_SYSTEM_PROMPT_MIN_LENGTH) {
+        if (!payload.fromMe && !payload.manualReview && payload.mediaType === "text" && payload.text.trim() && !isOptOutKeyword(payload.text) && !(business.killSwitch ?? true) && (business.businessSystemPrompt?.trim().length ?? 0) >= BUSINESS_SYSTEM_PROMPT_MIN_LENGTH) {
           let assistantAuthorized = business.customerAutoReplyEnabled ?? false;
           if (payload.isGroup) {
             const group = await ctx.db.query("managedGroups").withIndex("by_business_group", (builder) => builder.eq("businessId", business._id).eq("groupJid", payload.chat)).unique();

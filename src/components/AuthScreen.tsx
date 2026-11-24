@@ -81,12 +81,12 @@ export default function AuthScreen({ mode }: { mode: "login" | "signup" }) {
               {error && <div ref={errorRef} id={errorId} className={styles.error} role="alert" tabIndex={-1}><CircleAlert size={15} aria-hidden="true" /><div>{error}{created && <Link href="/login">Go to sign in<ArrowRight size={13} aria-hidden="true" /></Link>}</div></div>}
               <button type="submit" disabled={busy !== null} className={styles.submitBtn}>{busy === "credentials" ? <><span className={styles.spinner} aria-hidden="true" />{signup && !created ? "Creating account…" : "Signing in…"}</> : <>{signup && !created ? "Create account" : "Sign in"}<ArrowRight size={15} aria-hidden="true" /></>}</button>
             </form>
-            {signup && <p className={styles.formNote}>Connecting WhatsApp is a separate, optional step. Review the unofficial-provider risks before pairing a number.</p>}
+            {signup && <p className={styles.formNote}>Connecting WhatsApp is a separate, optional step. Review the unofficial-provider risks before pairing a number. Before using the workspace you will be asked to accept the <Link href="/legal/terms" target="_blank">Terms</Link>, <Link href="/legal/privacy" target="_blank">Privacy Notice</Link>, <Link href="/legal/acceptable-use" target="_blank">Acceptable Use Policy</Link>, and <Link href="/legal/dpa" target="_blank">DPA</Link>.</p>}
           </section>
           <p className={styles.footer}>{signup ? "Already have an account?" : "New to Pipelixr?"}<Link href={signup ? "/login" : "/signup"}>{signup ? "Sign in" : "Create an account"}</Link></p>
         </div>
       </main>
-      <footer className={styles.pageFooter}><span>Pipelixr</span><span>Your work, with a little less friction.</span></footer>
+      <footer className={styles.pageFooter}><span>Pipelixr</span><span><Link href="/legal/terms">Terms</Link> · <Link href="/legal/privacy">Privacy</Link> · <Link href="/legal/billing">Billing</Link></span></footer>
     </div>
   );
 }

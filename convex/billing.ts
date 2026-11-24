@@ -6,6 +6,7 @@ import { billingAccess } from "./lib/billingAccess";
 import { amountFor, PAYMENT_GRACE_DAYS, periodEndFrom, planCodeFor, siteUrl } from "./lib/billingPlans";
 import { decryptSecret, encryptSecret } from "./lib/crypto";
 import { paystackRequest, paystackTimestamp, safeProviderString, type ProviderObject } from "./lib/paystack";
+import { hasCurrentLegalAcceptance } from "./lib/compliance";
 import type { Doc } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 
@@ -103,6 +104,12 @@ export const checkoutForOwner = internalQuery({
   },
 });
 
+export const checkoutLegalAccepted = internalQuery({
+  args: { ownerId: v.string() },
+  returns: v.boolean(),
+  handler: async (ctx, args) => await hasCurrentLegalAcceptance(ctx, args.ownerId, "billing"),
+});
+
 export const accessForOwner = internalQuery({
   args: { ownerId: v.string() },
   returns: v.union(v.null(), v.object({ canUsePaidFeatures: v.boolean(), automation: v.boolean() })),
@@ -143,6 +150,9 @@ export const createCheckout = action({
   returns: v.object({ reference: v.string(), authorizationUrl: v.string() }),
   handler: async (ctx, args) => {
     const identity = await requireIdentity(ctx);
+    if (!await ctx.runQuery(internal.billing.checkoutLegalAccepted, { ownerId: identity.subject })) {
+      throw new ConvexError({ code: "LEGAL_ACCEPTANCE_REQUIRED", document: "billing" });
+    }
     const email = cleanEmail(identity);
     const reference = `px_${Date.now().toString(36)}_${crypto.randomUUID().replaceAll("-", "")}`;
     const providerPlanCode = planCodeFor(args.plan, args.billingInterval);

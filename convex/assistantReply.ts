@@ -6,6 +6,7 @@ import { convexGateway } from "@convex-dev/ai-sdk-provider";
 import { decryptSecret } from "./lib/crypto";
 import { assistantReplyDelayMs, BUSINESS_SYSTEM_PROMPT_MIN_LENGTH } from "./lib/launch";
 import { foundationPolicy } from "./lib/policy";
+import { canSendServiceMessage } from "./lib/compliance";
 import { providerSendResult, sendAuthorizedAssistantText, showAuthorizedAssistantTyping } from "./lib/evolution";
 import { groupMayAutoReply } from "./lib/groupGovernance";
 import { CUSTOMER_SPEECH_STYLE_RULES, normalizeAssistantReply } from "./lib/assistantStyle";
@@ -548,7 +549,7 @@ export const dispatchForSubmit = internalQuery({
     const kind = dispatch.kind ?? "assistant_reply";
     if (kind === "assistant_reply" && interaction.manualReviewRequired) return null;
     if (kind === "assistant_reply" && interaction.messageType === "image" && (interaction.imageAnalysisState !== "completed" || !interaction.imageAnalysis?.trim())) return null;
-    if (!customer || customer.businessId !== business._id || customer.phone !== dispatch.target || (business.businessSystemPrompt?.trim().length ?? 0) < BUSINESS_SYSTEM_PROMPT_MIN_LENGTH) return null;
+    if (!customer || customer.businessId !== business._id || customer.phone !== dispatch.target || !await canSendServiceMessage(ctx, customer) || (business.businessSystemPrompt?.trim().length ?? 0) < BUSINESS_SYSTEM_PROMPT_MIN_LENGTH) return null;
     if (kind === "owner_rescue") {
       if (!dispatch.ownerRescueId || !(business.customerAutoReplyEnabled ?? false)) return null;
       const rescue = await ctx.db.get(dispatch.ownerRescueId);

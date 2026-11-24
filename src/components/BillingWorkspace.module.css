@@ -4,6 +4,12 @@
 .warning { display: flex; gap: 12px; padding: 16px; border: 1px solid #edd7a8; border-radius: 10px; background: #fffaf0; color: #805b13; }
 .warning p { margin-top: 4px; font-size: 12px; line-height: 1.6; }
 .controls { display: flex; justify-content: center; }
+.checkoutDisclosure { display: grid; gap: 8px; padding: 17px 19px; border: 1px solid var(--dash-border); border-radius: 10px; background: #fff; }
+.checkoutDisclosure strong { font-size: 13px; }
+.checkoutDisclosure p { color: var(--dash-text-muted); font-size: 11px; line-height: 1.65; }
+.checkoutDisclosure label { display: flex; align-items: flex-start; gap: 9px; color: #3e4a46; font-size: 12px; line-height: 1.55; }
+.checkoutDisclosure input { width: 16px; height: 16px; margin-top: 2px; flex: 0 0 auto; }
+.checkoutDisclosure a, .finePrint a { color: var(--dash-accent); text-decoration: underline; text-underline-offset: 2px; }
 .planGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; align-items: stretch; }
 .planGrid > section { display: flex; flex-direction: column; }
 .planGrid > section > div:last-child { display: flex; flex-direction: column; flex: 1; }
