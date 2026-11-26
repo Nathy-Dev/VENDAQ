@@ -6,6 +6,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { adminAccessConfigured, isAdmin, requireAdmin } from "./lib/adminAuthorization";
 import { decryptSecret } from "./lib/crypto";
 import { paystackRequest } from "./lib/paystack";
+import { isAiAssistantEnabled } from "./lib/inboxAi";
 
 const BUSINESS_LIMIT = 500;
 const LIST_LIMIT = 100;
@@ -169,7 +170,7 @@ export const businesses = query({
         onboardingStep: business.onboardingStep,
         createdAt: business._creationTime,
         lastHistorySyncAt: business.lastHistorySyncAt ?? null,
-        assistantEnabled: business.aiEnabled !== false && business.customerAutoReplyEnabled === true,
+        assistantEnabled: isAiAssistantEnabled(business),
         plan: subscription?.plan ?? "free",
         subscriptionStatus: subscription?.status ?? "none",
         currentPeriodEnd: subscription?.currentPeriodEnd ?? null,
@@ -205,7 +206,7 @@ export const businessDetail = query({
       business: {
         id: business._id, name: business.name, ownerId: business.ownerId, industry: business.industry ?? null,
         whatsappStatus: business.whatsappStatus, onboardingStep: business.onboardingStep, createdAt: business._creationTime,
-        lastHistorySyncAt: business.lastHistorySyncAt ?? null, assistantEnabled: business.aiEnabled !== false && business.customerAutoReplyEnabled === true,
+        lastHistorySyncAt: business.lastHistorySyncAt ?? null, assistantEnabled: isAiAssistantEnabled(business),
         plan: subscription?.plan ?? "free", subscriptionStatus: subscription?.status ?? "none", currentPeriodEnd: subscription?.currentPeriodEnd ?? null,
         sessionState: session?.state ?? null, sessionLastHealthAt: session?.lastHealthAt ?? null,
       },

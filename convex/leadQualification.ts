@@ -3,6 +3,7 @@ import { internalAction, internalMutation, internalQuery, mutation, query } from
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { requireBusiness } from "./lib/authorization";
+import { canProcessInboxMessage } from "./lib/inboxAi";
 
 const qualificationField = v.union(v.literal("need"), v.literal("budget"), v.literal("location"), v.literal("timeline"), v.literal("readiness"));
 const qualificationStatus = v.union(v.literal("qualifying"), v.literal("qualified"), v.literal("not_qualified"), v.literal("opted_out"), v.literal("stalled"));
@@ -122,25 +123,19 @@ export const assessmentCandidate = internalQuery({
   handler: async (ctx, args) => {
     const interaction = await ctx.db.get(args.interactionId);
     if (!interaction || interaction.role !== "customer" || interaction.isGroup || interaction.manualReviewRequired || !interaction.conversationId || !["text", "audio", "image"].includes(interaction.messageType ?? "")) return null;
-    const [business, customer, conversation, existing, messages] = await Promise.all([
+    const [business, customer, conversation, existing] = await Promise.all([
       ctx.db.get(interaction.businessId),
       ctx.db.get(interaction.customerId),
       ctx.db.get(interaction.conversationId),
       ctx.db.query("leadQualifications").withIndex("by_conversation", (builder) => builder.eq("conversationId", interaction.conversationId!)).unique(),
-      ctx.db.query("interactions").withIndex("by_conversation", (builder) => builder.eq("conversationId", interaction.conversationId!)).order("desc").take(12),
     ]);
-    if (!business || !(business.leadQualificationEnabled ?? true) || !customer || customer.businessId !== business._id || customer.isGroup || !conversation || conversation.businessId !== business._id || conversation.customerId !== customer._id) return null;
-    if (existing && ["qualified", "opted_out"].includes(existing.status)) return {
-      interactionId: interaction._id, businessId: business._id, customerId: customer._id, conversationId: conversation._id,
-      content: interaction.content, systemPrompt: business.businessSystemPrompt ?? "", criteria: business.leadQualificationCriteria?.trim() || DEFAULT_CRITERIA,
-      requiredFields: requiredFields(business.leadQualificationRequiredFields), currentStatus: existing.status, currentAnswers: existing.answers,
-      history: messages.reverse().filter((message) => message.role !== "system").map((message) => ({ role: message.role as "customer" | "owner", content: message.content.slice(0, 1_000) })),
-    };
+    if (!canProcessInboxMessage(business, interaction) || !(business.leadQualificationEnabled ?? true) || !customer || customer.businessId !== business._id || customer.isGroup || !conversation || conversation.businessId !== business._id || conversation.customerId !== customer._id) return null;
+    const messages = await ctx.db.query("interactions").withIndex("by_conversation", (builder) => builder.eq("conversationId", conversation._id)).order("desc").take(12);
     return {
       interactionId: interaction._id, businessId: business._id, customerId: customer._id, conversationId: conversation._id,
       content: interaction.content, systemPrompt: business.businessSystemPrompt ?? "", criteria: business.leadQualificationCriteria?.trim() || DEFAULT_CRITERIA,
       requiredFields: requiredFields(business.leadQualificationRequiredFields), currentStatus: existing?.status ?? null, currentAnswers: existing?.answers ?? [],
-      history: messages.reverse().filter((message) => message.role !== "system").map((message) => ({ role: message.role as "customer" | "owner", content: message.content.slice(0, 1_000) })),
+      history: messages.reverse().filter((message) => message.role !== "system" && message.businessId === business._id && canProcessInboxMessage(business, message)).map((message) => ({ role: message.role as "customer" | "owner", content: message.content.slice(0, 1_000) })),
     };
   },
 });
@@ -172,7 +167,7 @@ export const applyAssessment = internalMutation({
       ctx.db.get(interaction.businessId), ctx.db.get(interaction.customerId), ctx.db.get(interaction.conversationId),
       ctx.db.query("leadQualifications").withIndex("by_conversation", (builder) => builder.eq("conversationId", interaction.conversationId!)).unique(),
     ]);
-    if (!business || !(business.leadQualificationEnabled ?? true) || !customer || customer.businessId !== business._id || customer.isGroup || !conversation || conversation.businessId !== business._id || conversation.customerId !== customer._id) return null;
+    if (!canProcessInboxMessage(business, interaction) || !(business.leadQualificationEnabled ?? true) || !customer || customer.businessId !== business._id || customer.isGroup || !conversation || conversation.businessId !== business._id || conversation.customerId !== customer._id) return null;
     if (!existing && !args.salesIntent && !args.optOut && args.answers.length === 0) return null;
     const now = Date.now();
     const fields = requiredFields(business.leadQualificationRequiredFields);
@@ -224,11 +219,13 @@ export const applyAssessment = internalMutation({
 });
 
 export const recordQuestionAsked = internalMutation({
-  args: { conversationId: v.id("conversations"), field: qualificationField, askedAt: v.number() },
+  args: { conversationId: v.id("conversations"), interactionId: v.optional(v.id("interactions")), field: qualificationField, askedAt: v.number() },
   returns: v.null(),
   handler: async (ctx, args) => {
+    const interaction = args.interactionId ? await ctx.db.get(args.interactionId) : null;
+    if (!interaction || interaction.conversationId !== args.conversationId || !canProcessInboxMessage(await ctx.db.get(interaction.businessId), interaction)) return null;
     const qualification = await ctx.db.query("leadQualifications").withIndex("by_conversation", (builder) => builder.eq("conversationId", args.conversationId)).unique();
-    if (!qualification || qualification.status !== "qualifying") return null;
+    if (!qualification || qualification.businessId !== interaction.businessId || qualification.status !== "qualifying") return null;
     const attempts = new Map(qualification.questionAttempts.map((attempt) => [attempt.field, attempt]));
     const current = attempts.get(args.field);
     attempts.set(args.field, { field: args.field, count: Math.min(2, (current?.count ?? 0) + 1), lastAskedAt: args.askedAt });
@@ -250,6 +247,7 @@ export const analyzeInteraction = internalAction({
     const model = process.env.GROQ_LLM_MODEL?.trim();
     if (apiKey && model) {
       try {
+        if (!(await ctx.runQuery(internal.businessProfile.canProcessMessage, args))) return null;
         const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },

@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { api, internal } from "../convex/_generated/api";
-import { createHarness, tenant, type Harness } from "./harness";
+import { aiTenant, createHarness, tenant, type Harness } from "./harness";
 
+const rescuePrompt = "You represent a Nigerian retail business. Use only confirmed prices, negotiated discounts, and delivery terms. Ask for clarification when facts are missing, and refer uncertain customer requests to the owner in concise WhatsApp language.";
 let fixtureCounter = 0;
 
 async function directInteraction(harness: Harness, source: Awaited<ReturnType<typeof tenant>>, content: string, options: { role?: "customer" | "owner"; messageType?: "text" | "image"; imageAnalysis?: string } = {}) {
@@ -15,6 +16,7 @@ async function directInteraction(harness: Harness, source: Awaited<ReturnType<ty
     const interactionId = await ctx.db.insert("interactions", {
       businessId: source.businessId, customerId, conversationId, sessionId: source.sessionId,
       role: options.role ?? "customer", content, timestamp: now, receivedAt: now,
+      aiProcessingEpoch: (await ctx.db.get(source.businessId))?.aiProcessingEpoch,
       messageType: options.messageType ?? "text", manualReviewRequired: false, isGroup: false,
       ...(options.imageAnalysis ? { imageAnalysis: options.imageAnalysis, imageAnalysisState: "completed" as const } : {}),
     });
@@ -35,7 +37,7 @@ describe("one-to-one commerce intelligence", () => {
 
   it("deduplicates promises and creates an owner rescue for high-risk exceptions", async () => {
     const harness = createHarness();
-    const source = await tenant(harness, "promise-rescue");
+    const source = await aiTenant(harness, "promise-rescue");
     const promise = await directInteraction(harness, source, "I will pay tomorrow, please keep it for me.");
     await harness.mutation(internal.commerceIntelligence.captureFromInteraction, { interactionId: promise.interactionId });
     await harness.mutation(internal.commerceIntelligence.captureFromInteraction, { interactionId: promise.interactionId });
@@ -51,7 +53,7 @@ describe("one-to-one commerce intelligence", () => {
 
   it("keeps receipt evidence separate from verified payment", async () => {
     const harness = createHarness();
-    const source = await tenant(harness, "receipt-review");
+    const source = await aiTenant(harness, "receipt-review");
     const receipt = await directInteraction(harness, source, "Image analysis: This appears to be a successful bank transfer receipt for NGN 25,000. Reference ABC12345.", { messageType: "image", imageAnalysis: "This appears to be a payment receipt." });
     await harness.mutation(internal.commerceIntelligence.captureFromInteraction, { interactionId: receipt.interactionId });
     const [proof] = await harness.run((ctx) => ctx.db.query("paymentProofs").collect());
@@ -62,7 +64,7 @@ describe("one-to-one commerce intelligence", () => {
 
   it("grounds the assistant context in active knowledge and verified memory only", async () => {
     const harness = createHarness();
-    const source = await tenant(harness, "grounded-context");
+    const source = await aiTenant(harness, "grounded-context");
     const interaction = await directInteraction(harness, source, "I wear size 42.");
     await source.owner.mutation(api.commerceIntelligence.saveKnowledge, { businessId: source.businessId, title: "Current price", kind: "price", content: "The blue shoe costs NGN 30,000." });
     const expired = await source.owner.mutation(api.commerceIntelligence.saveKnowledge, { businessId: source.businessId, title: "Old price", kind: "price", content: "The blue shoe costs NGN 20,000.", expiresAt: Date.now() - 1 });
@@ -79,7 +81,7 @@ describe("one-to-one commerce intelligence", () => {
 
   it("enforces negotiation limits and owner rescue ownership", async () => {
     const harness = createHarness();
-    const first = await tenant(harness, "policy-first");
+    const first = await aiTenant(harness, "policy-first");
     const second = await tenant(harness, "policy-second");
     await first.owner.mutation(api.commerceIntelligence.saveNegotiationPolicy, { businessId: first.businessId, name: "Default limits", maximumDiscountPercent: 5, minimumPrice: 20000, freeDeliveryThreshold: 50000, requireApprovalBelow: 22000, allowedBundles: ["Two items with free delivery"] });
     expect(await first.owner.query(api.commerceIntelligence.negotiationPolicy, { businessId: first.businessId })).toMatchObject({ maximumDiscountPercent: 5, minimumPrice: 20000 });
@@ -87,14 +89,15 @@ describe("one-to-one commerce intelligence", () => {
     const holdingReply = await harness.mutation(internal.commerceIntelligence.createGenerationRescue, { interactionId: request.interactionId, reason: "discount_approval", question: "What discount can Pipelixr offer?", holdingReply: "Let me confirm the best approved price for you." });
     expect(holdingReply).toContain("confirm");
     const [rescue] = await harness.run((ctx) => ctx.db.query("ownerRescueRequests").collect());
-    await expect(second.owner.mutation(api.commerceIntelligence.answerRescue, { businessId: first.businessId, rescueId: rescue._id, answer: "Give 10 percent" })).rejects.toThrow();
+    await expect(second.owner.mutation(api.commerceIntelligence.answerRescue, { businessId: first.businessId, rescueId: rescue._id, answer: "Give 10 percent" })).rejects.toThrow("NOT_FOUND");
+    await first.owner.mutation(api.businessProfile.save, { businessId: first.businessId, systemPrompt: rescuePrompt, customerAutoReplyEnabled: true, groupAutoReplyEnabled: false });
     await first.owner.mutation(api.commerceIntelligence.answerRescue, { businessId: first.businessId, rescueId: rescue._id, answer: "Offer no more than 5 percent." });
     expect((await harness.run((ctx) => ctx.db.get(rescue._id)))?.state).toBe("sending");
   });
 
   it("delivers an owner's approved rescue answer through the authorized dispatch path", async () => {
     const harness = createHarness();
-    const source = await tenant(harness, "owner-rescue-delivery");
+    const source = await aiTenant(harness, "owner-rescue-delivery");
     const systemPrompt = "You represent Owner Rescue Delivery, a Nigerian retail business. Answer only with verified business facts, never invent prices, availability, delivery promises, discounts, payment confirmation, or policies, and write concise natural WhatsApp replies.";
     await source.owner.mutation(api.businessProfile.save, { businessId: source.businessId, systemPrompt, customerAutoReplyEnabled: true, groupAutoReplyEnabled: false });
     const request = await directInteraction(harness, source, "Can you give me your last price?");
@@ -124,7 +127,7 @@ describe("one-to-one commerce intelligence", () => {
 
   it("reopens an owner rescue when customer-reply consent is revoked before delivery", async () => {
     const harness = createHarness();
-    const source = await tenant(harness, "owner-rescue-revoked");
+    const source = await aiTenant(harness, "owner-rescue-revoked");
     const systemPrompt = "You represent Owner Rescue Revoked, a Nigerian retail business. Answer only with verified business facts, never invent prices, availability, delivery promises, discounts, payment confirmation, or policies, and write concise natural WhatsApp replies.";
     await source.owner.mutation(api.businessProfile.save, { businessId: source.businessId, systemPrompt, customerAutoReplyEnabled: true, groupAutoReplyEnabled: false });
     const request = await directInteraction(harness, source, "Is delivery available tomorrow?");
@@ -139,7 +142,7 @@ describe("one-to-one commerce intelligence", () => {
 
   it("lets the owner safely resolve an uncertain rescue delivery after checking WhatsApp", async () => {
     const harness = createHarness();
-    const source = await tenant(harness, "owner-rescue-unknown");
+    const source = await aiTenant(harness, "owner-rescue-unknown");
     const request = await directInteraction(harness, source, "Can this arrive today?");
     await harness.mutation(internal.commerceIntelligence.createGenerationRescue, { interactionId: request.interactionId, reason: "missing_fact", question: "What delivery answer is approved?", holdingReply: "Let me confirm that for you." });
     const [rescue] = await harness.run((ctx) => ctx.db.query("ownerRescueRequests").collect());

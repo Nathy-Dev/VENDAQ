@@ -6,6 +6,7 @@ import { BUSINESS_SYSTEM_PROMPT_MAX_LENGTH, BUSINESS_SYSTEM_PROMPT_MIN_LENGTH } 
 import { businessSystemPromptMessages, cleanBusinessText, promptSourceMaximum, promptSourceMinimum } from "./lib/businessPrompt";
 import { billingAccess } from "./lib/billingAccess";
 import { recordBusinessActivity, recordMilestone } from "./productAnalytics";
+import { aiAssistantPatch, canProcessInboxMessage, isAiAssistantEnabled } from "./lib/inboxAi";
 
 const qualificationField = v.union(v.literal("need"), v.literal("budget"), v.literal("location"), v.literal("timeline"), v.literal("readiness"));
 const businessAiUsageKind = v.union(v.literal("prompt_generation"), v.literal("voice_transcription"));
@@ -33,6 +34,7 @@ export const get = query({
   returns: v.object({
     name: v.string(),
     systemPrompt: v.string(),
+    aiEnabled: v.boolean(),
     customerAutoReplyEnabled: v.boolean(),
     groupAutoReplyEnabled: v.boolean(),
     updatedAt: v.union(v.number(), v.null()),
@@ -43,11 +45,34 @@ export const get = query({
     return {
       name: business.name,
       systemPrompt: business.businessSystemPrompt ?? "",
+      aiEnabled: isAiAssistantEnabled(business),
       customerAutoReplyEnabled: business.customerAutoReplyEnabled ?? false,
       groupAutoReplyEnabled: business.groupAutoReplyEnabled ?? false,
       updatedAt: business.businessSystemPromptUpdatedAt ?? null,
       generatedAt: business.businessSystemPromptGeneratedAt ?? null,
     };
+  },
+});
+
+export const setAssistantEnabled = mutation({
+  args: { businessId: v.id("businesses"), enabled: v.boolean() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const business = await requireBusiness(ctx, args.businessId, { allowReadOnly: true });
+    const hasReplyScopes = business.customerAutoReplyEnabled === true || business.groupAutoReplyEnabled === true;
+    if (args.enabled) {
+      const access = await billingAccess(ctx, business);
+      if (!access.canUsePaidFeatures || (hasReplyScopes && !access.automation)) throw new ConvexError({ code: "BILLING_UPGRADE_REQUIRED" });
+    }
+    const now = Date.now();
+    await ctx.db.patch(business._id, {
+      ...aiAssistantPatch(business, args.enabled, now),
+      killSwitch: !args.enabled || !hasReplyScopes,
+      ...(args.enabled && hasReplyScopes && !isAiAssistantEnabled(business) ? { assistantConsentAt: now } : {}),
+    });
+    if (args.enabled && hasReplyScopes) await recordMilestone(ctx, business._id, "automationOptInAt", now);
+    await recordBusinessActivity(ctx, business._id, now);
+    return null;
   },
 });
 
@@ -57,6 +82,7 @@ export const save = mutation({
     systemPrompt: v.string(),
     customerAutoReplyEnabled: v.boolean(),
     groupAutoReplyEnabled: v.boolean(),
+    assistantSettingsVersion: v.optional(v.literal(2)),
     leadQualificationEnabled: v.optional(v.boolean()),
     leadQualificationCriteria: v.optional(v.string()),
     leadQualificationRequiredFields: v.optional(v.array(qualificationField)),
@@ -68,10 +94,15 @@ export const save = mutation({
     // immediately below and again at every assistant dispatch boundary.
     const business = await requireBusiness(ctx, args.businessId, { allowReadOnly: true });
     const access = await billingAccess(ctx, business);
-    if ((args.customerAutoReplyEnabled || args.groupAutoReplyEnabled) && (!access.canUsePaidFeatures || !access.automation)) throw new ConvexError({ code: "BILLING_UPGRADE_REQUIRED" });
+    const hasReplyScopes = args.customerAutoReplyEnabled || args.groupAutoReplyEnabled;
+    const legacyPause = args.assistantSettingsVersion === undefined && !hasReplyScopes;
+    const enabled = !legacyPause && isAiAssistantEnabled(business);
+    const addingReplyScope = (args.customerAutoReplyEnabled && !business.customerAutoReplyEnabled) || (args.groupAutoReplyEnabled && !business.groupAutoReplyEnabled);
+    if (addingReplyScope && (!access.canUsePaidFeatures || !access.automation)) throw new ConvexError({ code: "BILLING_UPGRADE_REQUIRED" });
     const systemPrompt = validateSystemPrompt(args.systemPrompt);
     const now = Date.now();
     await ctx.db.patch(args.businessId, {
+      ...(legacyPause ? aiAssistantPatch(business, false, now) : {}),
       businessSystemPrompt: systemPrompt,
       businessSystemPromptUpdatedAt: now,
       customerAutoReplyEnabled: args.customerAutoReplyEnabled,
@@ -79,14 +110,22 @@ export const save = mutation({
       ...(args.leadQualificationEnabled !== undefined ? { leadQualificationEnabled: args.leadQualificationEnabled } : {}),
       ...(args.leadQualificationCriteria?.trim() ? { leadQualificationCriteria: args.leadQualificationCriteria.replaceAll("\u0000", "").trim().slice(0, 2_000) } : {}),
       ...(args.leadQualificationRequiredFields?.length ? { leadQualificationRequiredFields: [...new Set(args.leadQualificationRequiredFields)] } : {}),
-      assistantConsentAt: args.customerAutoReplyEnabled || args.groupAutoReplyEnabled ? now : undefined,
-      aiEnabled: args.customerAutoReplyEnabled || args.groupAutoReplyEnabled,
-      killSwitch: !(args.customerAutoReplyEnabled || args.groupAutoReplyEnabled),
+      assistantConsentAt: hasReplyScopes ? (enabled ? now : business.assistantConsentAt) : undefined,
+      killSwitch: !enabled || !hasReplyScopes,
       onboardingStep: 3,
     });
-    if (args.customerAutoReplyEnabled || args.groupAutoReplyEnabled) await recordMilestone(ctx, args.businessId, "automationOptInAt", now);
+    if (enabled && hasReplyScopes) await recordMilestone(ctx, args.businessId, "automationOptInAt", now);
     await recordBusinessActivity(ctx, args.businessId, now);
     return null;
+  },
+});
+
+export const canProcessMessage = internalQuery({
+  args: { interactionId: v.id("interactions") },
+  returns: v.boolean(),
+  handler: async (ctx, args) => {
+    const interaction = await ctx.db.get(args.interactionId);
+    return !!interaction && canProcessInboxMessage(await ctx.db.get(interaction.businessId), interaction);
   },
 });
 

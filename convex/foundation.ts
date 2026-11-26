@@ -3,6 +3,7 @@ import { query, mutation, internalQuery, internalMutation } from "./_generated/s
 import { internal } from "./_generated/api";
 import { requireBusiness, requireIdentity } from "./lib/authorization";
 import { DISCLOSURE_VERSION, foundationPolicy } from "./lib/policy";
+import { activeMessageAiEpoch, canProcessInboxMessage, isAiAssistantEnabled } from "./lib/inboxAi";
 import { connectionState, sessionDocument } from "./lib/validators";
 import type { Id } from "./_generated/dataModel";
 import { TRIAL_DAYS } from "./lib/billingPlans";
@@ -10,16 +11,17 @@ import { recordBusinessActivity, recordConnectionTransition } from "./productAna
 
 export const workspace = query({
   args: {},
-  returns: v.union(v.null(), v.object({ businessId: v.id("businesses"), name: v.string(), timezone: v.string(), retentionDays: v.number(), responseWindowMinutes: v.number(), state: connectionState, lastError: v.union(v.string(), v.null()), lastHealthAt: v.union(v.number(), v.null()), customerAutoReplyEnabled: v.boolean(), groupAutoReplyEnabled: v.boolean(), hasBusinessSystemPrompt: v.boolean(), launchReady: v.boolean() })),
+  returns: v.union(v.null(), v.object({ businessId: v.id("businesses"), name: v.string(), timezone: v.string(), retentionDays: v.number(), responseWindowMinutes: v.number(), state: connectionState, lastError: v.union(v.string(), v.null()), lastHealthAt: v.union(v.number(), v.null()), aiEnabled: v.boolean(), customerAutoReplyEnabled: v.boolean(), groupAutoReplyEnabled: v.boolean(), hasBusinessSystemPrompt: v.boolean(), launchReady: v.boolean() })),
   handler: async (ctx) => {
     const identity = await requireIdentity(ctx);
     const business = await ctx.db.query("businesses").withIndex("by_owner", (builder) => builder.eq("ownerId", identity.subject)).unique();
     if (!business || business.foundationVersion !== 1) return null;
     const session = await ctx.db.query("whatsappSessions").withIndex("by_business", (builder) => builder.eq("businessId", business._id)).unique();
     const hasBusinessSystemPrompt = (business.businessSystemPrompt?.trim().length ?? 0) >= 120;
+    const aiEnabled = isAiAssistantEnabled(business);
     const customerAutoReplyEnabled = business.customerAutoReplyEnabled ?? false;
     const groupAutoReplyEnabled = business.groupAutoReplyEnabled ?? false;
-    return { businessId: business._id, name: business.name, timezone: business.timezone ?? "Africa/Lagos", retentionDays: business.messageRetentionDays ?? foundationPolicy().messageRetentionDays, responseWindowMinutes: business.responseWindowMinutes ?? foundationPolicy().responseWindowMinutes, state: session?.state ?? "disconnected", lastError: session?.lastError ?? null, lastHealthAt: session?.lastHealthAt ?? null, customerAutoReplyEnabled, groupAutoReplyEnabled, hasBusinessSystemPrompt, launchReady: session?.state === "connected" && hasBusinessSystemPrompt && (customerAutoReplyEnabled || groupAutoReplyEnabled) };
+    return { businessId: business._id, name: business.name, timezone: business.timezone ?? "Africa/Lagos", retentionDays: business.messageRetentionDays ?? foundationPolicy().messageRetentionDays, responseWindowMinutes: business.responseWindowMinutes ?? foundationPolicy().responseWindowMinutes, state: session?.state ?? "disconnected", lastError: session?.lastError ?? null, lastHealthAt: session?.lastHealthAt ?? null, aiEnabled, customerAutoReplyEnabled, groupAutoReplyEnabled, hasBusinessSystemPrompt, launchReady: session?.state === "connected" && aiEnabled && business.killSwitch === false && hasBusinessSystemPrompt && (customerAutoReplyEnabled || groupAutoReplyEnabled) };
   },
 });
 
@@ -78,7 +80,7 @@ export const messages = query({
   args: { businessId: v.id("businesses"), customerId: v.id("customers") },
   returns: v.array(v.object({ messageId: v.id("interactions"), role: v.union(v.literal("customer"), v.literal("owner"), v.literal("system")), text: v.string(), timestamp: v.number(), manualReview: v.boolean(), type: v.string(), transcript: v.union(v.string(), v.null()), transcriptionState: v.union(v.literal("pending"), v.literal("completed"), v.literal("failed"), v.null()), imageAnalysisState: v.union(v.literal("pending"), v.literal("completed"), v.literal("failed"), v.null()), assistantGenerated: v.boolean(), replyFeedback: v.union(v.literal("correct"), v.literal("wrong"), v.literal("unsupported"), v.null()) })),
   handler: async (ctx, args) => {
-    await requireBusiness(ctx, args.businessId);
+    const business = await requireBusiness(ctx, args.businessId);
     const customer = await ctx.db.get(args.customerId);
     if (!customer || customer.businessId !== args.businessId || customer.deletedAt !== undefined) throw new ConvexError({ code: "NOT_FOUND" });
     const alias = !customer.isGroup ? await ctx.db.query("contactAliases").withIndex("by_business_jid", (builder) => builder.eq("businessId", args.businessId).eq("jid", customer.phone)).unique() : null;
@@ -94,7 +96,8 @@ export const messages = query({
     const messages = batches.flat().filter((message) => message.businessId === args.businessId).sort((a, b) => b.timestamp - a.timestamp).slice(0, 100);
     return await Promise.all(messages.map(async (message) => {
       const feedback = message.assistantDispatchId ? await ctx.db.query("assistantReplyFeedback").withIndex("by_interaction", (builder) => builder.eq("interactionId", message._id)).unique() : null;
-      return { messageId: message._id, role: message.role, text: message.content, timestamp: message.timestamp, manualReview: message.manualReviewRequired ?? false, type: message.messageType ?? "unsupported", transcript: message.transcript ?? null, transcriptionState: message.transcriptionState ?? null, imageAnalysisState: message.imageAnalysisState ?? null, assistantGenerated: message.assistantDispatchId !== undefined, replyFeedback: feedback?.rating ?? null };
+      const canStillProcess = canProcessInboxMessage(business, message);
+      return { messageId: message._id, role: message.role, text: message.content, timestamp: message.timestamp, manualReview: message.manualReviewRequired ?? false, type: message.messageType ?? "unsupported", transcript: message.transcript ?? null, transcriptionState: message.transcriptionState === "pending" && !canStillProcess ? null : message.transcriptionState ?? null, imageAnalysisState: message.imageAnalysisState === "pending" && !canStillProcess ? null : message.imageAnalysisState ?? null, assistantGenerated: message.assistantDispatchId !== undefined, replyFeedback: feedback?.rating ?? null };
     }));
   },
 });
@@ -173,8 +176,14 @@ export const sessionByBusiness = internalQuery({
 });
 
 export const sessionByProvider = internalQuery({
-  args: { providerInstanceId: v.string() }, returns: v.union(v.null(), sessionDocument),
-  handler: async (ctx, args) => ctx.db.query("whatsappSessions").withIndex("by_provider", (builder) => builder.eq("providerInstanceId", args.providerInstanceId)).unique(),
+  args: { providerInstanceId: v.string(), receivedAt: v.number() },
+  returns: v.union(v.null(), v.object({ session: sessionDocument, aiProcessingEpoch: v.union(v.number(), v.null()) })),
+  handler: async (ctx, args) => {
+    const session = await ctx.db.query("whatsappSessions").withIndex("by_provider", (builder) => builder.eq("providerInstanceId", args.providerInstanceId)).unique();
+    if (!session) return null;
+    const business = await ctx.db.get(session.businessId);
+    return { session, aiProcessingEpoch: activeMessageAiEpoch(business, args.receivedAt) };
+  },
 });
 
 export const prepareSession = internalMutation({

@@ -1,9 +1,10 @@
 import { ConvexError, v } from "convex/values";
 import { internalMutation, mutation, query } from "./_generated/server";
 import { requireBusiness, requireIdentity } from "./lib/authorization";
-import { CLASSIFIER_VERSION, evaluateClassifier, type LabeledExample, type MessageClass } from "./lib/classifier";
+import { classificationMetrics, type MessageClass } from "./lib/classifier";
 import type { Id } from "./_generated/dataModel";
 import { createForMissedOpportunity } from "./followUps";
+import { canProcessInboxMessage } from "./lib/inboxAi";
 
 const messageClass = v.union(v.literal("buying_signal"), v.literal("inquiry"), v.literal("payment_related"), v.literal("casual_noise"), v.literal("manual_review"));
 const messageLanguage = v.union(v.literal("english"), v.literal("pidgin"), v.literal("mixed"), v.literal("other"));
@@ -20,6 +21,10 @@ export const promoteOpportunity = internalMutation({
     const conversation = await ctx.db.get(opportunity.conversationId);
     const interaction = await ctx.db.get(opportunity.interactionId);
     const customer = await ctx.db.get(opportunity.customerId);
+    if (interaction && !canProcessInboxMessage(await ctx.db.get(opportunity.businessId), interaction)) {
+      await ctx.db.patch(opportunity._id, { state: "cancelled" });
+      return null;
+    }
     // Missing, expired, deleted, or cross-linked evidence is closed rather than
     // reported. The report never reconstructs content from denormalized fields.
     if (!conversation || !interaction || !customer || customer.deletedAt !== undefined || conversation.businessId !== opportunity.businessId || interaction.businessId !== opportunity.businessId || interaction.role !== "customer" || interaction.timestamp !== opportunity.triggerAt || (conversation.lastOwnerAt ?? 0) >= opportunity.triggerAt) {
@@ -105,13 +110,6 @@ export const evaluation = query({
   handler: async (ctx, args) => {
     await requireBusiness(ctx, args.businessId);
     const labels = await ctx.db.query("messageLabels").withIndex("by_business_time", (builder) => builder.eq("businessId", args.businessId)).order("desc").take(500);
-    const examples: LabeledExample[] = [];
-    for (const label of labels) {
-      const interaction = await ctx.db.get(label.interactionId);
-      if (!interaction || interaction.businessId !== args.businessId || interaction.role !== "customer") continue;
-      examples.push({ text: interaction.content, label: label.label as MessageClass, mediaType: interaction.messageType ?? "unsupported", manualReview: interaction.manualReviewRequired ?? false });
-    }
-    const result = evaluateClassifier(examples);
-    return { version: CLASSIFIER_VERSION, samples: result.samples, truePositive: result.truePositive, falsePositive: result.falsePositive, falseNegative: result.falseNegative, precision: result.precision, recall: result.recall, f1: result.f1, accuracy: result.accuracy };
+    return classificationMetrics(labels.flatMap((label) => label.predictedLabel ? [{ label: label.label, prediction: label.predictedLabel }] : []));
   },
 });

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api, internal } from "../convex/_generated/api";
 import { assistantReplyDelayMs } from "../convex/lib/launch";
 import { normalizeAssistantReply } from "../convex/lib/assistantStyle";
-import { createHarness, tenant } from "./harness";
+import { aiTenant, createHarness, tenant } from "./harness";
 
 const directPrompt = "You represent Launch Safety, a Nigerian retail business. Answer only with verified facts from this system prompt, never invent prices, stock, delivery dates, policies, discounts, or payment details, ask one short clarifying question when information is missing, and escalate complaints, refunds, and uncertain requests to the owner using concise friendly WhatsApp language.";
 
@@ -33,6 +33,7 @@ async function inboundInteraction(
       content: options.content ?? "Is this available?",
       timestamp: now,
       receivedAt: now,
+      aiProcessingEpoch: (await ctx.db.get(source.businessId))?.aiProcessingEpoch,
       messageType: "text",
       manualReviewRequired: false,
       isGroup: options.isGroup ?? false,
@@ -66,7 +67,7 @@ describe("Launch 1 assistant authorization", () => {
 
   it("uses the customer's speech pattern and stores a dash-free reply", async () => {
     const harness = createHarness();
-    const source = await tenant(harness, "speech-pattern");
+    const source = await aiTenant(harness, "speech-pattern");
     await source.owner.mutation(api.businessProfile.save, {
       businessId: source.businessId,
       systemPrompt: directPrompt,
@@ -100,7 +101,7 @@ describe("Launch 1 assistant authorization", () => {
 
   it("keeps the business response pattern above customer style matching", async () => {
     const harness = createHarness();
-    const source = await tenant(harness, "business-style-priority");
+    const source = await aiTenant(harness, "business-style-priority");
     const formalPrompt = "You represent Business Style Priority, a Nigerian professional-services business. Always reply in formal English, address the customer politely, use complete sentences, and never use slang or Pidgin. Answer only with verified business facts, never invent prices, availability, timing, payment details, or policies, and ask one concise clarifying question when required information is missing.";
     await source.owner.mutation(api.businessProfile.save, {
       businessId: source.businessId,
@@ -235,7 +236,7 @@ describe("Launch 1 assistant authorization", () => {
 
   it("does not reserve a reply without a prompt or the matching consent scope", async () => {
     const harness = createHarness();
-    const source = await tenant(harness, "reservation-gates");
+    const source = await aiTenant(harness, "reservation-gates");
     const interactionId = await inboundInteraction(harness, source);
     expect(await harness.mutation(internal.assistantReply.reserve, { interactionId, content: "Available." })).toBeNull();
 
@@ -251,7 +252,7 @@ describe("Launch 1 assistant authorization", () => {
 
   it("requires an enabled group and honors mention-only before reserving", async () => {
     const harness = createHarness();
-    const source = await tenant(harness, "group-reservation-gates");
+    const source = await aiTenant(harness, "group-reservation-gates");
     await source.owner.mutation(api.businessProfile.save, {
       businessId: source.businessId,
       systemPrompt: directPrompt,
@@ -274,7 +275,7 @@ describe("Launch 1 assistant authorization", () => {
 
   it("enforces each simple group governance mode before AI generation", async () => {
     const harness = createHarness();
-    const source = await tenant(harness, "group-governance");
+    const source = await aiTenant(harness, "group-governance");
     const groupJid = "120000000088@g.us";
     await source.owner.mutation(api.businessProfile.save, { businessId: source.businessId, systemPrompt: directPrompt, customerAutoReplyEnabled: false, groupAutoReplyEnabled: true });
     await harness.mutation(internal.groups.upsertFromProvider, { businessId: source.businessId, groups: [{ jid: groupJid, name: "Governed group", memberCount: 25, role: "admin" }] });
@@ -301,7 +302,7 @@ describe("Launch 1 assistant authorization", () => {
 
   it("creates at most one dispatch for a duplicate interaction", async () => {
     const harness = createHarness();
-    const source = await tenant(harness, "dispatch-deduplication");
+    const source = await aiTenant(harness, "dispatch-deduplication");
     await source.owner.mutation(api.businessProfile.save, {
       businessId: source.businessId,
       systemPrompt: directPrompt,
@@ -318,7 +319,7 @@ describe("Launch 1 assistant authorization", () => {
 
   it("cancels a reserved reply when consent is revoked before submission", async () => {
     const harness = createHarness();
-    const source = await tenant(harness, "consent-revocation");
+    const source = await aiTenant(harness, "consent-revocation");
     await source.owner.mutation(api.businessProfile.save, {
       businessId: source.businessId,
       systemPrompt: directPrompt,
@@ -341,7 +342,7 @@ describe("Launch 1 assistant authorization", () => {
 
   it("marks an ambiguous provider outcome unknown and never retries it", async () => {
     const harness = createHarness();
-    const source = await tenant(harness, "ambiguous-provider");
+    const source = await aiTenant(harness, "ambiguous-provider");
     await source.owner.mutation(api.businessProfile.save, {
       businessId: source.businessId,
       systemPrompt: directPrompt,

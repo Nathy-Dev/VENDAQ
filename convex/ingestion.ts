@@ -9,9 +9,10 @@ import { createStalledInquiryTask } from "./sellerActions";
 import { BUSINESS_SYSTEM_PROMPT_MIN_LENGTH, STATUS_TO_CASH_ENABLED } from "./lib/launch";
 import { recordBusinessActivity, recordConnectionTransition, recordResponseTime } from "./productAnalytics";
 import { COMMUNICATION_POLICY_VERSION, isMarketingOptInKeyword, isOptOutKeyword } from "./lib/compliance";
+import { activeMessageAiEpoch, canProcessInboxMessage } from "./lib/inboxAi";
 
 export const enqueue = internalMutation({
-  args: { sessionId: v.id("whatsappSessions"), generation: v.number(), tokenHash: v.string(), eventKey: v.string(), correlationId: v.string(), payload: normalizedEvent, quarantineCode: v.optional(v.string()) },
+  args: { sessionId: v.id("whatsappSessions"), generation: v.number(), tokenHash: v.string(), eventKey: v.string(), correlationId: v.string(), payload: normalizedEvent, receivedAt: v.optional(v.number()), observedAiEpoch: v.optional(v.union(v.number(), v.null())), quarantineCode: v.optional(v.string()) },
   returns: v.object({ eventId: v.id("inboundEvents"), duplicate: v.boolean(), correlationId: v.string() }),
   handler: async (ctx, args) => {
     const session = await ctx.db.get(args.sessionId);
@@ -57,8 +58,11 @@ export const enqueue = internalMutation({
     const identityKey = args.payload.kind === "message" || args.payload.kind === "receipt" ? args.payload.identityKey : undefined;
     const suppression = identityKey ? await ctx.db.query("privacySuppressions").withIndex("by_business_identity", (builder) => builder.eq("businessId", session.businessId).eq("identityKey", identityKey)).unique() : null;
     // Never persist a new content copy after this contact requested deletion.
-    const payload = suppression ? { kind: "ignored" as const, reason: "CONTACT_DELETED" } : args.payload;
-    const eventId = await ctx.db.insert("inboundEvents", { businessId: session.businessId, sessionId: session._id, generation: session.generation, eventKey, correlationId: args.correlationId, payload, ...(identityKey ? { identityKey } : {}), state: "pending", attempts: 0, receivedAt: now, dueAt: now, expiresAt: now + foundationPolicy().eventRetentionDays * 86400000 });
+    const payload = suppression ? { kind: "ignored" as const, reason: "CONTACT_DELETED" } : { ...args.payload };
+    const eligibleEpoch = payload.kind === "message" && args.receivedAt !== undefined ? activeMessageAiEpoch(business, Math.min(payload.eventAt, args.receivedAt)) : null;
+    const aiProcessingEpoch = args.observedAiEpoch === eligibleEpoch ? eligibleEpoch : null;
+    if (payload.kind === "message" && aiProcessingEpoch === null) delete payload.mediaPayload;
+    const eventId = await ctx.db.insert("inboundEvents", { businessId: session.businessId, sessionId: session._id, generation: session.generation, eventKey, correlationId: args.correlationId, payload, ...(identityKey ? { identityKey } : {}), state: "pending", attempts: 0, receivedAt: args.receivedAt ?? now, aiProcessingEpoch, dueAt: now, expiresAt: now + foundationPolicy().eventRetentionDays * 86400000 });
     if (args.quarantineCode) {
       // A permanent contract mismatch is visible but stores no raw personal data.
       await ctx.db.patch(eventId, { state: "dead_letter", payload: undefined, errorCode: args.quarantineCode });
@@ -169,44 +173,34 @@ export const applyEvent = internalMutation({
         await ctx.db.patch(conversation._id, { revision: conversation.revision + 1, lastEventAt: Math.max(conversation.lastEventAt, payload.eventAt), messageCount: conversation.messageCount + 1, ...(payload.fromMe ? { lastOwnerAt } : { lastInboundAt: Math.max(conversation.lastInboundAt ?? 0, payload.eventAt) }) });
         // Predictions are immutable evidence on customer messages. Owner messages
         // are response evidence only and never enter classifier evaluation.
-        const classification = payload.fromMe ? null : keywordClassifier.classify({ text: payload.text, mediaType: payload.mediaType, manualReview: payload.manualReview });
+        const messageAiAllowed = canProcessInboxMessage(business, { timestamp: payload.eventAt, aiProcessingEpoch: event.aiProcessingEpoch });
+        const classification = payload.fromMe || !messageAiAllowed ? null : keywordClassifier.classify({ text: payload.text, mediaType: payload.mediaType, manualReview: payload.manualReview });
         if (classification) {
           const currentStage = (customer.funnelStage ?? "viewer") as JourneyStage;
           const nextStage = journeyAfterInbound(currentStage, classification.label);
           if (nextStage !== currentStage) await ctx.db.patch(customer._id, { funnelStage: nextStage });
         }
         const expiresAt = payload.eventAt + (business.messageRetentionDays ?? foundationPolicy().messageRetentionDays) * 86400000;
-        const interactionId = await ctx.db.insert("interactions", { businessId: business._id, customerId: customer._id, conversationId: conversation._id, sessionId: session._id, role: payload.fromMe ? "owner" : "customer", content: payload.text, timestamp: payload.eventAt, receivedAt: event.receivedAt, providerEventKey: messageKey, whatsappMessageId: payload.messageId, ...(payload.mediaType !== "unsupported" ? { messageType: payload.mediaType } : {}), manualReviewRequired: payload.manualReview, isGroup: payload.isGroup, wasMentioned: payload.mentioned, ...(payload.participantJid ? { participantJid: payload.participantJid } : {}), ...(payload.participantName ? { participantName: payload.participantName } : {}), ...(classification ? { classifierLabel: classification.label, classifierVersion: classification.version, classifierConfidence: classification.confidence, classifierRuleIds: classification.ruleIds, classifiedAt: Date.now() } : {}), expiresAt });
+        const interactionId = await ctx.db.insert("interactions", { businessId: business._id, customerId: customer._id, conversationId: conversation._id, sessionId: session._id, role: payload.fromMe ? "owner" : "customer", content: payload.text, timestamp: payload.eventAt, receivedAt: event.receivedAt, aiProcessingEpoch: messageAiAllowed ? event.aiProcessingEpoch : null, providerEventKey: messageKey, whatsappMessageId: payload.messageId, ...(payload.mediaType !== "unsupported" ? { messageType: payload.mediaType } : {}), manualReviewRequired: payload.manualReview, isGroup: payload.isGroup, wasMentioned: payload.mentioned, ...(payload.participantJid ? { participantJid: payload.participantJid } : {}), ...(payload.participantName ? { participantName: payload.participantName } : {}), ...(classification ? { classifierLabel: classification.label, classifierVersion: classification.version, classifierConfidence: classification.confidence, classifierRuleIds: classification.ruleIds, classifiedAt: Date.now() } : {}), expiresAt });
         await recordBusinessActivity(ctx, business._id, payload.eventAt);
         if (payload.fromMe) await recordResponseTime(ctx, { businessId: business._id, conversationId: conversation._id, responseInteractionId: interactionId, responseAt: payload.eventAt, source: "owner" });
         if (payload.isGroup) await ctx.scheduler.runAfter(0, internal.groups.upsertDiscovered, { businessId: business._id, groupJid: payload.chat, ...(payload.name ? { groupName: payload.name } : {}) });
-        if (!payload.fromMe && payload.mediaType === "audio" && payload.mediaPayload) {
-          await ctx.scheduler.runAfter(0, internal.transcription.transcribe, { interactionId, mediaPayload: payload.mediaPayload, ...(payload.mediaMimeType ? { mediaMimeType: payload.mediaMimeType } : {}) });
-        }
-        if (!payload.fromMe && payload.mediaType === "image" && payload.mediaPayload) {
-          let imageAnalysisAuthorized = !payload.isGroup;
-          if (payload.isGroup) {
-            const group = await ctx.db.query("managedGroups").withIndex("by_business_group", (builder) => builder.eq("businessId", business._id).eq("groupJid", payload.chat)).unique();
-            imageAnalysisAuthorized = (business.groupAutoReplyEnabled ?? false) && !!group?.isEnabled && (!(group.mentionOnly ?? true) || payload.mentioned);
+        if (messageAiAllowed) {
+          const group = payload.isGroup && !payload.fromMe ? await ctx.db.query("managedGroups").withIndex("by_business_group", (builder) => builder.eq("businessId", business._id).eq("groupJid", payload.chat)).unique() : null;
+          const groupAuthorized = business.groupAutoReplyEnabled === true && !!group?.isEnabled && (!(group.mentionOnly ?? true) || payload.mentioned);
+          if (!payload.fromMe && (!payload.isGroup || groupAuthorized) && payload.mediaPayload) {
+            const mediaArgs = { interactionId, mediaPayload: payload.mediaPayload, ...(payload.mediaMimeType ? { mediaMimeType: payload.mediaMimeType } : {}) };
+            if (payload.mediaType === "audio") await ctx.scheduler.runAfter(0, internal.transcription.transcribe, mediaArgs);
+            if (payload.mediaType === "image") await ctx.scheduler.runAfter(0, internal.imageAnalysis.analyze, mediaArgs);
           }
-          if (imageAnalysisAuthorized) await ctx.scheduler.runAfter(0, internal.imageAnalysis.analyze, { interactionId, mediaPayload: payload.mediaPayload, ...(payload.mediaMimeType ? { mediaMimeType: payload.mediaMimeType } : {}) });
-        }
-        if (!payload.fromMe && !payload.manualReview && payload.mediaType === "text" && payload.text.trim()) {
-          await ctx.scheduler.runAfter(0, internal.communityEngine.captureFromInteraction, { interactionId });
-        }
-        if (!payload.isGroup && !payload.manualReview && payload.mediaType === "text" && payload.text.trim()) {
-          await ctx.scheduler.runAfter(0, internal.commerceIntelligence.captureFromInteraction, { interactionId });
-        }
-        if (!payload.isGroup && payload.fromMe && payload.mediaType === "text" && payload.text.trim()) {
-          await ctx.scheduler.runAfter(0, internal.commerceIntelligence.captureFromInteraction, { interactionId });
-        }
-        if (!payload.fromMe && !payload.manualReview && payload.mediaType === "text" && payload.text.trim() && !isOptOutKeyword(payload.text) && !(business.killSwitch ?? true) && (business.businessSystemPrompt?.trim().length ?? 0) >= BUSINESS_SYSTEM_PROMPT_MIN_LENGTH) {
-          let assistantAuthorized = business.customerAutoReplyEnabled ?? false;
-          if (payload.isGroup) {
-            const group = await ctx.db.query("managedGroups").withIndex("by_business_group", (builder) => builder.eq("businessId", business._id).eq("groupJid", payload.chat)).unique();
-            assistantAuthorized = (business.groupAutoReplyEnabled ?? false) && !!group?.isEnabled && (!(group.mentionOnly ?? true) || payload.mentioned);
+          if (!payload.manualReview && payload.mediaType === "text" && payload.text.trim()) {
+            if (!payload.fromMe) await ctx.scheduler.runAfter(0, internal.communityEngine.captureFromInteraction, { interactionId });
+            if (!payload.isGroup) await ctx.scheduler.runAfter(0, internal.commerceIntelligence.captureFromInteraction, { interactionId });
+            const replyAuthorized = payload.isGroup ? groupAuthorized : business.customerAutoReplyEnabled === true;
+            if (!payload.fromMe && replyAuthorized && !isOptOutKeyword(payload.text) && !(business.killSwitch ?? true) && (business.businessSystemPrompt?.trim().length ?? 0) >= BUSINESS_SYSTEM_PROMPT_MIN_LENGTH) {
+              await ctx.scheduler.runAfter(0, internal.assistantReply.prepareForInteraction, { interactionId });
+            }
           }
-          if (assistantAuthorized) await ctx.scheduler.runAfter(0, internal.assistantReply.prepareForInteraction, { interactionId });
         }
         if (payload.fromMe) {
           // A seller reply closes both pending and already-missed evidence. Query

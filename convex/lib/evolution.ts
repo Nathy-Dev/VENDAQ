@@ -90,6 +90,7 @@ export async function downloadAuthorizedInboundAudio(options: {
   token: string;
   instanceId: string;
   message: Record<string, unknown>;
+  canProcess: () => Promise<boolean>;
 }): Promise<{ bytes: Uint8Array; mimetype: string }> {
   if (!options.instanceId || Object.keys(options.message).length === 0) throw new Error("INVALID_AUDIO_DOWNLOAD");
   if (process.env.FOUNDATION_PROVIDER_ENABLED !== "true") throw new Error("PROVIDER_DISABLED");
@@ -102,6 +103,7 @@ export async function downloadAuthorizedInboundAudio(options: {
   const mode = process.env.EVOLUTION_GO_AUTH_MODE ?? "instance-token";
   let lastError = "PROVIDER_AUDIO_DOWNLOAD_FAILED";
   for (const path of ["/message/downloadmedia", "/message/download", "/message/downloadimage"]) {
+    if (!(await options.canProcess())) throw new Error("AI_ASSISTANT_PAUSED");
     const response = await fetch(`${url.toString().replace(/\/$/, "")}${path}`, {
       method: "POST",
       headers: { Accept: "application/json, audio/*, application/octet-stream", "Content-Type": "application/json", apikey: mode === "instance-token" ? options.token : apiKey, instanceId: options.instanceId },
@@ -143,6 +145,7 @@ export async function downloadAuthorizedInboundImage(options: {
   token: string;
   instanceId: string;
   message: Record<string, unknown>;
+  canProcess: () => Promise<boolean>;
 }): Promise<{ bytes: Uint8Array; mimetype: string }> {
   if (!options.instanceId || Object.keys(options.message).length === 0) throw new Error("INVALID_IMAGE_DOWNLOAD");
   if (process.env.FOUNDATION_PROVIDER_ENABLED !== "true") throw new Error("PROVIDER_DISABLED");
@@ -157,6 +160,7 @@ export async function downloadAuthorizedInboundImage(options: {
   if (!["global-instance", "instance-token"].includes(mode)) throw new Error("INVALID_PROVIDER_AUTH_MODE");
   let lastError = "PROVIDER_IMAGE_DOWNLOAD_FAILED";
   for (const path of ["/message/downloadmedia", "/message/download", "/message/downloadimage"]) {
+    if (!(await options.canProcess())) throw new Error("AI_ASSISTANT_PAUSED");
     const response = await fetch(`${url.toString().replace(/\/$/, "")}${path}`, {
       method: "POST",
       headers: { Accept: "application/json, image/jpeg, image/png, image/webp, image/gif, application/octet-stream", "Content-Type": "application/json", apikey: mode === "instance-token" ? options.token : apiKey, instanceId: options.instanceId },

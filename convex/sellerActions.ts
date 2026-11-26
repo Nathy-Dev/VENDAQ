@@ -10,6 +10,7 @@ import { foundationPolicy } from "./lib/policy";
 import { renderSafeSuggestion, SUGGESTION_VERSION } from "./lib/suggestions";
 import { cappedAvailableAt, policyForBusiness } from "./followUps";
 import { recordBusinessActivity, recordMilestone } from "./productAnalytics";
+import { canProcessInboxMessage } from "./lib/inboxAi";
 
 const orderStatus = v.union(v.literal("pending"), v.literal("awaiting_payment"), v.literal("paid"), v.literal("payment_failed"), v.literal("expired"), v.literal("processing"), v.literal("shipped"), v.literal("delivered"), v.literal("cancelled"));
 const taskReason = v.union(v.literal("buying_signal"), v.literal("asked_no_order"), v.literal("awaiting_payment"));
@@ -76,8 +77,8 @@ async function createTask(ctx: MutationCtx, args: {
 
 export async function createStalledInquiryTask(ctx: MutationCtx, args: { businessId: Id<"businesses">; customerId: Id<"customers">; conversationId: Id<"conversations">; interactionId: Id<"interactions"> }) {
   const [business, customer, conversation, interaction] = await Promise.all([ctx.db.get(args.businessId), ctx.db.get(args.customerId), ctx.db.get(args.conversationId), ctx.db.get(args.interactionId)]);
-  if (!business || !customer || !conversation || !interaction || customer.deletedAt !== undefined) return null;
-  if (customer.businessId !== business._id || conversation.businessId !== business._id || interaction.businessId !== business._id || interaction.role !== "customer") return null;
+  if (!customer || !conversation || !interaction || customer.deletedAt !== undefined || !canProcessInboxMessage(business, interaction)) return null;
+  if (customer.businessId !== business._id || conversation.businessId !== business._id || conversation.customerId !== customer._id || interaction.businessId !== business._id || interaction.customerId !== customer._id || interaction.conversationId !== conversation._id || interaction.role !== "customer") return null;
   const delay = (business.stalledOpportunityMinutes ?? foundationPolicy().stalledOpportunityMinutes) * 60000;
   return createTask(ctx, { business, customer, conversation, reason: "asked_no_order", actionKey: `stalled:${interaction._id}`, triggerInteractionId: interaction._id, triggerAt: interaction.timestamp, requestedAt: interaction.timestamp + delay, template: "Hi {name}, thanks for your question. Do you still need help deciding?", reasonSnapshot: "Customer asked a question and the conversation later went quiet.", expiresAt: interaction.expiresAt });
 }

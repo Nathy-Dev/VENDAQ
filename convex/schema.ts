@@ -67,7 +67,9 @@ export default defineSchema({
     // Supports the placeholder [Customer Name].
     viewedNoDmTemplate: v.optional(v.string()),
     // AI configuration
-    aiEnabled: v.optional(v.boolean()), // Default true - toggle AI processing
+    aiEnabled: v.optional(v.boolean()),
+    aiProcessingEpoch: v.optional(v.number()),
+    aiProcessingEnabledAt: v.optional(v.number()),
     // Deprecated: model selection is now deployment-level via Convex env vars.
     aiLlmModel: v.optional(v.string()),
     aiVisionModel: v.optional(v.string()),
@@ -212,6 +214,7 @@ export default defineSchema({
     sessionId: v.optional(v.id("whatsappSessions")),
     providerEventKey: v.optional(v.string()),
     receivedAt: v.optional(v.number()),
+    aiProcessingEpoch: v.optional(v.union(v.number(), v.null())),
     expiresAt: v.optional(v.number()),
     manualReviewRequired: v.optional(v.boolean()),
     isGroup: v.optional(v.boolean()),
@@ -891,7 +894,7 @@ export default defineSchema({
     businessId: v.id("businesses"), customerId: v.id("customers"), conversationId: v.id("conversations"), interactionId: v.id("interactions"),
     classifierVersion: v.string(), classifierConfidence: v.number(), ruleIds: v.array(v.string()),
     triggerAt: v.number(), responseWindowMinutes: v.number(), dueAt: v.number(), conversationRevision: v.optional(v.number()),
-    state: v.union(v.literal("pending"), v.literal("missed"), v.literal("answered")),
+    state: v.union(v.literal("pending"), v.literal("missed"), v.literal("answered"), v.literal("cancelled")),
     answeredAt: v.optional(v.number()), scheduledId: v.optional(v.id("_scheduled_functions")), expiresAt: v.number(),
   }).index("by_interaction", ["interactionId"])
     .index("by_business", ["businessId"])

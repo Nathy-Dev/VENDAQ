@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { api, internal } from "../convex/_generated/api";
-import type { Id } from "../convex/_generated/dataModel";
-import { createHarness, message, tenant, webhook, type Harness } from "./harness";
+import { aiTenant, createHarness, message, tenant, webhook, type Harness } from "./harness";
 
 async function processLatestEvent(harness: Harness) {
   const events = await harness.run((ctx) => ctx.db.query("inboundEvents").collect());
@@ -28,7 +27,7 @@ async function createMissedTask(harness: Harness, source: Awaited<ReturnType<typ
 describe("Phase 3 suggest-first follow-ups", () => {
   it("creates exactly one guarded task for a missed buying signal without network calls", async () => {
     const harness = createHarness();
-    const source = await tenant(harness);
+    const source = await aiTenant(harness);
     const opportunity = await createMissedTask(harness, source);
     await harness.mutation(internal.readOnly.promoteOpportunity, { opportunityId: opportunity._id });
     await harness.mutation(internal.followUps.createTask, { opportunityId: opportunity._id });
@@ -41,7 +40,7 @@ describe("Phase 3 suggest-first follow-ups", () => {
 
   it("does not create a task when either party has already replied and cancels a created task on reply", async () => {
     const harness = createHarness();
-    const source = await tenant(harness);
+    const source = await aiTenant(harness);
     const base = Date.now();
     await webhook(harness, message(source, { id: "owner-newer", fromMe: true, at: base + 1000, content: { conversation: "Yes, I can help" } }));
     await processLatestEvent(harness);
@@ -64,7 +63,7 @@ describe("Phase 3 suggest-first follow-ups", () => {
   it("enforces customer cooldowns, daily caps, and configured work hours", async () => {
     vi.setSystemTime(Date.parse("2026-10-27T05:59:00.000Z"));
     const harness = createHarness();
-    const source = await tenant(harness);
+    const source = await aiTenant(harness);
     await harness.run((ctx) => ctx.db.patch(source.businessId, { responseWindowMinutes: 15, followUpCooldownMinutes: 1440, dailySuggestionCap: 1, followUpWorkHoursEnabled: true, followUpWorkHoursStart: 9 * 60, followUpWorkHoursEnd: 10 * 60, followUpQuietHoursEnabled: false }));
     const first = await createMissedTask(harness, source, { id: "first", at: Date.parse("2026-10-27T06:00:00.000Z") });
     const [firstTask] = await harness.run((ctx) => ctx.db.query("followUpTasks").collect());
@@ -87,7 +86,7 @@ describe("Phase 3 suggest-first follow-ups", () => {
   it("uses a safe template fallback and keeps AI failure or unsafe output fail-closed", async () => {
     vi.stubEnv("PHASE3_AI_SUGGESTIONS_ENABLED", "true");
     const harness = createHarness();
-    const source = await tenant(harness);
+    const source = await aiTenant(harness);
     await harness.run((ctx) => ctx.db.patch(source.businessId, { followUpTemplate: "Hi {name}, available for ₦5,000", followUpAiEnabled: true, responseWindowMinutes: 15 }));
     const opportunity = await createMissedTask(harness, source);
     let [task] = await harness.run((ctx) => ctx.db.query("followUpTasks").collect());
@@ -105,7 +104,7 @@ describe("Phase 3 suggest-first follow-ups", () => {
   it("meters an AI follow-up draft once per customer chat", async () => {
     vi.stubEnv("PHASE3_AI_SUGGESTIONS_ENABLED", "true");
     const harness = createHarness();
-    const source = await tenant(harness, "metered-drafts");
+    const source = await aiTenant(harness, "metered-drafts");
     await harness.run((ctx) => ctx.db.patch(source.businessId, { followUpAiEnabled: true, responseWindowMinutes: 15 }));
     await createMissedTask(harness, source, { id: "metered-draft" });
     const [task] = await harness.run((ctx) => ctx.db.query("followUpTasks").collect());
@@ -118,7 +117,7 @@ describe("Phase 3 suggest-first follow-ups", () => {
 
   it("isolates queue mutations by tenant and purges drafts during customer deletion", async () => {
     const harness = createHarness();
-    const source = await tenant(harness);
+    const source = await aiTenant(harness);
     const other = await tenant(harness, "other-seller");
     await createMissedTask(harness, source);
     const [task] = await harness.run((ctx) => ctx.db.query("followUpTasks").collect());

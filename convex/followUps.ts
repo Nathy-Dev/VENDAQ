@@ -10,6 +10,7 @@ import { DEFAULT_FOLLOW_UP_TEMPLATE, SUGGESTION_VERSION, localDayBounds, nextAll
 import { reserveAssistedConversation } from "./lib/billingAccess";
 import { recordMilestone } from "./productAnalytics";
 import { recordBusinessActivity } from "./productAnalytics";
+import { canProcessInboxMessage, isAiAssistantEnabled } from "./lib/inboxAi";
 
 const journeyStage = v.union(v.literal("viewer"), v.literal("engaged"), v.literal("intent"), v.literal("order_created"), v.literal("awaiting_payment"), v.literal("paid"), v.literal("lost"));
 type QueueRow = {
@@ -77,7 +78,7 @@ export async function createForMissedOpportunity(ctx: MutationCtx, opportunityId
     ctx.db.get(opportunity.conversationId),
     ctx.db.get(opportunity.interactionId),
   ]);
-  if (!business || business.foundationVersion !== 1 || !customer || customer.deletedAt !== undefined || !conversation || !interaction) return null;
+  if (!interaction || !canProcessInboxMessage(business, interaction) || !customer || customer.deletedAt !== undefined || !conversation) return null;
   if (customer.businessId !== business._id || conversation.businessId !== business._id || interaction.businessId !== business._id || interaction.role !== "customer") return null;
   // Any later customer or seller message makes this exact suggestion stale. The
   // newer message may create its own independently evidenced opportunity.
@@ -148,7 +149,7 @@ export const settings = query({
   handler: async (ctx, args) => {
     const business = await requireBusiness(ctx, args.businessId);
     const policy = policyForBusiness(business);
-    return { template: business.followUpTemplate ?? DEFAULT_FOLLOW_UP_TEMPLATE, cooldownMinutes: policy.cooldownMinutes, dailyCap: policy.dailyCap, workHoursEnabled: policy.workHoursEnabled, workHoursStart: policy.workHoursStart, workHoursEnd: policy.workHoursEnd, quietHoursEnabled: policy.quietHoursEnabled, quietHoursStart: policy.quietHoursStart, quietHoursEnd: policy.quietHoursEnd, aiEnabled: business.followUpAiEnabled ?? false, aiAvailable: process.env.PHASE3_AI_SUGGESTIONS_ENABLED === "true" };
+    return { template: business.followUpTemplate ?? DEFAULT_FOLLOW_UP_TEMPLATE, cooldownMinutes: policy.cooldownMinutes, dailyCap: policy.dailyCap, workHoursEnabled: policy.workHoursEnabled, workHoursStart: policy.workHoursStart, workHoursEnd: policy.workHoursEnd, quietHoursEnabled: policy.quietHoursEnabled, quietHoursStart: policy.quietHoursStart, quietHoursEnd: policy.quietHoursEnd, aiEnabled: business.followUpAiEnabled ?? false, aiAvailable: isAiAssistantEnabled(business) && process.env.PHASE3_AI_SUGGESTIONS_ENABLED === "true" };
   },
 });
 
@@ -186,17 +187,21 @@ export const skip = mutation({ args: { businessId: v.id("businesses"), taskId: v
 
 export const reserveAiContext = internalMutation({
   args: { taskId: v.id("followUpTasks") },
-  returns: v.union(v.null(), v.object({ taskId: v.id("followUpTasks"), businessContext: v.string(), tone: v.string(), language: v.string() })),
+  returns: v.union(v.null(), v.object({ interactionId: v.id("interactions"), businessContext: v.string(), tone: v.string(), language: v.string() })),
   handler: async (ctx, args) => {
     const task = await ctx.db.get(args.taskId);
     if (!task || task.status !== "pending" || task.aiState !== "pending" || !task.opportunityId || !task.conversationId) return null;
     const business = await ctx.db.get(task.businessId);
-    if (!business || business.followUpAiEnabled !== true || process.env.PHASE3_AI_SUGGESTIONS_ENABLED !== "true") return null;
+    const interaction = task.triggerInteractionId ? await ctx.db.get(task.triggerInteractionId) : null;
+    if (!interaction || interaction.businessId !== task.businessId || !canProcessInboxMessage(business, interaction) || business.followUpAiEnabled !== true || process.env.PHASE3_AI_SUGGESTIONS_ENABLED !== "true") {
+      await ctx.db.patch(task._id, { aiState: "fallback", guardrailCode: "AI_NOT_AUTHORIZED" });
+      return null;
+    }
     if (!(await reserveAssistedConversation(ctx, { business, conversationId: task.conversationId }))) {
       await ctx.db.patch(task._id, { aiState: "fallback", guardrailCode: "BILLING_LIMIT_REACHED" });
       return null;
     }
-    return { taskId: task._id, businessContext: business.aiBusinessContext?.slice(0, 300) ?? "small retail business", tone: business.aiTone ?? "friendly", language: business.aiLanguageStyle ?? "english" };
+    return { interactionId: interaction._id, businessContext: business.aiBusinessContext?.slice(0, 300) ?? "small retail business", tone: business.aiTone ?? "friendly", language: business.aiLanguageStyle ?? "english" };
   },
 });
 
@@ -206,6 +211,12 @@ export const applyAiSuggestion = internalMutation({
   handler: async (ctx, args) => {
     const task = await ctx.db.get(args.taskId);
     if (!task || task.status !== "pending" || task.aiState !== "pending") return null;
+    const business = await ctx.db.get(task.businessId);
+    const interaction = task.triggerInteractionId ? await ctx.db.get(task.triggerInteractionId) : null;
+    if (!interaction || interaction.businessId !== task.businessId || !canProcessInboxMessage(business, interaction) || business.followUpAiEnabled !== true) {
+      await ctx.db.patch(task._id, { aiState: "fallback", guardrailCode: "AI_NOT_AUTHORIZED" });
+      return null;
+    }
     const validation = args.text ? validateSuggestion(args.text) : { safe: false, code: args.failureCode ?? "AI_FAILED" };
     if (!args.text || !validation.safe) {
       await ctx.db.patch(task._id, { aiState: "fallback", guardrailCode: validation.code ?? args.failureCode ?? "AI_FAILED" });
@@ -232,6 +243,7 @@ export const generateAiSuggestion = internalAction({
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), foundationPolicy().aiSuggestionTimeoutMs);
     try {
+      if (!(await ctx.runQuery(internal.businessProfile.canProcessMessage, { interactionId: context.interactionId }))) throw new Error("AI_ASSISTANT_PAUSED");
       const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },

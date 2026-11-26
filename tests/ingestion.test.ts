@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { api, internal } from "../convex/_generated/api";
 import { identityDigest } from "../convex/lib/crypto";
-import { createHarness, drain, message, tenant, webhook } from "./harness";
+import { aiTenant, createHarness, drain, message, tenant, webhook } from "./harness";
 
 describe("authenticated WhatsApp ingestion", () => {
   it("commits before acknowledgement and collapses 100 duplicate deliveries", async () => {
@@ -96,7 +96,7 @@ describe("authenticated WhatsApp ingestion", () => {
 
   it("captures only bounded audio metadata needed for transcription and never stores a provider media URL", async () => {
     const harness = createHarness();
-    const source = await tenant(harness, "voice-note-metadata");
+    const source = await aiTenant(harness, "voice-note-metadata");
     await webhook(harness, message(source, { id: "voice-1", content: { audioMessage: { url: "https://private-media.test/audio", mimetype: "audio/ogg; codecs=opus", mediaKey: "synthetic-key" } } }));
     await drain(harness);
     const [interaction] = await harness.run((ctx) => ctx.db.query("interactions").collect());
@@ -107,7 +107,7 @@ describe("authenticated WhatsApp ingestion", () => {
 
   it("transcribes a one-to-one voice note and replies through the authorized assistant path", async () => {
     const harness = createHarness();
-    const source = await tenant(harness, "voice-note-reply");
+    const source = await aiTenant(harness, "voice-note-reply");
     const prompt = "You represent Voice Note Reply, a Nigerian retail business. Answer only with verified facts, never invent prices, stock, delivery details, payment information, discounts, or policies, ask one short clarifying question when information is missing, and reply in concise friendly WhatsApp language.";
     await source.owner.mutation(api.businessProfile.save, { businessId: source.businessId, systemPrompt: prompt, customerAutoReplyEnabled: true, groupAutoReplyEnabled: false });
     vi.stubEnv("FOUNDATION_PROVIDER_ENABLED", "true");
@@ -162,7 +162,7 @@ describe("authenticated WhatsApp ingestion", () => {
 
   it("records a safe OpenAI status code and never guesses a reply when transcription fails", async () => {
     const harness = createHarness();
-    const source = await tenant(harness, "voice-note-provider-error");
+    const source = await aiTenant(harness, "voice-note-provider-error");
     await source.owner.mutation(api.businessProfile.save, {
       businessId: source.businessId,
       systemPrompt: "You represent Voice Note Provider Error, a Nigerian retail business. Only answer from verified business facts, never invent prices, stock, delivery details, discounts, payment information, or policies, and ask one short clarifying question when required information is missing.",
@@ -202,7 +202,7 @@ describe("authenticated WhatsApp ingestion", () => {
 
   it("automatically retries a temporarily rate-limited voice note and sends the reply", async () => {
     const harness = createHarness();
-    const source = await tenant(harness, "voice-note-rate-limit-retry");
+    const source = await aiTenant(harness, "voice-note-rate-limit-retry");
     await source.owner.mutation(api.businessProfile.save, {
       businessId: source.businessId,
       systemPrompt: "You represent Voice Retry, a Nigerian retail business. Only answer from verified business facts, never invent prices, stock, delivery details, discounts, payment information, or policies, and ask one short clarifying question when required information is missing.",
@@ -247,7 +247,7 @@ describe("authenticated WhatsApp ingestion", () => {
 
   it("analyzes a one-to-one image privately and replies through the authorized assistant path", async () => {
     const harness = createHarness();
-    const source = await tenant(harness, "image-reply");
+    const source = await aiTenant(harness, "image-reply");
     await source.owner.mutation(api.businessProfile.save, {
       businessId: source.businessId,
       systemPrompt: "You represent Image Reply, a Nigerian fashion business. Answer only from verified business facts and the factual image analysis, never invent prices, stock, delivery details, discounts, payment confirmation, or policies, and ask one short clarifying question when needed.",
@@ -308,7 +308,7 @@ describe("authenticated WhatsApp ingestion", () => {
 
   it("keeps failed image analysis in manual review and never guesses a reply", async () => {
     const harness = createHarness();
-    const source = await tenant(harness, "image-provider-error");
+    const source = await aiTenant(harness, "image-provider-error");
     await source.owner.mutation(api.businessProfile.save, {
       businessId: source.businessId,
       systemPrompt: "You represent Image Provider Error, a Nigerian business. Only answer from verified facts, never invent prices, stock, delivery details, discounts, payment confirmation, or policies, and ask one short clarifying question when needed.",
@@ -345,7 +345,7 @@ describe("authenticated WhatsApp ingestion", () => {
 
   it("does not analyze images from groups that are not individually enabled", async () => {
     const harness = createHarness();
-    const source = await tenant(harness, "disabled-group-image");
+    const source = await aiTenant(harness, "disabled-group-image");
     await source.owner.mutation(api.businessProfile.save, {
       businessId: source.businessId,
       systemPrompt: "You represent Disabled Group Image, a Nigerian business. Only reply in WhatsApp groups the owner has individually enabled, and answer only from verified business facts without inventing prices, stock, delivery details, payment confirmation, or policies.",
@@ -376,7 +376,7 @@ describe("authenticated WhatsApp ingestion", () => {
 
   it("canonicalizes private LID messages and names group threads from group metadata", async () => {
     const harness = createHarness();
-    const source = await tenant(harness);
+    const source = await aiTenant(harness);
     await webhook(harness, message(source, { id: "lid-inbound", chat: "12345@lid", info: { SenderAlt: "2348000000001@s.whatsapp.net" } }));
     await webhook(harness, message(source, { id: "phone-inbound", chat: "2348000000001@s.whatsapp.net" }));
     await webhook(harness, message(source, { id: "group-message", chat: "12345@g.us", name: "First Participant", info: { IsGroup: true }, data: { groupData: { Name: "Market Community" } } }));

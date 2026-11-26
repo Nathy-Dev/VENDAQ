@@ -4,6 +4,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { requireBusiness } from "./lib/authorization";
 import { BUSINESS_SYSTEM_PROMPT_MAX_LENGTH, BUSINESS_SYSTEM_PROMPT_MIN_LENGTH } from "./lib/launch";
 import { recordMilestone } from "./productAnalytics";
+import { canProcessInboxMessage } from "./lib/inboxAi";
 
 const opportunityState = v.union(v.literal("open"), v.literal("in_progress"), v.literal("won"), v.literal("lost"), v.literal("dismissed"));
 const handoffState = v.union(v.literal("not_needed"), v.literal("suggested"), v.literal("consented"), v.literal("declined"), v.literal("completed"));
@@ -49,7 +50,7 @@ export const captureFromInteraction = internalMutation({
     const [business, customer, conversation] = await Promise.all([
       ctx.db.get(interaction.businessId), ctx.db.get(interaction.customerId), ctx.db.get(interaction.conversationId),
     ]);
-    if (!business || business.foundationVersion !== 1 || !customer || customer.deletedAt !== undefined || !conversation || conversation.businessId !== business._id) return null;
+    if (!canProcessInboxMessage(business, interaction) || !customer || customer.deletedAt !== undefined || !conversation || conversation.businessId !== business._id) return null;
     const evidenceText = clean(interaction.transcript || interaction.content, 2_000);
     if (!evidenceText) return null;
     const isGroup = interaction.isGroup ?? customer.isGroup ?? false;

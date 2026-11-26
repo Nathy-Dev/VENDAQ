@@ -23,7 +23,7 @@ export { ViewersPanel, ProfilePanel } from "./WorkspaceAccount";
 const sections = [
   { value: "general", label: "General" },
   { value: "connection", label: "Connection" },
-  { value: "assistant", label: "Teach Pipelixr" },
+  { value: "assistant", label: "AI Assistant" },
   { value: "knowledge", label: "Business knowledge" },
   { value: "groups", label: "Groups & communities" },
   { value: "rules", label: "Follow-up rules" },
@@ -63,7 +63,7 @@ function GeneralSettings({ workspace }: { workspace: Workspace }) {
   return <>
     <section className={styles.card}>
       <div className={styles.sectionHeading}><div><h2>Business details</h2><p>The essentials behind this workspace.</p></div></div>
-      <dl className={styles.profileDetails}><div><dt>Business name</dt><dd>{workspace.name}</dd></div><div><dt>Timezone</dt><dd>{workspace.timezone.replaceAll("_", " ")}</dd></div><div><dt>Message retention</dt><dd>{workspace.retentionDays} days</dd></div><div><dt>Reply mode</dt><dd>{workspace.customerAutoReplyEnabled || workspace.groupAutoReplyEnabled ? "Authorized scopes only" : "Off"}</dd></div></dl>
+      <dl className={styles.profileDetails}><div><dt>Business name</dt><dd>{workspace.name}</dd></div><div><dt>Timezone</dt><dd>{workspace.timezone.replaceAll("_", " ")}</dd></div><div><dt>Message retention</dt><dd>{workspace.retentionDays} days</dd></div><div><dt>AI Assistant</dt><dd>{workspace.aiEnabled ? "On" : "Off · Human-only"}</dd></div><div><dt>Auto-reply</dt><dd>{workspace.aiEnabled && (workspace.customerAutoReplyEnabled || workspace.groupAutoReplyEnabled) ? "Authorized scopes only" : "Off"}</dd></div></dl>
     </section>
     <section className={styles.card}>
       <div className={styles.sectionHeading}><div><h2>Response window</h2><p>When an unanswered buying signal should be considered overdue.</p></div></div>

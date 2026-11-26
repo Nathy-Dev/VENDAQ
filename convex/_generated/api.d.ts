@@ -53,6 +53,7 @@ import type * as lib_crypto from "../lib/crypto.js";
 import type * as lib_events from "../lib/events.js";
 import type * as lib_evolution from "../lib/evolution.js";
 import type * as lib_groupGovernance from "../lib/groupGovernance.js";
+import type * as lib_inboxAi from "../lib/inboxAi.js";
 import type * as lib_journey from "../lib/journey.js";
 import type * as lib_launch from "../lib/launch.js";
 import type * as lib_openaiTranscription from "../lib/openaiTranscription.js";
@@ -128,6 +129,7 @@ declare const fullApi: ApiFromModules<{
   "lib/events": typeof lib_events;
   "lib/evolution": typeof lib_evolution;
   "lib/groupGovernance": typeof lib_groupGovernance;
+  "lib/inboxAi": typeof lib_inboxAi;
   "lib/journey": typeof lib_journey;
   "lib/launch": typeof lib_launch;
   "lib/openaiTranscription": typeof lib_openaiTranscription;

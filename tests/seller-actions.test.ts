@@ -1,8 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { api, internal } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
 import { canTransitionOrder, journeyForOrder, transitionOrder } from "../convex/lib/sellerActions";
-import { createHarness, tenant, type Harness } from "./harness";
+import { aiTenant, createHarness, tenant, type Harness } from "./harness";
 
 async function seedActionableTask(harness: Harness, businessId: Id<"businesses">, options: { availableAt?: number; reason?: "buying_signal" | "asked_no_order" | "awaiting_payment"; revision?: number; manualSentAt?: number } = {}) {
   const now = Date.now();
@@ -105,8 +105,13 @@ describe("Phase 4 seller actions", () => {
 
   it("creates and cancels deferred stalled-inquiry tasks on later conversation activity", async () => {
     const harness = createHarness();
-    const source = await tenant(harness);
+    const source = await aiTenant(harness);
+    vi.setSystemTime(Date.now() + 3600000);
     const seeded = await seedActionableTask(harness, source.businessId);
+    await harness.run(async (ctx) => {
+      const business = await ctx.db.get(source.businessId);
+      await ctx.db.patch(seeded.interactionId, { aiProcessingEpoch: business!.aiProcessingEpoch });
+    });
     const stalledId = await harness.mutation(internal.sellerActions.rebuildStalledTask, { businessId: source.businessId, customerId: seeded.customerId, conversationId: seeded.conversationId, interactionId: seeded.interactionId });
     expect(stalledId).not.toBeNull();
     await harness.mutation(internal.maintenance.cancelCustomerTasks, { customerId: seeded.customerId, since: Date.now() });

@@ -49,6 +49,7 @@ export const eventFields = {
   attempts: v.number(),
   retryLimit: v.optional(v.number()),
   receivedAt: v.number(),
+  aiProcessingEpoch: v.optional(v.union(v.number(), v.null())),
   dueAt: v.number(),
   expiresAt: v.number(),
   completedAt: v.optional(v.number()),

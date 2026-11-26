@@ -15,6 +15,7 @@ const http = httpRouter();
 http.route({
   path: "/api/webhook/evolution", method: "POST",
   handler: httpAction(async (ctx, request) => {
+    const receivedAt = Date.now();
     const correlationId = crypto.randomUUID();
     const headers = { "Cache-Control": "no-store", "X-Correlation-ID": correlationId };
     try {
@@ -22,13 +23,14 @@ http.route({
       const providerInstanceId = text(body.instanceId);
       const token = text(body.instanceToken, 1024);
       if (!providerInstanceId || !token) return Response.json({ error: "INVALID_WEBHOOK_AUTH" }, { status: 401, headers });
-      const session = await ctx.runQuery(internal.foundation.sessionByProvider, { providerInstanceId });
+      const source = await ctx.runQuery(internal.foundation.sessionByProvider, { providerInstanceId, receivedAt });
+      const session = source?.session;
       const tokenHash = await sha256(token);
       if (!session || session.state === "revoked" || !secretMatches(session.tokenHash, tokenHash)) return Response.json({ error: "INVALID_WEBHOOK_AUTH" }, { status: 401, headers });
       let payload: NormalizedEvent;
       let quarantineCode: string | undefined;
       try {
-        payload = normalizeEvent(body, Date.now());
+        payload = normalizeEvent(body, receivedAt, source.aiProcessingEpoch !== null);
       } catch (error) {
         const known = ["INVALID_IDENTITY", "INVALID_TIMESTAMP", "INVALID_MESSAGE_METADATA", "INVALID_RECEIPT", "INVALID_QR_EVENT"];
         if (!(error instanceof Error) || !known.includes(error.message)) throw error;
@@ -40,7 +42,7 @@ http.route({
       if (payload.kind === "message") payload.identityKey = await identityDigest(session.businessId, payload.chat);
       if (payload.kind === "receipt") payload.identityKey = await identityDigest(session.businessId, payload.chat === "status@broadcast" ? payload.sender : payload.chat);
       if (payload.kind === "connection" && payload.qrCiphertext) payload.qrCiphertext = await encryptSecret(payload.qrCiphertext, `session:${session._id}:qr`);
-      const accepted = await ctx.runMutation(internal.ingestion.enqueue, { sessionId: session._id, generation: session.generation, tokenHash, eventKey, correlationId, payload, ...(quarantineCode ? { quarantineCode } : {}) });
+      const accepted = await ctx.runMutation(internal.ingestion.enqueue, { sessionId: session._id, generation: session.generation, tokenHash, eventKey, correlationId, payload, receivedAt, observedAiEpoch: source.aiProcessingEpoch, ...(quarantineCode ? { quarantineCode } : {}) });
       logEvent(accepted.duplicate ? "webhook_duplicate" : "webhook_accepted", { correlationId: accepted.correlationId, businessId: session.businessId, eventId: accepted.eventId });
       return Response.json({ accepted: true, duplicate: accepted.duplicate, correlationId: accepted.correlationId }, { status: 202, headers: { ...headers, "X-Correlation-ID": accepted.correlationId } });
     } catch (error) {

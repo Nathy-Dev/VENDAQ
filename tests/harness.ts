@@ -26,6 +26,13 @@ export async function tenant(harness: Harness, label = "seller-one") {
   return { owner, businessId, token, tokenHash, tokenCiphertext, instanceId, sessionId };
 }
 
+export async function aiTenant(harness: Harness, label?: string) {
+  const source = await tenant(harness, label);
+  await source.owner.mutation(api.businessProfile.setAssistantEnabled, { businessId: source.businessId, enabled: true });
+  vi.setSystemTime(Date.now() + 1);
+  return source;
+}
+
 export function message(source: Awaited<ReturnType<typeof tenant>>, options: {
   id?: string; chat?: string; content?: Record<string, unknown>; fromMe?: boolean; at?: number; name?: string; info?: Record<string, unknown>; data?: Record<string, unknown>;
 } = {}) {

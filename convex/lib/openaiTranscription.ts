@@ -95,6 +95,7 @@ export async function transcribeWithOpenAI(args: {
   fileName?: string;
   timeoutMs?: number;
   maximumAttempts?: number;
+  canProcess?: () => Promise<boolean>;
 }): Promise<{ text: string; language?: string }> {
   const mimeType = args.audio.type.split(";")[0].trim().toLowerCase() || "audio/ogg";
   const model = resolveTranscriptionModel(args.model);
@@ -102,6 +103,7 @@ export async function transcribeWithOpenAI(args: {
   let lastError: unknown;
 
   for (let attempt = 1; attempt <= maximumAttempts; attempt += 1) {
+    if (args.canProcess && !(await args.canProcess())) throw new Error("AI_ASSISTANT_PAUSED");
     try {
       const form = new FormData();
       form.append("file", args.audio, args.fileName ?? `voice-note.${audioExtension(mimeType)}`);

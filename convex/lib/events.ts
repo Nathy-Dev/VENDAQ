@@ -50,7 +50,7 @@ export function eventTime(value: unknown, now: number): number {
   return timestamp;
 }
 
-export function normalizeEvent(body: Record<string, unknown>, now: number): NormalizedEvent {
+export function normalizeEvent(body: Record<string, unknown>, now: number, includeMediaPayload: boolean): NormalizedEvent {
   const event = text(body.event);
   const data = object(body.data);
   if (event === "Message" || event === "SendMessage") {
@@ -78,7 +78,7 @@ export function normalizeEvent(body: Record<string, unknown>, now: number): Norm
     const audio = object(message.audioMessage);
     const image = object(message.imageMessage);
     const mediaMessage = type === "audio" ? audio : type === "image" ? image : {};
-    const boundedMedia = boundedMediaMessage(mediaMessage);
+    const boundedMedia = includeMediaPayload && !fromMe ? boundedMediaMessage(mediaMessage) : {};
     const mediaPayload = type === "audio"
       ? JSON.stringify({ audioMessage: boundedMedia })
       : type === "image"

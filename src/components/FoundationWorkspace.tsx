@@ -53,7 +53,7 @@ export default function FoundationWorkspace() {
               {stage === "groups" && <span className={styles.current}><b>4</b>Groups</span>}
             </div>
             {stage === "connection" && <ConnectionPanel workspace={workspace} />}
-            {stage === "business_ai" && <BusinessAssistantSettings workspace={workspace} compact />}
+            {stage === "business_ai" && <><BusinessAssistantSettings workspace={workspace} compact />{!workspace.aiEnabled && <div><Link href="/pipeline" className={buttonClass.secondary}>Go to inbox without AI<ArrowRight size={14} /></Link></div>}</>}
             {stage === "groups" && <><WorkspaceGroups workspace={workspace} /><div><Link href="/dashboard" className={buttonClass.secondary}>Go to workspace<ArrowRight size={14} /></Link><p className={styles.helper}>Pipelixr only replies after you explicitly authorize customer replies or enable individual groups.</p></div></>}
           </div>
           );

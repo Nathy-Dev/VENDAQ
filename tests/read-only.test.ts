@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import { api, internal } from "../convex/_generated/api";
-import { createHarness, drain, message, tenant, webhook } from "./harness";
+import { aiTenant, createHarness, drain, message, tenant, webhook } from "./harness";
 
 describe("Phase 2 read-only revenue evidence", () => {
   it("classifies inbound buying signals and reports them only after the response window", async () => {
     const harness = createHarness();
-    const source = await tenant(harness);
+    const source = await aiTenant(harness);
     await harness.run((ctx) => ctx.db.patch(source.businessId, { responseWindowMinutes: 15 }));
     const receivedAt = Date.now();
     await webhook(harness, message(source, { at: receivedAt }));
@@ -28,7 +28,7 @@ describe("Phase 2 read-only revenue evidence", () => {
 
   it("closes evidence when the seller replies before or after the deadline", async () => {
     const harness = createHarness();
-    const source = await tenant(harness);
+    const source = await aiTenant(harness);
     await harness.run((ctx) => ctx.db.patch(source.businessId, { responseWindowMinutes: 15 }));
     const receivedAt = Date.now();
     await webhook(harness, message(source, { at: receivedAt }));
@@ -51,7 +51,7 @@ describe("Phase 2 read-only revenue evidence", () => {
 
   it("handles owner-first delivery and ignores non-buying classes and duplicate webhooks", async () => {
     const harness = createHarness();
-    const source = await tenant(harness);
+    const source = await aiTenant(harness);
     const base = Date.now();
     await webhook(harness, message(source, { id: "owner-first", fromMe: true, at: base + 1000, content: { conversation: "Yes" } }));
     await drain(harness);
@@ -68,7 +68,7 @@ describe("Phase 2 read-only revenue evidence", () => {
 
   it("keeps human labels separate, tenant scoped, and evaluable", async () => {
     const harness = createHarness();
-    const source = await tenant(harness);
+    const source = await aiTenant(harness);
     const other = await tenant(harness, "other");
     await webhook(harness, message(source));
     await drain(harness);
@@ -89,7 +89,7 @@ describe("Phase 2 read-only revenue evidence", () => {
 
   it("purges labels and opportunities with customer deletion and retention", async () => {
     const harness = createHarness();
-    const source = await tenant(harness);
+    const source = await aiTenant(harness);
     await webhook(harness, message(source));
     await drain(harness);
     const [entry] = await source.owner.query(api.readOnly.labelQueue, { businessId: source.businessId });
@@ -100,7 +100,7 @@ describe("Phase 2 read-only revenue evidence", () => {
     expect(await harness.run((ctx) => ctx.db.query("messageLabels").collect())).toHaveLength(0);
     expect(await harness.run((ctx) => ctx.db.query("missedRevenueOpportunities").collect())).toHaveLength(0);
 
-    const retained = await tenant(harness, "retained");
+    const retained = await aiTenant(harness, "retained");
     await harness.run((ctx) => ctx.db.patch(retained.businessId, { messageRetentionDays: 1 }));
     await webhook(harness, message(retained));
     await drain(harness);

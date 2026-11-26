@@ -39,7 +39,8 @@ export default function WorkspaceInbox({ workspace }: { workspace: Workspace }) 
   const [tab, setTab] = useState<"conversations" | "opportunities" | "insights" | "review">("conversations");
   return <>
     <PageHeader title="Your inbox" description="Conversations, opportunities, and business insights in one simple place." />
-    <div className={styles.toolbar}><Segmented label="Inbox view" value={tab} onChange={setTab} options={[{ value: "conversations", label: "Conversations" }, { value: "opportunities", label: "Opportunities" }, { value: "insights", label: "Insights" }, { value: "review", label: "Review" }]} /><Pill dot>Live WhatsApp activity</Pill></div>
+    <div className={styles.toolbar}><Segmented label="Inbox view" value={tab} onChange={setTab} options={[{ value: "conversations", label: "Conversations" }, { value: "opportunities", label: "Opportunities" }, { value: "insights", label: "Insights" }, { value: "review", label: "Review" }]} /><Pill dot>{workspace.aiEnabled ? "Live WhatsApp activity" : "AI off · Human-only inbox"}</Pill></div>
+    {!workspace.aiEnabled && <div className={styles.infoBanner}><ShieldCheck size={17} aria-hidden="true" /><p>Messages still arrive without AI analysis. Use WhatsApp to open attachments and reply.</p></div>}
     {tab === "conversations" ? <Suspense fallback={<LoadingRows label="Loading conversations" />}><Conversations workspace={workspace} /></Suspense> : tab === "opportunities" ? <Opportunities workspace={workspace} /> : tab === "insights" ? <CommunityInsights workspace={workspace} /> : <MessageReview workspace={workspace} />}
   </>;
 }

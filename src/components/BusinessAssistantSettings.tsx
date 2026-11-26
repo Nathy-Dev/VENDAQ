@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { AudioLines, Bot, Check, Mic, Pencil, ShieldCheck, Sparkles, Square } from "lucide-react";
 import { api } from "../../convex/_generated/api";
@@ -15,8 +15,42 @@ type ScopedFeedback = Exclude<Feedback, null> & { scope: FeedbackScope };
 export default function BusinessAssistantSettings({ workspace, compact = false }: { workspace: Workspace; compact?: boolean }) {
   const profile = useQuery(api.businessProfile.get, { businessId: workspace.businessId });
   const qualificationPolicy = useQuery(api.leadQualification.policy, { businessId: workspace.businessId });
-  if (!profile || !qualificationPolicy) return <div className={styles.loading} role="status">Loading Teach Pipelixr...</div>;
-  return <BusinessAssistantForm key={`${profile.updatedAt ?? 0}:${profile.customerAutoReplyEnabled}:${profile.groupAutoReplyEnabled}`} workspace={workspace} compact={compact} profile={profile} qualificationPolicy={qualificationPolicy} />;
+  return <div className={styles.stack}>
+    <AiAssistantControl workspace={workspace} />
+    {!profile || !qualificationPolicy
+      ? <div className={styles.loading} role="status">Loading the reply playbook...</div>
+      : <BusinessAssistantForm key={`${profile.updatedAt ?? 0}:${profile.customerAutoReplyEnabled}:${profile.groupAutoReplyEnabled}`} workspace={workspace} compact={compact} profile={profile} qualificationPolicy={qualificationPolicy} />}
+  </div>;
+}
+
+function AiAssistantControl({ workspace }: { workspace: Workspace }) {
+  const setEnabled = useMutation(api.businessProfile.setAssistantEnabled);
+  const descriptionId = useId();
+  const [busy, setBusy] = useState(false);
+  const [feedback, setFeedback] = useState<Feedback>(null);
+
+  async function change(enabled: boolean) {
+    setBusy(true);
+    setFeedback(null);
+    try {
+      await setEnabled({ businessId: workspace.businessId, enabled });
+      setFeedback({ text: enabled ? "AI Assistant turned on for new messages." : "AI Assistant turned off. Your inbox stays connected." });
+    } catch (error) {
+      const needsPlan = error instanceof Error && error.message.includes("BILLING_UPGRADE_REQUIRED");
+      setFeedback({ text: needsPlan ? "Check your plan and usage limits before turning on AI Assistant." : "We couldn't change the AI setting. Please try again.", error: true });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return <section className={styles.card}>
+    <div className={styles.sectionHeading}><div><h2>AI Assistant</h2><p>{workspace.aiEnabled ? "On · New messages can be processed by AI" : "Off · Human-only inbox"}</p></div><Bot size={18} aria-hidden="true" /></div>
+    <label className={styles.checkLabel}>
+      <input type="checkbox" role="switch" aria-label="AI Assistant" aria-describedby={descriptionId} checked={workspace.aiEnabled} disabled={busy} onChange={(event) => void change(event.target.checked)} />
+      <span><strong>Process new WhatsApp messages</strong><p id={descriptionId}>When off, Pipelixr won’t analyze text or attachments, transcribe voice notes, or draft and send replies. Messages still arrive; you can view attachments and reply in WhatsApp. Messages received while off stay out of AI processing when you turn it back on.</p></span>
+    </label>
+    <Notice feedback={feedback} />
+  </section>;
 }
 
 function BusinessAssistantForm({ workspace, compact, profile, qualificationPolicy }: { workspace: Workspace; compact: boolean; profile: NonNullable<ReturnType<typeof useQuery<typeof api.businessProfile.get>>>; qualificationPolicy: NonNullable<ReturnType<typeof useQuery<typeof api.leadQualification.policy>>> }) {
@@ -201,9 +235,9 @@ function BusinessAssistantForm({ workspace, compact, profile, qualificationPolic
     }
     setBusy("save"); setFeedback(null);
     try {
-      await save({ businessId: workspace.businessId, systemPrompt: systemPrompt.trim(), customerAutoReplyEnabled: customerReplies, groupAutoReplyEnabled: groupReplies, leadQualificationEnabled: qualificationEnabled, leadQualificationCriteria: qualificationCriteria.trim(), leadQualificationRequiredFields: qualificationFields });
+      await save({ businessId: workspace.businessId, systemPrompt: systemPrompt.trim(), customerAutoReplyEnabled: customerReplies, groupAutoReplyEnabled: groupReplies, assistantSettingsVersion: 2, leadQualificationEnabled: qualificationEnabled, leadQualificationCriteria: qualificationCriteria.trim(), leadQualificationRequiredFields: qualificationFields });
       setEditingPrompt(false);
-      setFeedback({ scope: "save", text: customerReplies || groupReplies ? "Business knowledge and reply authorization saved." : "Business knowledge saved. Automated replies remain off." });
+      setFeedback({ scope: "save", text: !workspace.aiEnabled ? "Settings saved. AI Assistant remains off." : customerReplies || groupReplies ? "Business knowledge and reply authorization saved." : "Business knowledge saved. Auto-replies remain off." });
     } catch (error) {
       const code = error instanceof Error ? error.message : "";
       const needsAutomationPlan = code.includes("BILLING_UPGRADE_REQUIRED") || code.includes("BILLING_READ_ONLY");
@@ -219,7 +253,7 @@ function BusinessAssistantForm({ workspace, compact, profile, qualificationPolic
 
   return <div className={styles.stack}>
     <section className={styles.card}>
-      <div className={styles.sectionHeading}><div><h2>Teach Pipelixr</h2><p>Give Pipelixr a complete business playbook, then explicitly choose where it may reply.</p></div><Bot size={18} aria-hidden="true" /></div>
+      <div className={styles.sectionHeading}><div><h2>Teach Pipelixr</h2><p>Prepare a business playbook and choose where Pipelixr may send replies when AI Assistant is on.</p></div><Bot size={18} aria-hidden="true" /></div>
       <div className={styles.infoBanner}><ShieldCheck size={17} aria-hidden="true" /><p>Only include business information you are comfortable using in customer conversations. Do not paste passwords, private keys, card details, or customer data.</p></div>
       <div className={styles.form}>
         <label className={styles.field}>Describe your business in your own words
@@ -243,8 +277,9 @@ function BusinessAssistantForm({ workspace, compact, profile, qualificationPolic
           <div className={styles.promptMeta}><span>{systemPrompt.trim().length.toLocaleString()} / 8,000 characters</span><span>{streamingPrompt ? "Generating live" : editingPrompt ? "Editable" : "Protected"}</span></div>
         </div>
         <fieldset className={styles.fieldset}>
-          <legend>Authorize Pipelixr</legend>
-          <label className={styles.checkLabel}><input type="checkbox" role="switch" checked={customerReplies} onChange={(event) => setCustomerReplies(event.target.checked)} /><span><strong>Reply to customers in one-to-one chats</strong><p>Generate and send a concise reply after an eligible inbound text message.</p></span></label>
+          <legend>Auto-reply</legend>
+          <p className={styles.helper}>These settings only control automatic sending. Use AI Assistant above to stop analysis and drafts as well.</p>
+          <label className={styles.checkLabel}><input type="checkbox" role="switch" checked={customerReplies} onChange={(event) => setCustomerReplies(event.target.checked)} /><span><strong>Auto-reply in one-to-one chats</strong><p>Generate and send replies to eligible customers when AI Assistant is on.</p></span></label>
           <label className={styles.checkLabel}><input type="checkbox" role="switch" checked={groupReplies} onChange={(event) => setGroupReplies(event.target.checked)} /><span><strong>Allow replies in individually enabled groups</strong><p>This is only global permission. Every group or community stays off until you enable it separately.</p></span></label>
         </fieldset>
         <fieldset className={styles.fieldset}>

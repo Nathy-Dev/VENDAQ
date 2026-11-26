@@ -6,6 +6,8 @@ import { keywordClassifier } from "./lib/classifier";
 import { downloadAuthorizedInboundAudio } from "./lib/evolution";
 import { audioExtension, resolveTranscriptionModel, transcribeWithOpenAI, transcriptionErrorCode } from "./lib/openaiTranscription";
 import { billingAccess } from "./lib/billingAccess";
+import { canProcessInboxMessage } from "./lib/inboxAi";
+import { groupMayAutoReply } from "./lib/groupGovernance";
 
 const candidate = v.object({
   interactionId: v.id("interactions"), businessId: v.id("businesses"), customerId: v.id("customers"),
@@ -19,8 +21,13 @@ export const prepare = internalQuery({
     const interaction = await ctx.db.get(args.interactionId);
     if (!interaction || interaction.role !== "customer" || interaction.messageType !== "audio" || !interaction.sessionId || interaction.transcriptionState === "completed" || interaction.transcriptionState !== "pending") return null;
     const [session, business, customer] = await Promise.all([ctx.db.get(interaction.sessionId), ctx.db.get(interaction.businessId), ctx.db.get(interaction.customerId)]);
-    if (!session || session.state !== "connected" || !session.providerInstanceId || !business || business.foundationVersion !== 1 || !customer || customer.deletedAt !== undefined) return null;
+    if (!canProcessInboxMessage(business, interaction) || !session || session.businessId !== business._id || session.state !== "connected" || !session.providerInstanceId || !customer || customer.deletedAt !== undefined) return null;
     if (!(await billingAccess(ctx, business)).canUsePaidFeatures) return null;
+    if (interaction.isGroup ?? customer.isGroup ?? false) {
+      if (!business.groupAutoReplyEnabled) return null;
+      const group = await ctx.db.query("managedGroups").withIndex("by_business_group", (builder) => builder.eq("businessId", business._id).eq("groupJid", customer.phone)).unique();
+      if (!group || !groupMayAutoReply(group, interaction)) return null;
+    }
     return { interactionId: interaction._id, businessId: business._id, customerId: customer._id, sessionId: session._id, providerInstanceId: session.providerInstanceId, tokenCiphertext: session.tokenCiphertext, mediaPayload: args.mediaPayload, mediaMimeType: args.mediaMimeType ?? "audio/ogg" };
   },
 });
@@ -29,7 +36,7 @@ export const markPending = internalMutation({
   args: { interactionId: v.id("interactions") }, returns: v.boolean(),
   handler: async (ctx, args) => {
     const interaction = await ctx.db.get(args.interactionId);
-    if (!interaction || interaction.transcriptionState === "completed" || interaction.transcriptionState === "pending") return false;
+    if (!interaction || interaction.role !== "customer" || interaction.messageType !== "audio" || interaction.transcriptionState === "completed" || interaction.transcriptionState === "pending" || !canProcessInboxMessage(await ctx.db.get(interaction.businessId), interaction)) return false;
     await ctx.db.patch(interaction._id, { transcriptionState: "pending", transcriptionErrorCode: undefined });
     return true;
   },
@@ -40,7 +47,11 @@ export const finish = internalMutation({
   returns: v.null(),
   handler: async (ctx, args) => {
     const interaction = await ctx.db.get(args.interactionId);
-    if (!interaction || interaction.role !== "customer" || interaction.messageType !== "audio") return null;
+    if (!interaction || interaction.role !== "customer" || interaction.messageType !== "audio" || interaction.transcriptionState !== "pending") return null;
+    if (!canProcessInboxMessage(await ctx.db.get(interaction.businessId), interaction)) {
+      await ctx.db.patch(interaction._id, { transcriptionState: undefined, transcriptionErrorCode: undefined });
+      return null;
+    }
     const transcript = args.transcript.replaceAll("\u0000", "").trim().slice(0, 8_000);
     if (transcript.length < 2) { await ctx.db.patch(interaction._id, { transcriptionState: "failed", transcriptionErrorCode: "EMPTY_TRANSCRIPT" }); return null; }
     const classification = keywordClassifier.classify({ text: transcript, mediaType: "text", manualReview: false });
@@ -61,7 +72,9 @@ export const fail = internalMutation({
   args: { interactionId: v.id("interactions"), code: v.string() }, returns: v.null(),
   handler: async (ctx, args) => {
     const interaction = await ctx.db.get(args.interactionId);
-    if (interaction && interaction.transcriptionState === "pending") await ctx.db.patch(interaction._id, { transcriptionState: "failed", transcriptionErrorCode: args.code.slice(0, 120) });
+    if (interaction?.transcriptionState !== "pending") return null;
+    const allowed = canProcessInboxMessage(await ctx.db.get(interaction.businessId), interaction);
+    await ctx.db.patch(interaction._id, { transcriptionState: allowed ? "failed" : undefined, transcriptionErrorCode: allowed ? args.code.slice(0, 120) : undefined });
     return null;
   },
 });
@@ -71,6 +84,10 @@ export const defer = internalMutation({
   handler: async (ctx, args) => {
     const interaction = await ctx.db.get(args.interactionId);
     if (!interaction || interaction.transcriptionState !== "pending") return false;
+    if (!canProcessInboxMessage(await ctx.db.get(interaction.businessId), interaction)) {
+      await ctx.db.patch(interaction._id, { transcriptionState: undefined, transcriptionErrorCode: undefined });
+      return false;
+    }
     await ctx.db.patch(interaction._id, { transcriptionErrorCode: args.code.slice(0, 120) });
     return true;
   },
@@ -82,6 +99,7 @@ export const transcribe = internalAction({
   handler: async (ctx, args) => {
     const retryAttempt = Math.max(0, Math.floor(args.retryAttempt ?? 0));
     if (retryAttempt === 0 && !(await ctx.runMutation(internal.transcription.markPending, { interactionId: args.interactionId }))) return null;
+    const canProcess = () => ctx.runQuery(internal.businessProfile.canProcessMessage, { interactionId: args.interactionId });
     try {
       const current = await ctx.runQuery(internal.transcription.prepare, {
         interactionId: args.interactionId,
@@ -94,13 +112,14 @@ export const transcribe = internalAction({
       const model = resolveTranscriptionModel(process.env.OPENAI_TRANSCRIPTION_MODEL);
       const token = await decryptSecret(current.tokenCiphertext, `business:${current.businessId}:session-token`);
       const message = JSON.parse(current.mediaPayload) as Record<string, unknown>;
-      const audio = await downloadAuthorizedInboundAudio({ token, instanceId: current.providerInstanceId, message });
+      const audio = await downloadAuthorizedInboundAudio({ token, instanceId: current.providerInstanceId, message, canProcess });
       const mimeType = (audio.mimetype || current.mediaMimeType).split(";")[0].trim().toLowerCase() || "audio/ogg";
       const result = await transcribeWithOpenAI({
         audio: new Blob([audio.bytes.slice().buffer], { type: mimeType }),
         apiKey,
         model,
         fileName: `voice-note.${audioExtension(mimeType)}`,
+        canProcess,
       });
       await ctx.runMutation(internal.transcription.finish, {
         interactionId: current.interactionId,

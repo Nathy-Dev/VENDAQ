@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { api, internal } from "../convex/_generated/api";
-import { createHarness, tenant, type Harness } from "./harness";
+import { aiTenant, createHarness, tenant, type Harness } from "./harness";
 
 let fixtureCounter = 0;
 
@@ -11,7 +11,7 @@ async function interaction(harness: Harness, source: Awaited<ReturnType<typeof t
     const now = Date.now() + fixtureCounter;
     const customerId = conversation?.customerId ?? await ctx.db.insert("customers", { businessId: source.businessId, phone: `2347${suffix}@s.whatsapp.net`, identityKey: `qualification-${suffix}`, name: "Qualification buyer", totalValue: 0, lastInteraction: now, isGroup: false, tags: ["captured"] });
     const conversationId = conversation?.conversationId ?? await ctx.db.insert("conversations", { businessId: source.businessId, customerId, identityKey: `qualification-${suffix}`, revision: 1, lastEventAt: now, messageCount: 1 });
-    const interactionId = await ctx.db.insert("interactions", { businessId: source.businessId, customerId, conversationId, sessionId: source.sessionId, role: "customer", content, timestamp: now, receivedAt: now, messageType: "text", manualReviewRequired: false, isGroup: false });
+    const interactionId = await ctx.db.insert("interactions", { businessId: source.businessId, customerId, conversationId, sessionId: source.sessionId, aiProcessingEpoch: (await ctx.db.get(source.businessId))?.aiProcessingEpoch, role: "customer", content, timestamp: now, receivedAt: now, messageType: "text", manualReviewRequired: false, isGroup: false });
     return { customerId, conversationId, interactionId };
   });
 }
@@ -30,7 +30,7 @@ describe("automatic lead qualification", () => {
 
   it("accumulates confirmed answers and qualifies the lead automatically", async () => {
     const harness = createHarness();
-    const source = await tenant(harness, "qualification-lifecycle");
+    const source = await aiTenant(harness, "qualification-lifecycle");
     await source.owner.mutation(api.leadQualification.savePolicy, { businessId: source.businessId, enabled: true, criteria: "A qualified buyer wants catering in Lagos, has a workable budget, needs it within a month, and is ready to book.", requiredFields: ["need", "location", "timeline", "budget", "readiness"] });
     const first = await interaction(harness, source, undefined, "I need catering for an office event in Lagos.");
     const firstState = await harness.mutation(internal.leadQualification.applyAssessment, {
@@ -64,12 +64,12 @@ describe("automatic lead qualification", () => {
 
   it("records only questions actually sent and stops repeating them", async () => {
     const harness = createHarness();
-    const source = await tenant(harness, "qualification-question-attempts");
+    const source = await aiTenant(harness, "qualification-question-attempts");
     await source.owner.mutation(api.leadQualification.savePolicy, { businessId: source.businessId, enabled: true, criteria: "A lead must explain what they need and when they need it.", requiredFields: ["need", "timeline"] });
     const first = await interaction(harness, source, undefined, "I want your service.");
     const initial = await harness.mutation(internal.leadQualification.applyAssessment, { interactionId: first.interactionId, salesIntent: true, optOut: false, answers: [], fit: "uncertain", fitConfidence: 0.3, fitReason: "No qualification details are confirmed." });
     expect(initial?.nextQuestionField).toBe("need");
-    await harness.mutation(internal.leadQualification.recordQuestionAsked, { conversationId: first.conversationId, field: "need", askedAt: Date.now() });
+    await harness.mutation(internal.leadQualification.recordQuestionAsked, { conversationId: first.conversationId, interactionId: first.interactionId, field: "need", askedAt: Date.now() });
     const second = await interaction(harness, source, first, "Can you tell me the price first?");
     const next = await harness.mutation(internal.leadQualification.applyAssessment, { interactionId: second.interactionId, salesIntent: true, optOut: false, answers: [], fit: "uncertain", fitConfidence: 0.3, fitReason: "The customer has not answered yet." });
     expect(next?.nextQuestionField).toBe("timeline");
@@ -77,14 +77,14 @@ describe("automatic lead qualification", () => {
 
   it("honors a customer opting out and asks no further question", async () => {
     const harness = createHarness();
-    const source = await tenant(harness, "qualification-optout");
+    const source = await aiTenant(harness, "qualification-optout");
     const first = await interaction(harness, source, undefined, "Please stop asking, I am not interested.");
     const state = await harness.mutation(internal.leadQualification.applyAssessment, { interactionId: first.interactionId, salesIntent: false, optOut: true, answers: [], fit: "not_fit", fitConfidence: 1, fitReason: "The customer opted out." });
     expect(state).toMatchObject({ status: "opted_out", nextQuestionField: null });
     expect(await source.owner.query(api.leadQualification.insights, { businessId: source.businessId })).toMatchObject({ optedOut: 1, qualified: 0 });
   });
 
-  it("saves business AI authorization and qualification controls together", async () => {
+  it("saves reply scopes and qualification settings without enabling AI processing", async () => {
     const harness = createHarness();
     const source = await tenant(harness, "qualification-profile-save");
     const systemPrompt = "You represent Qualification Profile Save, a Lagos catering business. Answer only with verified facts, ask concise questions naturally, never invent prices, availability, delivery details, payment confirmation, discounts, or policies, and escalate anything uncertain to the business owner.";
@@ -97,7 +97,7 @@ describe("automatic lead qualification", () => {
       leadQualificationCriteria: "A qualified lead needs catering within Lagos, has a workable event budget, a confirmed event date, and is ready to book.",
       leadQualificationRequiredFields: ["need", "location", "timeline", "budget", "readiness"],
     });
-    expect(await source.owner.query(api.businessProfile.get, { businessId: source.businessId })).toMatchObject({ systemPrompt, customerAutoReplyEnabled: true });
+    expect(await source.owner.query(api.businessProfile.get, { businessId: source.businessId })).toMatchObject({ systemPrompt, aiEnabled: false, customerAutoReplyEnabled: true });
     expect(await source.owner.query(api.leadQualification.policy, { businessId: source.businessId })).toMatchObject({ enabled: true, criteria: expect.stringContaining("qualified lead"), requiredFields: ["need", "location", "timeline", "budget", "readiness"] });
   });
 });

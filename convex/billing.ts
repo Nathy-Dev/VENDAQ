@@ -7,6 +7,7 @@ import { amountFor, PAYMENT_GRACE_DAYS, periodEndFrom, planCodeFor, siteUrl } fr
 import { decryptSecret, encryptSecret } from "./lib/crypto";
 import { paystackRequest, paystackTimestamp, safeProviderString, type ProviderObject } from "./lib/paystack";
 import { hasCurrentLegalAcceptance } from "./lib/compliance";
+import { aiAssistantPatch } from "./lib/inboxAi";
 import type { Doc } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 
@@ -287,7 +288,7 @@ export const sweep = internalMutation({
         const nextStatus = subscription.cancelAtPeriodEnd ? "cancelled" : "expired";
         await ctx.db.patch(subscription._id, { status: nextStatus, updatedAt: now });
         const business = await ctx.db.get(subscription.businessId);
-        if (business) await ctx.db.patch(business._id, { killSwitch: true, aiEnabled: false, customerAutoReplyEnabled: false, groupAutoReplyEnabled: false });
+        if (business) await ctx.db.patch(business._id, { ...aiAssistantPatch(business, false, now), killSwitch: true, customerAutoReplyEnabled: false, groupAutoReplyEnabled: false });
       }
     }
     const checkoutIntents = await ctx.db.query("billingCheckoutIntents").withIndex("by_state_expiry", (q) => q.eq("state", "pending").lte("expiresAt", now)).take(100);

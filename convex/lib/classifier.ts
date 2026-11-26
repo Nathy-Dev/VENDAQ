@@ -73,23 +73,29 @@ export const keywordClassifier: MessageClassifier = {
 
 export type LabeledExample = { text: string; label: MessageClass; mediaType?: string; manualReview?: boolean };
 
-export function evaluateClassifier(examples: LabeledExample[], classifier: MessageClassifier = keywordClassifier) {
+export function classificationMetrics(rows: ReadonlyArray<{ label: MessageClass; prediction: MessageClass }>) {
   let truePositive = 0;
   let falsePositive = 0;
   let falseNegative = 0;
   let correct = 0;
-  const rows = examples.map((example) => {
-    const prediction = classifier.classify({ text: example.text, mediaType: example.mediaType ?? "text", manualReview: example.manualReview ?? false });
-    const expectedPositive = example.label === "buying_signal";
-    const predictedPositive = prediction.label === "buying_signal";
+  for (const row of rows) {
+    const expectedPositive = row.label === "buying_signal";
+    const predictedPositive = row.prediction === "buying_signal";
     if (expectedPositive && predictedPositive) truePositive++;
     if (!expectedPositive && predictedPositive) falsePositive++;
     if (expectedPositive && !predictedPositive) falseNegative++;
-    if (prediction.label === example.label) correct++;
-    return { ...example, prediction: prediction.label, version: prediction.version, ruleIds: prediction.ruleIds };
-  });
+    if (row.prediction === row.label) correct++;
+  }
   const precision = truePositive + falsePositive === 0 ? 0 : truePositive / (truePositive + falsePositive);
   const recall = truePositive + falseNegative === 0 ? 0 : truePositive / (truePositive + falseNegative);
   const f1 = precision + recall === 0 ? 0 : 2 * precision * recall / (precision + recall);
-  return { version: CLASSIFIER_VERSION, samples: examples.length, truePositive, falsePositive, falseNegative, precision, recall, f1, accuracy: examples.length === 0 ? 0 : correct / examples.length, rows };
+  return { version: CLASSIFIER_VERSION, samples: rows.length, truePositive, falsePositive, falseNegative, precision, recall, f1, accuracy: rows.length === 0 ? 0 : correct / rows.length };
+}
+
+export function evaluateClassifier(examples: LabeledExample[], classifier: MessageClassifier = keywordClassifier) {
+  const rows = examples.map((example) => {
+    const prediction = classifier.classify({ text: example.text, mediaType: example.mediaType ?? "text", manualReview: example.manualReview ?? false });
+    return { ...example, prediction: prediction.label, version: prediction.version, ruleIds: prediction.ruleIds };
+  });
+  return { ...classificationMetrics(rows), rows };
 }

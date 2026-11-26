@@ -3,6 +3,7 @@ import { internalAction, internalMutation, internalQuery } from "./_generated/se
 import { components, internal } from "./_generated/api";
 import { Agent } from "@convex-dev/agent";
 import { convexGateway } from "@convex-dev/ai-sdk-provider";
+import { wrapLanguageModel } from "ai";
 import { decryptSecret } from "./lib/crypto";
 import { assistantReplyDelayMs, BUSINESS_SYSTEM_PROMPT_MIN_LENGTH } from "./lib/launch";
 import { foundationPolicy } from "./lib/policy";
@@ -13,6 +14,9 @@ import { CUSTOMER_SPEECH_STYLE_RULES, normalizeAssistantReply } from "./lib/assi
 import { reserveAssistedConversation } from "./lib/billingAccess";
 import { billingAccess } from "./lib/billingAccess";
 import { recordDuplicateDispatch, recordResponseTime } from "./productAnalytics";
+import { canProcessInboxMessage } from "./lib/inboxAi";
+import type { ActionCtx } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
 
 const candidate = v.object({
   businessId: v.id("businesses"),
@@ -45,7 +49,7 @@ export const candidateForInteraction = internalQuery({
       interaction.sessionId ? ctx.db.get(interaction.sessionId) : null,
     ]);
     const conversation = interaction.conversationId ? await ctx.db.get(interaction.conversationId) : null;
-    if (!business || business.foundationVersion !== 1 || !customer || !session || session.state !== "connected" || !session.providerInstanceId) return null;
+    if (!canProcessInboxMessage(business, interaction) || !customer || customer.deletedAt !== undefined || customer.businessId !== business._id || !session || session.businessId !== business._id || session.state !== "connected" || !session.providerInstanceId) return null;
     const access = await billingAccess(ctx, business);
     if (!access.canUsePaidFeatures || !access.automation) return null;
     if (conversation && (conversation.businessId !== business._id || conversation.customerId !== customer._id)) return null;
@@ -80,11 +84,12 @@ export const candidateForInteraction = internalQuery({
 });
 
 export const attachAgentThread = internalMutation({
-  args: { conversationId: v.id("conversations"), threadId: v.string() },
+  args: { conversationId: v.id("conversations"), interactionId: v.id("interactions"), threadId: v.string() },
   returns: v.object({ threadId: v.string(), attached: v.boolean() }),
   handler: async (ctx, args) => {
     const conversation = await ctx.db.get(args.conversationId);
-    if (!conversation) return { threadId: args.threadId, attached: false };
+    const interaction = await ctx.db.get(args.interactionId);
+    if (!conversation || !interaction || interaction.conversationId !== conversation._id || interaction.businessId !== conversation.businessId || !canProcessInboxMessage(await ctx.db.get(conversation.businessId), interaction)) return { threadId: args.threadId, attached: false };
     if (conversation.agentThreadId) return { threadId: conversation.agentThreadId, attached: conversation.agentThreadId === args.threadId };
     await ctx.db.patch(conversation._id, { agentThreadId: args.threadId.slice(0, 200) });
     return { threadId: args.threadId, attached: true };
@@ -92,11 +97,15 @@ export const attachAgentThread = internalMutation({
 });
 
 export const recentConversation = internalQuery({
-  args: { customerId: v.id("customers") },
+  args: { interactionId: v.id("interactions") },
   returns: v.array(v.object({ role: v.union(v.literal("customer"), v.literal("owner"), v.literal("system")), content: v.string() })),
   handler: async (ctx, args) => {
-    const messages = await ctx.db.query("interactions").withIndex("by_customer", (builder) => builder.eq("customerId", args.customerId)).order("desc").take(8);
-    return messages.reverse().map((message) => ({ role: message.role, content: message.content.slice(0, 2_000) }));
+    const current = await ctx.db.get(args.interactionId);
+    if (!current) return [];
+    const business = await ctx.db.get(current.businessId);
+    if (!canProcessInboxMessage(business, current)) return [];
+    const messages = await ctx.db.query("interactions").withIndex("by_customer", (builder) => builder.eq("customerId", current.customerId)).order("desc").take(12);
+    return messages.filter((message) => message._id !== current._id && message.businessId === business._id && canProcessInboxMessage(business, message)).slice(0, 8).reverse().map((message) => ({ role: message.role, content: message.content.slice(0, 2_000) }));
   },
 });
 
@@ -114,7 +123,7 @@ export const reserve = internalMutation({
     const customer = await ctx.db.get(interaction.customerId);
     const business = await ctx.db.get(interaction.businessId);
     const session = await ctx.db.get(interaction.sessionId);
-    if (!customer || customer.businessId !== interaction.businessId || !business || business.foundationVersion !== 1 || !session || session.businessId !== business._id || session.state !== "connected" || !session.providerInstanceId || (business.killSwitch ?? true)) return null;
+    if (!canProcessInboxMessage(business, interaction) || !customer || customer.businessId !== interaction.businessId || !session || session.businessId !== business._id || session.state !== "connected" || !session.providerInstanceId || (business.killSwitch ?? true)) return null;
     if ((business.businessSystemPrompt?.trim().length ?? 0) < BUSINESS_SYSTEM_PROMPT_MIN_LENGTH) return null;
     const isGroup = interaction.isGroup ?? customer.isGroup ?? false;
     if (isGroup) {
@@ -178,7 +187,7 @@ export const cancelBeforeSubmit = internalMutation({
     await ctx.db.patch(dispatch._id, { state: "cancelled", errorCode: args.errorCode, updatedAt: now });
     if (dispatch.ownerRescueId) {
       const rescue = await ctx.db.get(dispatch.ownerRescueId);
-      if (rescue?.state === "sending") await ctx.db.patch(rescue._id, { state: "open", deliveryError: "Pipelixr could not send this answer because WhatsApp authorization changed. Check the connection and try again.", updatedAt: now });
+      if (rescue?.state === "sending") await ctx.db.patch(rescue._id, { state: "open", deliveryError: "Pipelixr did not send this answer because authorization changed. Reply directly in WhatsApp.", updatedAt: now });
     }
     return null;
   },
@@ -212,14 +221,15 @@ export const finish = internalMutation({
     if (args.state === "accepted") {
       const now = Date.now();
       const inbound = await ctx.db.get(dispatch.interactionId);
-      const interactionId = await ctx.db.insert("interactions", { businessId: dispatch.businessId, customerId: dispatch.customerId, ...(inbound?.conversationId ? { conversationId: inbound.conversationId } : {}), sessionId: dispatch.sessionId, role: "owner", content: dispatch.content, timestamp: now, receivedAt: now, isGroup: dispatch.isGroup, messageType: "text", aiProcessedAt: now, assistantDispatchId: dispatch._id, expiresAt: now + foundationPolicy().messageRetentionDays * 86_400_000 });
+      const allowAnalysis = inbound && canProcessInboxMessage(await ctx.db.get(dispatch.businessId), inbound);
+      const interactionId = await ctx.db.insert("interactions", { businessId: dispatch.businessId, customerId: dispatch.customerId, ...(inbound?.conversationId ? { conversationId: inbound.conversationId } : {}), sessionId: dispatch.sessionId, role: "owner", content: dispatch.content, timestamp: now, receivedAt: now, aiProcessingEpoch: inbound?.aiProcessingEpoch ?? null, isGroup: dispatch.isGroup, messageType: "text", aiProcessedAt: now, assistantDispatchId: dispatch._id, expiresAt: now + foundationPolicy().messageRetentionDays * 86_400_000 });
       if (inbound?.conversationId) await recordResponseTime(ctx, { businessId: dispatch.businessId, conversationId: inbound.conversationId, responseInteractionId: interactionId, responseAt: now, source: "assistant" });
       const customer = await ctx.db.get(dispatch.customerId);
       if (customer) await ctx.db.patch(customer._id, { lastInteraction: Math.max(customer.lastInteraction, now), lastOutboundAt: now });
       if (inbound?.conversationId) {
         const conversation = await ctx.db.get(inbound.conversationId);
         if (conversation) await ctx.db.patch(conversation._id, { revision: conversation.revision + 1, lastEventAt: Math.max(conversation.lastEventAt, now), lastOwnerAt: Math.max(conversation.lastOwnerAt ?? 0, now), messageCount: conversation.messageCount + 1 });
-        if (dispatch.qualificationQuestionField) await ctx.scheduler.runAfter(0, internal.leadQualification.recordQuestionAsked, { conversationId: inbound.conversationId, field: dispatch.qualificationQuestionField, askedAt: now });
+        if (allowAnalysis && dispatch.qualificationQuestionField) await ctx.scheduler.runAfter(0, internal.leadQualification.recordQuestionAsked, { conversationId: inbound.conversationId, interactionId: inbound._id, field: dispatch.qualificationQuestionField, askedAt: now });
       }
       const missed = await ctx.db.query("missedRevenueOpportunities").withIndex("by_interaction", (builder) => builder.eq("interactionId", dispatch.interactionId)).unique();
       if (missed && missed.state !== "answered") {
@@ -228,7 +238,7 @@ export const finish = internalMutation({
       }
       const opportunity = await ctx.db.query("communityOpportunities").withIndex("by_interaction", (builder) => builder.eq("interactionId", dispatch.interactionId)).unique();
       if (opportunity && opportunity.state === "open") await ctx.db.patch(opportunity._id, { state: "in_progress", updatedAt: now });
-      if (!dispatch.isGroup) await ctx.scheduler.runAfter(0, internal.commerceIntelligence.captureFromInteraction, { interactionId });
+      if (allowAnalysis && !dispatch.isGroup) await ctx.scheduler.runAfter(0, internal.commerceIntelligence.captureFromInteraction, { interactionId });
       await ctx.db.insert("aiActivityLog", { businessId: dispatch.businessId, type: "smart_reply", interactionId, customerId: dispatch.customerId, summary: dispatch.kind === "owner_rescue" ? "Sent the business owner's approved answer to a customer" : dispatch.isGroup ? "Replied in an authorized WhatsApp group" : "Replied to a customer on WhatsApp", model: process.env.GROQ_LLM_MODEL?.trim() || "configured-model", timestamp: now });
     }
     return null;
@@ -315,38 +325,57 @@ async function generateGroqReply(systemPrompt: string, customerName: string, inb
   }
 }
 
-async function generateAgentReply(ctx: Parameters<typeof internalAction>[0] extends never ? never : any, args: {
+async function generateAgentReply(ctx: ActionCtx, args: {
   systemPrompt: string;
   customerName: string;
   inboundContent: string;
-  businessId: string;
-  customerId: string;
-  conversationId: string | null;
+  interactionId: Id<"interactions">;
+  history: Array<{ role: "customer" | "owner" | "system"; content: string }>;
+  businessId: Id<"businesses">;
+  customerId: Id<"customers">;
+  conversationId: Id<"conversations"> | null;
   agentThreadId: string | null;
-}): Promise<string> {
+}, authorize: () => Promise<boolean>): Promise<string> {
   const model = process.env.CONVEX_AI_GATEWAY_MODEL?.trim();
   if (!model) throw new Error("AI_GATEWAY_NOT_CONFIGURED");
   const agent = new Agent(components.agent, {
     name: "pipelixr-whatsapp-assistant",
-    languageModel: convexGateway(model, { zdr: true }),
+    languageModel: wrapLanguageModel({
+      model: convexGateway(model, { zdr: true }),
+      middleware: {
+        specificationVersion: "v4",
+        wrapGenerate: async ({ doGenerate }) => {
+          if (!(await authorize())) throw new Error("AI_ASSISTANT_PAUSED");
+          return doGenerate();
+        },
+      },
+    }),
   });
   const userId = `business:${args.businessId}:customer:${args.customerId}`;
   let threadId = args.agentThreadId;
   if (!threadId && args.conversationId) {
     const created = await agent.createThread(ctx, { userId, title: `${args.customerName} WhatsApp conversation` });
-    const attached = await ctx.runMutation(internal.assistantReply.attachAgentThread, { conversationId: args.conversationId, threadId: created.threadId });
+    const attached = await ctx.runMutation(internal.assistantReply.attachAgentThread, { conversationId: args.conversationId, interactionId: args.interactionId, threadId: created.threadId });
+    if (!attached.attached) {
+      await agent.deleteThreadAsync(ctx, { threadId: created.threadId });
+      if (attached.threadId === created.threadId) throw new Error("AI_ASSISTANT_PAUSED");
+    }
     threadId = attached.threadId;
-    if (!attached.attached && created.threadId !== threadId) await agent.deleteThreadAsync(ctx, { threadId: created.threadId });
   }
   if (!threadId) throw new Error("AI_THREAD_NOT_AVAILABLE");
+  if (!(await authorize())) throw new Error("AI_ASSISTANT_PAUSED");
   const result = await agent.generateText(ctx, { threadId, userId }, {
     system: args.systemPrompt,
-    prompt: `${args.customerName} just sent: ${args.inboundContent}\nReturn only the WhatsApp reply.`,
+    messages: [
+      ...args.history.map((message) => ({ role: message.role === "owner" ? "assistant" as const : message.role === "customer" ? "user" as const : "system" as const, content: message.content })),
+      { role: "user", content: `${args.customerName} just sent: ${args.inboundContent}\nReturn only the WhatsApp reply.` },
+    ],
     temperature: 0.35,
     maxOutputTokens: 260,
+    maxRetries: 0,
   }, {
-    contextOptions: { recentMessages: 12 },
-    storageOptions: { saveMessages: "promptAndOutput" },
+    contextOptions: { recentMessages: 0 },
+    storageOptions: { saveMessages: "none" },
   });
   const reply = normalizeAssistantReply(result.text);
   if (reply.length < 2 || reply.length > 1_000) throw new Error("AI_GENERATION_FAILED");
@@ -363,10 +392,12 @@ export const ownerRescueCandidate = internalQuery({
     const rescue = await ctx.db.get(args.rescueId);
     if (!rescue || rescue.state !== "sending" || !rescue.ownerAnswer?.trim() || rescue.expiresAt <= Date.now()) return null;
     const [business, customer, conversation, interaction] = await Promise.all([ctx.db.get(rescue.businessId), ctx.db.get(rescue.customerId), ctx.db.get(rescue.conversationId), ctx.db.get(rescue.interactionId)]);
-    if (!business || business.foundationVersion !== 1 || (business.killSwitch ?? true) || !(business.customerAutoReplyEnabled ?? false)) return null;
+    if (!interaction || !canProcessInboxMessage(business, interaction) || (business.killSwitch ?? true) || !(business.customerAutoReplyEnabled ?? false)) return null;
+    const access = await billingAccess(ctx, business);
+    if (!access.canUsePaidFeatures || !access.automation) return null;
     const systemPrompt = business.businessSystemPrompt?.trim() ?? "";
     if (systemPrompt.length < BUSINESS_SYSTEM_PROMPT_MIN_LENGTH || !customer || customer.businessId !== business._id || customer.isGroup || customer.deletedAt !== undefined) return null;
-    if (!conversation || conversation.businessId !== business._id || conversation.customerId !== customer._id || !interaction || interaction.businessId !== business._id || interaction.customerId !== customer._id || interaction.conversationId !== conversation._id || interaction.role !== "customer") return null;
+    if (!conversation || conversation.businessId !== business._id || conversation.customerId !== customer._id || interaction.businessId !== business._id || interaction.customerId !== customer._id || interaction.conversationId !== conversation._id || interaction.role !== "customer") return null;
     return { rescueId: rescue._id, businessId: business._id, customerId: customer._id, conversationId: conversation._id, interactionId: interaction._id, customerName: customer.name ?? "customer", inboundContent: interaction.content, contextSummary: rescue.contextSummary, ownerAnswer: rescue.ownerAnswer, systemPrompt, agentThreadId: conversation.agentThreadId ?? null };
   },
 });
@@ -390,10 +421,10 @@ export const reserveOwnerRescue = internalMutation({
     const rescue = await ctx.db.get(args.rescueId);
     if (!rescue || rescue.state !== "sending" || !rescue.ownerAnswer?.trim() || rescue.expiresAt <= Date.now()) return null;
     const [business, customer, interaction] = await Promise.all([ctx.db.get(rescue.businessId), ctx.db.get(rescue.customerId), ctx.db.get(rescue.interactionId)]);
-    if (!business || business.foundationVersion !== 1 || (business.killSwitch ?? true) || !(business.customerAutoReplyEnabled ?? false) || (business.businessSystemPrompt?.trim().length ?? 0) < BUSINESS_SYSTEM_PROMPT_MIN_LENGTH) return null;
+    if (!interaction || !canProcessInboxMessage(business, interaction) || (business.killSwitch ?? true) || !(business.customerAutoReplyEnabled ?? false) || (business.businessSystemPrompt?.trim().length ?? 0) < BUSINESS_SYSTEM_PROMPT_MIN_LENGTH) return null;
     const access = await billingAccess(ctx, business);
     if (!access.canUsePaidFeatures || !access.automation) return null;
-    if (!customer || customer.businessId !== business._id || customer.isGroup || customer.deletedAt !== undefined || !interaction || interaction.businessId !== business._id || interaction.customerId !== customer._id || interaction.role !== "customer" || !interaction.sessionId) return null;
+    if (!customer || customer.businessId !== business._id || customer.isGroup || customer.deletedAt !== undefined || interaction.businessId !== business._id || interaction.customerId !== customer._id || interaction.role !== "customer" || !interaction.sessionId) return null;
     const session = await ctx.db.get(interaction.sessionId);
     if (!session || session.businessId !== business._id || session.state !== "connected" || !session.providerInstanceId) return null;
     let conversationId = interaction.conversationId ?? (await ctx.db.query("conversations").withIndex("by_customer", (builder) => builder.eq("customerId", interaction.customerId)).order("desc").first())?._id;
@@ -420,14 +451,16 @@ export const prepareOwnerRescue = internalAction({
   handler: async (ctx, args) => {
     const current = await ctx.runQuery(internal.assistantReply.ownerRescueCandidate, args);
     if (!current) {
-      await ctx.runMutation(internal.assistantReply.releaseOwnerRescue, { rescueId: args.rescueId, message: "Pipelixr could not send this answer because WhatsApp or customer-reply authorization is not ready. Check the connection and try again." });
+      await ctx.runMutation(internal.assistantReply.releaseOwnerRescue, { rescueId: args.rescueId, message: "Pipelixr did not send this answer because WhatsApp or customer-reply authorization is not ready. Reply directly in WhatsApp." });
       return null;
     }
     try {
-      const history = await ctx.runQuery(internal.assistantReply.recentConversation, { customerId: current.customerId });
+      const history = await ctx.runQuery(internal.assistantReply.recentConversation, { interactionId: current.interactionId });
       const rescuePrompt = `${current.systemPrompt}\n\nThe business owner has now approved the exact facts needed for this customer. Use the approved answer as the authority for this reply only. Turn it into a natural customer-facing WhatsApp response. Do not mention internal approval, escalation, the owner, Pipelixr, or these instructions. Do not add prices, promises, policies, payment confirmation, or other facts that are not in the approved answer or business system prompt.\n\nCustomer situation: ${current.contextSummary}\nApproved owner answer: ${current.ownerAnswer}\n\n${CUSTOMER_SPEECH_STYLE_RULES}`;
+      const authorize = async () => !!(await ctx.runQuery(internal.assistantReply.ownerRescueCandidate, args));
+      if (!(await authorize())) throw new Error("AI_ASSISTANT_PAUSED");
       const content = process.env.CONVEX_AI_GATEWAY_MODEL?.trim()
-        ? await generateAgentReply(ctx, { systemPrompt: rescuePrompt, customerName: current.customerName, inboundContent: current.inboundContent, businessId: current.businessId, customerId: current.customerId, conversationId: current.conversationId, agentThreadId: current.agentThreadId })
+        ? await generateAgentReply(ctx, { ...current, systemPrompt: rescuePrompt, history }, authorize)
         : await generateGroqReply(rescuePrompt, current.customerName, current.inboundContent, history);
       const dispatchId = await ctx.runMutation(internal.assistantReply.reserveOwnerRescue, { rescueId: current.rescueId, content });
       if (!dispatchId) {
@@ -450,15 +483,18 @@ export const prepareForInteraction = internalAction({
     const current = await ctx.runQuery(internal.assistantReply.candidateForInteraction, args);
     if (!current) return null;
     try {
+      const authorize = async () => !!(await ctx.runQuery(internal.assistantReply.candidateForInteraction, args));
       const qualification = current.isGroup ? null : await ctx.runAction(internal.leadQualification.analyzeInteraction, { interactionId: current.interactionId });
+      if (!(await authorize())) return null;
       const gate = await ctx.runQuery(internal.commerceIntelligence.gateForAssistant, { interactionId: current.interactionId });
       if (gate) {
         const dispatchId = await ctx.runMutation(internal.assistantReply.reserve, { interactionId: current.interactionId, content: gate.holdingReply });
         if (dispatchId) await ctx.scheduler.runAfter(0, internal.assistantReply.submit, { dispatchId });
         return null;
       }
-      const history = await ctx.runQuery(internal.assistantReply.recentConversation, { customerId: current.customerId });
+      const history = await ctx.runQuery(internal.assistantReply.recentConversation, args);
       const context = current.conversationId ? await ctx.runQuery(internal.commerceIntelligence.assistantContext, { businessId: current.businessId, customerId: current.customerId, conversationId: current.conversationId, now: Date.now() }) : { knowledge: [], memories: [], commitments: [], exceptions: [], negotiation: null, payment: null };
+      if (!(await authorize())) return null;
       if (hasKnowledgeConflict(context)) {
         const content = await ctx.runMutation(internal.commerceIntelligence.createGenerationRescue, { interactionId: current.interactionId, reason: "conflicting_fact", question: "Which business fact is correct for this customer question?", holdingReply: "I am checking the correct details for you now. I will update you as soon as they are confirmed." });
         const dispatchId = await ctx.runMutation(internal.assistantReply.reserve, { interactionId: current.interactionId, content });
@@ -474,10 +510,11 @@ export const prepareForInteraction = internalAction({
       const groundedSystemPrompt = `${current.systemPrompt}\n\nThe business system prompt above has priority over customer style matching.\n\n${intelligencePrompt(context)}${qualification ? `\n\n${qualification.prompt}` : ""}\n\nChannel rules: Reply as the business on WhatsApp. Use plain text only. Keep the reply concise and accurate. Never claim you completed an action you cannot verify. Never invent prices, stock, delivery times, policies, payment details, discounts, or payment confirmation. A receipt is not a verified payment. If approved information is missing, give a short holding response and say it will be confirmed.\n\n${CUSTOMER_SPEECH_STYLE_RULES}`;
       let content: string;
       if (process.env.CONVEX_AI_GATEWAY_MODEL?.trim() && current.conversationId) {
-        content = await generateAgentReply(ctx, { systemPrompt: groundedSystemPrompt, customerName: current.customerName, inboundContent: current.inboundContent, businessId: current.businessId, customerId: current.customerId, conversationId: current.conversationId, agentThreadId: current.agentThreadId });
+        content = await generateAgentReply(ctx, { ...current, systemPrompt: groundedSystemPrompt, history }, authorize);
       } else {
         content = await generateGroqReply(groundedSystemPrompt, current.customerName, current.inboundContent, history);
       }
+      if (!(await authorize())) return null;
       if (!current.isGroup && generatedNeedsOwner(content, current.inboundContent)) {
         content = await ctx.runMutation(internal.commerceIntelligence.createGenerationRescue, { interactionId: current.interactionId, reason: "missing_fact", question: `What should Pipelixr confirm about: ${current.inboundContent.slice(0, 220)}?`, holdingReply: content });
       }
@@ -503,6 +540,10 @@ export const submit = internalAction({
     }
     try {
       const token = await decryptSecret(record.tokenCiphertext, `business:${record.businessId}:session-token`);
+      if (!(await ctx.runQuery(internal.assistantReply.dispatchForSubmit, args))) {
+        await ctx.runMutation(internal.assistantReply.cancelBeforeSubmit, { dispatchId: args.dispatchId, errorCode: "AUTHORIZATION_REVOKED_BEFORE_TYPING" });
+        return null;
+      }
       const delayMs = assistantReplyDelayMs(record.content.length, record.interactionId);
       try {
         // Evolution Go keeps the composing indicator alive for this bounded
@@ -518,6 +559,10 @@ export const submit = internalAction({
         return null;
       }
       const currentToken = await decryptSecret(revalidated.tokenCiphertext, `business:${revalidated.businessId}:session-token`);
+      if (!(await ctx.runQuery(internal.assistantReply.dispatchForSubmit, args))) {
+        await ctx.runMutation(internal.assistantReply.cancelBeforeSubmit, { dispatchId: args.dispatchId, errorCode: "AUTHORIZATION_REVOKED_BEFORE_SEND" });
+        return null;
+      }
       const result = await sendAuthorizedAssistantText({ token: currentToken, instanceId: revalidated.providerInstanceId, target: revalidated.target, content: revalidated.content, interactionId: revalidated.interactionId });
       const provider = providerSendResult(result);
       await ctx.runMutation(internal.assistantReply.finish, { dispatchId: args.dispatchId, state: "accepted", ...(provider.messageId ? { providerMessageId: provider.messageId } : {}) });
@@ -542,7 +587,7 @@ export const dispatchForSubmit = internalQuery({
       ctx.db.get(dispatch.interactionId),
       ctx.db.get(dispatch.customerId),
     ]);
-    if (!business || business.foundationVersion !== 1 || !session || session.businessId !== business._id || session.state !== "connected" || !session.providerInstanceId || (business.killSwitch ?? true)) return null;
+    if (!interaction || !canProcessInboxMessage(business, interaction) || !session || session.businessId !== business._id || session.state !== "connected" || !session.providerInstanceId || (business.killSwitch ?? true)) return null;
     const access = await billingAccess(ctx, business);
     if (!access.canUsePaidFeatures || !access.automation) return null;
     if (!interaction || interaction.businessId !== business._id || interaction.customerId !== dispatch.customerId || interaction.sessionId !== session._id || interaction.role !== "customer") return null;

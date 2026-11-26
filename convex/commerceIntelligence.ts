@@ -3,6 +3,7 @@ import { internalAction, internalMutation, internalQuery, mutation, query } from
 import { internal } from "./_generated/api";
 import { requireBusiness } from "./lib/authorization";
 import { detectCommitment, detectException, detectMemoryCandidates } from "./lib/commerceIntelligence";
+import { canProcessInboxMessage } from "./lib/inboxAi";
 
 const knowledgeKind = v.union(v.literal("business_fact"), v.literal("product"), v.literal("price"), v.literal("inventory"), v.literal("delivery"), v.literal("payment"), v.literal("returns"), v.literal("warranty"), v.literal("policy"), v.literal("faq"));
 const exceptionState = v.union(v.literal("open"), v.literal("waiting_on_business"), v.literal("waiting_on_customer"), v.literal("resolved"), v.literal("dismissed"));
@@ -36,7 +37,7 @@ export const captureFromInteraction = internalMutation({
     const interaction = await ctx.db.get(args.interactionId);
     if (!interaction || !interaction.conversationId || !["customer", "owner"].includes(interaction.role) || interaction.manualReviewRequired) return null;
     const [business, customer] = await Promise.all([ctx.db.get(interaction.businessId), ctx.db.get(interaction.customerId)]);
-    if (!business || business.foundationVersion !== 1 || !customer || customer.deletedAt !== undefined || customer.isGroup) return null;
+    if (!canProcessInboxMessage(business, interaction) || !customer || customer.deletedAt !== undefined || customer.isGroup) return null;
     const now = Date.now();
     const commitment = detectCommitment(interaction.content, interaction.role === "owner" ? "owner" : "customer", interaction.timestamp);
     if (commitment) {
@@ -133,6 +134,8 @@ export const paymentProofForVerification = internalQuery({
   handler: async (ctx, args) => {
     const proof = await ctx.db.get(args.proofId);
     if (!proof || proof.verificationState !== "pending") return null;
+    const [business, interaction] = await Promise.all([ctx.db.get(proof.businessId), ctx.db.get(proof.interactionId)]);
+    if (!interaction || interaction.businessId !== proof.businessId || !canProcessInboxMessage(business, interaction)) return null;
     return { proofId: proof._id, businessId: proof.businessId, customerId: proof.customerId, orderId: proof.orderId ?? null, amount: proof.extractedAmount ?? null, reference: proof.extractedReference ?? null };
   },
 });
@@ -149,6 +152,11 @@ export const finishPaymentVerification = internalMutation({
     const proof = await ctx.db.get(args.proofId);
     if (!proof || proof.verificationState !== "pending") return null;
     const now = Date.now();
+    const [business, interaction] = await Promise.all([ctx.db.get(proof.businessId), ctx.db.get(proof.interactionId)]);
+    if (!interaction || interaction.businessId !== proof.businessId || !canProcessInboxMessage(business, interaction)) {
+      await ctx.db.patch(proof._id, { verificationState: "not_started", receiptState: "review_required", verificationReason: "Automatic verification was skipped. Review the receipt manually.", updatedAt: now });
+      return null;
+    }
     await ctx.db.patch(proof._id, {
       verificationState: args.state,
       receiptState: args.state === "verified" ? "matched" : "review_required",
@@ -170,7 +178,10 @@ export const verifyPaymentProof = internalAction({
   returns: v.null(),
   handler: async (ctx, args) => {
     const proof = await ctx.runQuery(internal.commerceIntelligence.paymentProofForVerification, args);
-    if (!proof) return null;
+    if (!proof) {
+      await ctx.runMutation(internal.commerceIntelligence.finishPaymentVerification, { proofId: args.proofId, state: "unavailable", reason: "Independent verification is unavailable. Review the receipt manually." });
+      return null;
+    }
     const url = process.env.PAYMENT_VERIFICATION_URL?.trim();
     const apiKey = process.env.PAYMENT_VERIFICATION_API_KEY?.trim();
     if (!url || !apiKey || !url.startsWith("https://")) {
@@ -205,7 +216,7 @@ export const gateForAssistant = internalQuery({
   returns: v.union(v.null(), v.object({ holdingReply: v.string() })),
   handler: async (ctx, args) => {
     const interaction = await ctx.db.get(args.interactionId);
-    if (!interaction || interaction.role !== "customer" || interaction.isGroup) return null;
+    if (!interaction || interaction.role !== "customer" || interaction.isGroup || !canProcessInboxMessage(await ctx.db.get(interaction.businessId), interaction)) return null;
     const rescue = await ctx.db.query("ownerRescueRequests").withIndex("by_interaction", (builder) => builder.eq("interactionId", interaction._id)).first();
     if (rescue?.state === "open") return { holdingReply: rescue.customerHoldingReply };
     const proof = await ctx.db.query("paymentProofs").withIndex("by_interaction", (builder) => builder.eq("interactionId", interaction._id)).unique();
@@ -224,7 +235,7 @@ export const createGenerationRescue = internalMutation({
   returns: v.string(),
   handler: async (ctx, args) => {
     const interaction = await ctx.db.get(args.interactionId);
-    if (!interaction || interaction.role !== "customer" || !interaction.conversationId) return clean(args.holdingReply, 1_000);
+    if (!interaction || interaction.role !== "customer" || !interaction.conversationId || !canProcessInboxMessage(await ctx.db.get(interaction.businessId), interaction)) return clean(args.holdingReply, 1_000);
     const existing = await ctx.db.query("ownerRescueRequests").withIndex("by_interaction", (builder) => builder.eq("interactionId", interaction._id)).first();
     if (existing?.state === "open") return existing.customerHoldingReply;
     const customer = await ctx.db.get(interaction.customerId);
@@ -446,7 +457,18 @@ export const reviewPaymentProof = mutation({
 
 export const answerRescue = mutation({
   args: { businessId: v.id("businesses"), rescueId: v.id("ownerRescueRequests"), answer: v.string() }, returns: v.null(),
-  handler: async (ctx, args) => { await requireBusiness(ctx, args.businessId); const item = await ctx.db.get(args.rescueId); if (!item || item.businessId !== args.businessId || item.state !== "open" || item.expiresAt <= Date.now()) throw new ConvexError({ code: "NOT_FOUND" }); const answer = clean(args.answer, 1_000); if (answer.length < 2) throw new ConvexError({ code: "INVALID_ANSWER" }); const now = Date.now(); await ctx.db.patch(item._id, { state: "sending", ownerAnswer: answer, answeredAt: undefined, deliveryError: undefined, updatedAt: now }); await ctx.scheduler.runAfter(0, internal.assistantReply.prepareOwnerRescue, { rescueId: item._id }); return null; },
+  handler: async (ctx, args) => {
+    const business = await requireBusiness(ctx, args.businessId);
+    const item = await ctx.db.get(args.rescueId);
+    if (!item || item.businessId !== args.businessId || item.state !== "open" || item.expiresAt <= Date.now()) throw new ConvexError({ code: "NOT_FOUND" });
+    const interaction = await ctx.db.get(item.interactionId);
+    if (!interaction || interaction.businessId !== business._id || !canProcessInboxMessage(business, interaction) || business.customerAutoReplyEnabled !== true || business.killSwitch !== false) throw new ConvexError({ code: "MANUAL_REPLY_REQUIRED" });
+    const answer = clean(args.answer, 1_000);
+    if (answer.length < 2) throw new ConvexError({ code: "INVALID_ANSWER" });
+    await ctx.db.patch(item._id, { state: "sending", ownerAnswer: answer, answeredAt: undefined, deliveryError: undefined, updatedAt: Date.now() });
+    await ctx.scheduler.runAfter(0, internal.assistantReply.prepareOwnerRescue, { rescueId: item._id });
+    return null;
+  },
 });
 
 export const resolveRescueDelivery = mutation({
