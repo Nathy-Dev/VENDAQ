@@ -469,9 +469,18 @@ function LiveAgentDemo() {
   return (
     <div className={`${styles.agentDemo} ${isLeaving ? styles.agentDemoLeaving : ""}`} data-live-agent-demo="true" role="img" aria-label="Pipelixr handling changing WhatsApp sales conversations in real time">
       <div className={styles.agentDemoBackdrop} aria-hidden="true" />
-      <div className={styles.agentArtwork} aria-hidden="true">
-        <Image src="/pipelixr-agent-hero.webp" width={612} height={408} priority sizes="(max-width: 900px) 92vw, 48vw" alt="" />
-      </div>
+      <picture className={styles.agentArtwork}>
+        {started && (
+          <source srcSet="/pipelixr-agent-typing.webp" media="(prefers-reduced-motion: no-preference)" />
+        )}
+        <Image
+          src="/pipelixr-agent-typing-still.webp"
+          width={1280}
+          height={720}
+          unoptimized
+          alt=""
+        />
+      </picture>
 
       <div className={styles.liveConversation} aria-hidden="true">
         <div className={`${styles.liveBubble} ${styles.buyerBubble}`}>

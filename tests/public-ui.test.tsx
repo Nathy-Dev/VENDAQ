@@ -19,6 +19,8 @@ describe("public UI", () => {
     expect(html).toContain("into sales.");
     expect(html).toContain("Pipelixr finds serious buyers in your WhatsApp conversations, qualifies leads, replies using your business details, follows up on opportunities, and tracks which conversations turn into sales.");
     expect(html).toContain('data-live-agent-demo="true"');
+    expect(html).toContain('src="/pipelixr-agent-typing-still.webp"');
+    expect(html).not.toContain('/pipelixr-agent-typing.webp');
     expect(html).toContain("Buyer detected");
     expect(html).toContain("reply ready");
     expect(html).toContain("Follow-up scheduled");
