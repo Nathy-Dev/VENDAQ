@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { ConvexClientProvider } from "@/components/ConvexClientProvider";
+import { noIndex, siteName, siteOrigin } from "@/lib/seo";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -14,8 +15,10 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: { default: "Pipelixr | AI Sales Assistant for Businesses on WhatsApp", template: "%s | Pipelixr" },
-  description: "Find serious buyers, qualify leads, reply using your business details, follow up on opportunities, and track which WhatsApp conversations turn into sales.",
+  metadataBase: new URL(siteOrigin),
+  title: { default: siteName, template: `%s | ${siteName}` },
+  applicationName: siteName,
+  robots: noIndex,
 };
 
 export default function RootLayout({

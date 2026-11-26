@@ -1,4 +1,7 @@
 import LegalDocument from "@/components/LegalDocument";
+import { publicPageMetadata } from "@/lib/seo";
+
+export const metadata = publicPageMetadata("/legal/dpa");
 
 export default function DpaPage() {
   return <LegalDocument title="Data Processing Agreement" summary="This DPA forms part of the Terms where a business uses Pipelixr to process personal data for its customers, prospects, staff, or other contacts." sections={[

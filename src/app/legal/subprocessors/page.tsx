@@ -1,4 +1,7 @@
 import LegalDocument from "@/components/LegalDocument";
+import { publicPageMetadata } from "@/lib/seo";
+
+export const metadata = publicPageMetadata("/legal/subprocessors");
 
 export default function SubprocessorsPage() {
   return <LegalDocument title="Subprocessor Register" summary="These providers may process data to deliver Pipelixr. Actual use depends on enabled features and deployment configuration. The operator must confirm contractual entities, locations, and safeguards before launch." sections={[

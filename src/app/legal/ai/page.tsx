@@ -1,4 +1,7 @@
 import LegalDocument from "@/components/LegalDocument";
+import { publicPageMetadata } from "@/lib/seo";
+
+export const metadata = publicPageMetadata("/legal/ai");
 
 export default function AiPage() {
   return <LegalDocument title="AI Transparency Notice" summary="Pipelixr uses automated systems to help businesses organize conversations, identify possible intent, retrieve configured business facts, and prepare or send authorized replies." sections={[

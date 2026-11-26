@@ -1,4 +1,7 @@
 import LegalDocument, { legalOperator } from "@/components/LegalDocument";
+import { publicPageMetadata } from "@/lib/seo";
+
+export const metadata = publicPageMetadata("/legal/privacy");
 
 export default function PrivacyPage() {
   return <LegalDocument title="Privacy Notice" summary={`${legalOperator.name} explains here how account, workspace, website, and support data is handled. For customer conversations processed for a seller, that seller controls the data and our Data Processing Agreement applies.`} sections={[

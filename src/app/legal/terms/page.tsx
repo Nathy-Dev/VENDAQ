@@ -1,4 +1,7 @@
 import LegalDocument, { legalOperator } from "@/components/LegalDocument";
+import { publicPageMetadata } from "@/lib/seo";
+
+export const metadata = publicPageMetadata("/legal/terms");
 
 export default function TermsPage() {
   return <LegalDocument title="Terms of Service" summary={`These terms govern use of the Pipelixr service operated by ${legalOperator.name}. By accepting them or using a workspace, you agree to them for yourself and the business you represent.`} sections={[

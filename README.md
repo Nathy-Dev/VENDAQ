@@ -32,7 +32,13 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+You can start editing the page by modifying `src/app/page.tsx`. The page auto-updates as you edit the file.
+
+### Search and link previews
+
+The canonical origin defaults to `https://www.pipelixr.com`. If the production domain changes, set `NEXT_PUBLIC_SITE_URL` to the new HTTPS origin before building so canonical URLs, social cards, and the sitemap all agree. Public metadata and the sitemap page list live in `src/lib/seo.ts`. Auth and workspace pages use `noindex` and are not in the sitemap.
+
+After deploying, submit `/sitemap.xml` for the canonical domain in Google Search Console. Social apps and browsers may cache old previews and icons.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 

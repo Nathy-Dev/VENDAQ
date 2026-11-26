@@ -1,4 +1,7 @@
 import LegalDocument from "@/components/LegalDocument";
+import { publicPageMetadata } from "@/lib/seo";
+
+export const metadata = publicPageMetadata("/legal/billing");
 
 export default function BillingPage() {
   return <LegalDocument title="Billing and Refund Terms" summary="These terms explain trials, recurring charges, usage allowances, cancellation, failed payments, and refunds for paid Pipelixr plans." sections={[

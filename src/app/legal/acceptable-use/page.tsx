@@ -1,4 +1,7 @@
 import LegalDocument from "@/components/LegalDocument";
+import { publicPageMetadata } from "@/lib/seo";
+
+export const metadata = publicPageMetadata("/legal/acceptable-use");
 
 export default function AcceptableUsePage() {
   return <LegalDocument title="Acceptable Use Policy" summary="Use Pipelixr lawfully, transparently, and in a way that respects recipients, connected providers, and the security of the service." sections={[
