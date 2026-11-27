@@ -1,6 +1,33 @@
-import { internalMutation, internalQuery } from "./_generated/server";
+import { internalMutation, internalQuery, mutation } from "./_generated/server";
 import { ConvexError, v } from "convex/values";
+import { normalizeEmail } from "./lib/authentication";
+import { requireIdentity } from "./lib/authorization";
 import { foundationPolicy } from "./lib/policy";
+
+export const upsertGoogleUser = mutation({
+  args: {},
+  returns: v.null(),
+  handler: async (ctx) => {
+    const identity = await requireIdentity(ctx);
+    const googleSubject = identity.subject;
+    if (!/^google:.+$/.test(googleSubject) || identity.emailVerified !== true || !identity.email) {
+      throw new ConvexError({ code: "UNVERIFIED_GOOGLE_IDENTITY" });
+    }
+    const existing = await ctx.db.query("users")
+      .withIndex("by_google_subject_and_email", (index) => index.eq("googleSubject", googleSubject))
+      .unique();
+    const email = normalizeEmail(identity.email);
+    const profile = {
+      email,
+      name: identity.name,
+      image: identity.pictureUrl,
+      emailVerified: (existing?.email === email ? existing.emailVerified : undefined) ?? Date.now(),
+    };
+    if (existing) await ctx.db.patch(existing._id, profile);
+    else await ctx.db.insert("users", { ...profile, googleSubject });
+    return null;
+  },
+});
 
 // Internal mutation: only callable from actions, not from the client
 export const insertUser = internalMutation({
@@ -13,7 +40,7 @@ export const insertUser = internalMutation({
   handler: async (ctx, args) => {
     const existingUser = await ctx.db
       .query("users")
-      .withIndex("by_email", (q) => q.eq("email", args.email))
+      .withIndex("by_google_subject_and_email", (index) => index.eq("googleSubject", undefined).eq("email", args.email))
       .unique();
 
     if (existingUser) {
@@ -37,7 +64,7 @@ export const getUserByEmail = internalQuery({
   handler: async (ctx, args) => {
     return await ctx.db
       .query("users")
-      .withIndex("by_email", (q) => q.eq("email", args.email))
+      .withIndex("by_google_subject_and_email", (index) => index.eq("googleSubject", undefined).eq("email", args.email))
       .unique();
   },
 });

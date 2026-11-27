@@ -7,13 +7,20 @@ async function signingKey() {
   return importPKCS8(Buffer.from(encoded, "base64").toString("utf8"), "RS256");
 }
 
-export async function mintConvexToken(subject: string, claims?: { email?: string | null; name?: string | null }) {
+export async function mintConvexToken(subject: string, claims?: {
+  email?: string | null;
+  emailVerified?: boolean;
+  name?: string | null;
+  image?: string | null;
+}) {
   const issuer = process.env.AUTH_JWT_ISSUER;
   const kid = process.env.AUTH_JWT_KEY_ID;
   if (!issuer || !kid || !/^(google|credentials):.+$/.test(subject)) throw new Error("AUTH_BRIDGE_NOT_CONFIGURED");
   return new SignJWT({
     ...(claims?.email ? { email: claims.email } : {}),
+    ...(claims?.emailVerified ? { email_verified: true } : {}),
     ...(claims?.name ? { name: claims.name } : {}),
+    ...(claims?.image ? { picture: claims.image } : {}),
   }).setProtectedHeader({ alg: "RS256", kid, typ: "JWT" }).setSubject(subject).setIssuer(issuer).setAudience("pipelixr").setIssuedAt().setExpirationTime("5m").sign(await signingKey());
 }
 

@@ -18,7 +18,8 @@ If `ADMIN_USER_IDS` is absent or empty, the console fails closed for everyone. R
 - Overview, operations, and billing remain read-only. Business details include a guarded permanent account-deletion command.
 - Deletion requires the admin to type the exact business name. It immediately disables automation and seller access, disables an active Paystack subscription, revokes the WhatsApp session, and removes tenant records in bounded background batches.
 - If Paystack cancellation or provider disconnection cannot be confirmed, deletion fails closed and leaves the workspace disabled for operator review.
-- Credential accounts are removed from the local users/auth tables. Google identities cannot be deleted from Google; their Pipelixr business and data are removed.
+- Account deletion removes the local user record for both credentials and Google sign-ins. It does not delete the account at Google.
+- After deploying the Convex functions and then the web app, existing Google users appear in `users` the next time they sign in with Google. Their workspace ownership does not change.
 - Queries are bounded to protect production database reads. The UI shows a snapshot notice when a safety limit is reached.
 - Customer message bodies, WhatsApp tokens, Paystack secrets, payment references, and provider credentials are never returned.
 - The business CSV export is generated in the operator’s browser from the already authorized table data.

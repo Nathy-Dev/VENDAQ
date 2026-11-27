@@ -104,13 +104,13 @@ export const deleteAccountBatch = internalMutation({
       }
       const subscription = await ctx.db.query("businessSubscriptions").withIndex("by_business", (builder) => builder.eq("businessId", job.businessId)).unique();
       if (subscription) await ctx.db.delete(subscription._id);
-      if (job.ownerId.startsWith("credentials:")) {
-        const userId = ctx.db.normalizeId("users", job.ownerId.slice("credentials:".length));
-        if (userId) {
-          for (const account of await ctx.db.query("accounts").withIndex("by_userId", (builder) => builder.eq("userId", userId)).take(25)) await ctx.db.delete(account._id);
-          for (const authSession of await ctx.db.query("sessions").withIndex("by_userId", (builder) => builder.eq("userId", userId)).take(25)) await ctx.db.delete(authSession._id);
-          if (await ctx.db.get(userId)) await ctx.db.delete(userId);
-        }
+      const userId = job.ownerId.startsWith("credentials:")
+        ? ctx.db.normalizeId("users", job.ownerId.slice("credentials:".length))
+        : (await ctx.db.query("users").withIndex("by_google_subject_and_email", (index) => index.eq("googleSubject", job.ownerId)).unique())?._id;
+      if (userId) {
+        for (const account of await ctx.db.query("accounts").withIndex("by_userId", (builder) => builder.eq("userId", userId)).take(25)) await ctx.db.delete(account._id);
+        for (const authSession of await ctx.db.query("sessions").withIndex("by_userId", (builder) => builder.eq("userId", userId)).take(25)) await ctx.db.delete(authSession._id);
+        if (await ctx.db.get(userId)) await ctx.db.delete(userId);
       }
       await ctx.db.delete(business._id);
       await ctx.db.patch(job._id, { state: "done", completedAt: Date.now(), updatedAt: Date.now(), deletedRecords: job.deletedRecords + 1, scheduledId: undefined });

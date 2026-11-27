@@ -589,7 +589,10 @@ export default defineSchema({
     emailVerified: v.optional(v.number()),
     image: v.optional(v.string()),
     password: v.optional(v.string()), // Added for Credentials provider
-  }).index("by_email", ["email"]),
+    googleSubject: v.optional(v.string()),
+  })
+    .index("by_email", ["email"])
+    .index("by_google_subject_and_email", ["googleSubject", "email"]),
 
   accounts: defineTable({
     userId: v.id("users"),

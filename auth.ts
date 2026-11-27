@@ -3,6 +3,7 @@ import Google from "next-auth/providers/google";
 import Credentials from "next-auth/providers/credentials";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "./convex/_generated/api";
+import { mintConvexToken } from "./src/lib/convex-auth";
 
 const convex = new ConvexHttpClient(
   process.env.NEXT_PUBLIC_CONVEX_URL || "https://dummy.convex.cloud"
@@ -48,8 +49,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     async jwt({ token, user, account, profile }) {
       if (user && account) {
         if (account.provider === "google") {
-          if (!profile?.email_verified || !account.providerAccountId) throw new Error("UNVERIFIED_GOOGLE_IDENTITY");
-          token.id = `google:${account.providerAccountId}`;
+          if (profile?.email_verified !== true || !profile.email || !account.providerAccountId) throw new Error("UNVERIFIED_GOOGLE_IDENTITY");
+          const subject = `google:${account.providerAccountId}`;
+          const convexToken = await mintConvexToken(subject, {
+            email: profile.email,
+            emailVerified: true,
+            name: user.name,
+            image: user.image,
+          });
+          await new ConvexHttpClient(convex.url, { auth: convexToken }).mutation(api.users.upsertGoogleUser, {});
+          token.id = subject;
         } else if (account.provider === "credentials" && user.id) {
           token.id = `credentials:${user.id}`;
         }

@@ -29,8 +29,9 @@ describe("admin console authorization", () => {
   it("requires an exact business-name confirmation and deletes the tenant in bounded jobs", async () => {
     vi.stubEnv("ADMIN_USER_IDS", "google:operator");
     const harness = createHarness();
-    const seller = harness.withIdentity({ subject: "google:delete-me", issuer: "https://auth.example.test" });
+    const seller = harness.withIdentity({ subject: "google:delete-me", issuer: "https://auth.example.test", email: "seller@example.test", emailVerified: true });
     const admin = harness.withIdentity({ subject: "google:operator", issuer: "https://auth.example.test" });
+    await seller.mutation(api.users.upsertGoogleUser, {});
     const businessId = await seller.mutation(api.foundation.createBusiness, { name: "Delete Me Ltd" });
     await harness.run(async (ctx) => {
       const customerId = await ctx.db.insert("customers", { businessId, name: "Synthetic buyer", phone: "2348000000000", totalValue: 0, lastInteraction: Date.now(), tags: [] });
@@ -43,6 +44,7 @@ describe("admin console authorization", () => {
 
     await harness.finishAllScheduledFunctions(() => vi.runAllTimers());
     expect(await harness.run((ctx) => ctx.db.get(businessId))).toBeNull();
+    expect(await harness.run((ctx) => ctx.db.query("users").withIndex("by_google_subject_and_email", (index) => index.eq("googleSubject", "google:delete-me")).unique())).toBeNull();
     expect(await harness.run((ctx) => ctx.db.query("customers").withIndex("by_business", (query) => query.eq("businessId", businessId)).take(1))).toHaveLength(0);
     expect(await harness.run((ctx) => ctx.db.query("orders").withIndex("by_business", (query) => query.eq("businessId", businessId)).take(1))).toHaveLength(0);
     expect(await admin.query(api.admin.deletionStatus, { businessId })).toMatchObject({ state: "done" });
