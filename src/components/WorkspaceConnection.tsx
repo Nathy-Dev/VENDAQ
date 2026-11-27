@@ -127,12 +127,12 @@ export default function ConnectionPanel({ workspace, embedded = false }: { works
         <Pill dot tone={state === "connected" ? "positive" : state === "error" ? "danger" : "neutral"}>{titleCase(state)}</Pill>
       </div>
       <div className={styles.riskDisclosure}>
-        <p><strong>An unofficial connection, with real risks.</strong> Pipelixr uses Evolution Go, not the official WhatsApp Business API. WhatsApp may restrict or ban a connected number.</p>
-        <p>Only connect a number you are authorized to manage. Eligible incoming messages are processed for this workspace and retained for {workspace.retentionDays} days. Pairing alone does not authorize Pipelixr to reply; that requires a saved business prompt and separate customer/group consent.</p>
+        <p>Pipelixr uses Evolution Go. Auto-replies are off by default and rate-limited when enabled.</p>
+        <p>Eligible incoming messages are kept for {workspace.retentionDays} days. Auto-replies require separate customer or group consent.</p>
       </div>
       {state === "revoked" ? <><div className={styles.infoBanner}><ShieldCheck size={17} aria-hidden="true" /><p>This connection was revoked. Reset it to create fresh credentials and pair again. The reset stays blocked if the old provider instance still exists.</p></div><div className={styles.actions}><button type="button" className={buttonClass.primary} disabled={busy} onClick={() => void resetConnection()}>{busy ? "Resetting…" : "Reset connection"}</button></div></> : (
         <>
-          {!["connected", "pending", "provisioning"].includes(state) && <label className={styles.checkLabel}><input type="checkbox" checked={acceptedRisk} disabled={busy} onChange={(event) => setAcceptedRisk(event.target.checked)} /><span>I understand the number-ban and retention risks, and authorize processing for this business.</span></label>}
+          {!["connected", "pending", "provisioning"].includes(state) && <label className={styles.checkLabel}><input type="checkbox" checked={acceptedRisk} disabled={busy} onChange={(event) => setAcceptedRisk(event.target.checked)} /><span>I understand the risks and authorize Pipelixr to process messages for this business.</span></label>}
           <div className={styles.actions}>
             {!["connected", "pending", "provisioning"].includes(state) && <button type="button" className={buttonClass.primary} disabled={busy || !acceptedRisk} onClick={() => void pair()}>{busy ? "Connecting…" : "Connect WhatsApp"}</button>}
             <button type="button" className={buttonClass.secondary} disabled={busy} onClick={() => void check()}><RefreshCw size={14} aria-hidden="true" />{busy ? "Checking…" : "Refresh status"}</button>
