@@ -179,7 +179,8 @@
 .qr svg { display: block; max-width: 100%; height: auto; }
 .noteList { color: var(--dash-text-muted); padding-left: 18px; margin: 12px 0 0; font-size: 12px; line-height: 1.8; }
 .noteList li + li { margin-top: 7px; }
-.setupCard { max-width: 500px; margin: 55px auto; padding: 32px; scroll-margin-top: 93px; }
+.setupScreen { display: grid; align-items: safe center; justify-items: center; min-height: 100dvh; padding: 24px 16px; background: radial-gradient(ellipse at 50% 15%, var(--dash-accent-soft), transparent 42rem), var(--dash-bg); }
+.setupCard { width: 100%; max-width: 500px; padding: 32px; }
 .setupCard h1 { font-size: 25px; font-weight: 600; letter-spacing: -.8px; margin-top: 24px; }
 .setupCard h1:focus { outline: none; }
 .setupCard > h1 + p { font-size: 13px; line-height: 1.8; color: var(--dash-text-muted); margin: 8px 0 25px; }
@@ -304,7 +305,6 @@
 }
 @media (max-width: 900px) { .settingsLayout { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); gap: 18px; } .settingsNav { display: flex; overflow-x: auto; overflow-y: hidden; padding-bottom: 6px; } .settingsNav button { white-space: nowrap; flex-shrink: 0; } }
 @media (max-width: 767px) {
-  .setupCard { scroll-margin-top: 96px; }
   .inbox { display: block; height: calc(100dvh - 250px - env(safe-area-inset-bottom)); min-height: 390px; }
   .contactPane, .conversation { height: 100%; border-right: 0; }
   .inbox[data-selected="true"] .contactPane { display: none; }
@@ -325,7 +325,7 @@
   .focusRow { padding: 14px 16px; gap: 9px; }
   .focusTrailing { gap: 5px; }
   .focusTrailing > svg { display: none; }
-  .setupCard { margin: 14px auto; padding: clamp(16px, 5vw, 24px); }
+  .setupCard { padding: clamp(16px, 5vw, 24px); }
   .profileHeader { align-items: flex-start; gap: 16px; }
   .largeAvatar { width: 58px; height: 58px; font-size: 18px; }
   .profileHeader h2 { font-size: 18px; }

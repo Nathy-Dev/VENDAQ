@@ -29,13 +29,27 @@ export default function WorkspaceOnboarding({ workspace, onCreatingChange }: { w
   const { title, description } = steps[stepIndex];
   const heading = useRef<HTMLHeadingElement>(null);
   const previousStage = useRef(stage);
+  const exitRequested = useRef(false);
+  const pathname = usePathname();
+  const router = useRouter();
 
   useEffect(() => {
     if (previousStage.current === stage) return;
     previousStage.current = stage;
     heading.current?.focus({ preventScroll: true });
-    heading.current?.closest("section")?.scrollIntoView({ block: "start" });
+    heading.current?.closest("section")?.scrollIntoView({ block: "start", behavior: "instant" });
   }, [stage]);
+
+  function leaveSetup() {
+    exitRequested.current = true;
+    onCreatingChange(false);
+  }
+
+  function continueSetup() {
+    if (!exitRequested.current && window.location.pathname === pathname && pathname !== "/onboarding/connect") {
+      router.replace("/onboarding/connect", { scroll: false });
+    }
+  }
 
   return (
     <section className={`${styles.card} ${styles.setupCard}`} aria-labelledby="onboarding-title">
@@ -50,16 +64,14 @@ export default function WorkspaceOnboarding({ workspace, onCreatingChange }: { w
           </li>
         ))}
       </ol>
-      {!workspace && <BusinessSetup onCreatingChange={onCreatingChange} />}
+      {!workspace && <BusinessSetup onCreatingChange={onCreatingChange} onCreated={continueSetup} />}
       {workspace && stage === "connection" && <ConnectionPanel workspace={workspace} embedded />}
-      {workspace && stage === "business_ai" && <>
-        <BusinessAssistantSettings workspace={workspace} compact />
-        {!workspace.aiEnabled && <div className={styles.setupFooter}><Link href="/pipeline" className={buttonClass.secondary}>Go to inbox without AI<ArrowRight size={14} aria-hidden="true" /></Link></div>}
-      </>}
+      {workspace && stage === "business_ai" && <BusinessAssistantSettings workspace={workspace} compact />}
+      {workspace && stage !== "groups" && <div className={styles.setupFooter}><Link href="/dashboard" replace onNavigate={leaveSetup} className={buttonClass.secondary}>Skip for now</Link><p className={styles.helper}>You can finish setting up later.</p></div>}
       {workspace && stage === "groups" && <>
         <WorkspaceGroups workspace={workspace} embedded />
         <div className={styles.setupFooter}>
-          <Link href="/dashboard" replace className={buttonClass.primary}>Finish setup<ArrowRight size={14} aria-hidden="true" /></Link>
+          <Link href="/dashboard" replace onNavigate={leaveSetup} className={buttonClass.primary}>Finish setup<ArrowRight size={14} aria-hidden="true" /></Link>
           <p className={styles.helper}>Pipelixr only replies after you explicitly authorize customer replies or enable individual groups.</p>
         </div>
       </>}
@@ -67,10 +79,8 @@ export default function WorkspaceOnboarding({ workspace, onCreatingChange }: { w
   );
 }
 
-function BusinessSetup({ onCreatingChange }: { onCreatingChange: (creating: boolean) => void }) {
+function BusinessSetup({ onCreatingChange, onCreated }: { onCreatingChange: (creating: boolean) => void; onCreated: () => void }) {
   const createBusiness = useMutation(api.foundation.createBusiness);
-  const pathname = usePathname();
-  const router = useRouter();
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<Feedback>(null);
@@ -84,7 +94,7 @@ function BusinessSetup({ onCreatingChange }: { onCreatingChange: (creating: bool
       onCreatingChange(true);
       try {
         await createBusiness({ name: name.trim() });
-        if (window.location.pathname === pathname && pathname !== "/onboarding/connect") router.replace("/onboarding/connect", { scroll: false });
+        onCreated();
       } catch {
         onCreatingChange(false);
         setFeedback({ text: "We couldn't create your workspace. Check the name and try again. If you already have an account, ask your operator to verify its migration.", error: true });

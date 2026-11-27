@@ -3,13 +3,21 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { Workspace } from "../src/types/workspace";
 
-vi.mock("convex/react", () => ({ useAction: () => vi.fn(), useMutation: () => vi.fn() }));
-vi.mock("next/navigation", () => ({ usePathname: () => "/onboarding/connect", useRouter: () => ({ replace: vi.fn() }) }));
+const context = vi.hoisted(() => ({ pathname: "/onboarding/connect", workspace: null as Workspace | null | undefined }));
+vi.mock("convex/react", () => ({ useAction: () => vi.fn(), useMutation: () => vi.fn(), useQuery: () => context.workspace }));
+vi.mock("next/navigation", () => ({ usePathname: () => context.pathname, useRouter: () => ({ replace: vi.fn() }) }));
+vi.mock("../src/components/DashboardShell", () => ({ default: ({ children }: { children: React.ReactNode }) => <div data-dashboard-shell="true">Workspace navigation{children}</div> }));
+vi.mock("../src/components/WorkspaceOverview", () => ({ default: () => <div>Dashboard overview</div> }));
+vi.mock("../src/components/WorkspaceInbox", () => ({ default: () => null }));
+vi.mock("../src/components/SellerWorkspacePanels", () => ({ default: () => null }));
+vi.mock("../src/components/WorkspaceSettings", () => ({ default: () => null, ProfilePanel: () => null }));
+vi.mock("../src/components/BillingWorkspace", () => ({ default: () => null }));
 vi.mock("../src/components/BusinessAssistantSettings", () => ({ default: ({ compact }: { compact: boolean }) => <div data-embedded={compact}>Business playbook</div> }));
 vi.mock("../src/components/WorkspaceGroups", () => ({ default: ({ embedded }: { embedded: boolean }) => <div data-embedded={embedded}>Group permissions</div> }));
 
 import WorkspaceOnboarding from "../src/components/WorkspaceOnboarding";
 import ConnectionPanel from "../src/components/WorkspaceConnection";
+import FoundationWorkspace from "../src/components/FoundationWorkspace";
 
 function workspace(state: Workspace["state"], hasBusinessSystemPrompt = false, aiEnabled = false) {
   return { state, hasBusinessSystemPrompt, aiEnabled } as Workspace;
@@ -37,13 +45,37 @@ describe("workspace onboarding card", () => {
     expect(items.filter((item) => item.includes('data-complete="true"'))).toHaveLength(current - 1);
   });
 
-  it("leaves the human-only inbox option in step three and offers setup completion in step four", () => {
-    expect(render(workspace("connected"))).toContain("Go to inbox without AI");
-    expect(render(workspace("connected", false, true))).not.toContain("Go to inbox without AI");
+  it("requires a workspace name before offering the dashboard shortcut", () => {
+    expect(render(null)).not.toContain("Skip for now");
+    for (const data of [workspace("pending"), workspace("connected"), workspace("connected", false, true)]) {
+      expect(render(data)).toMatch(/<a[^>]+href="\/dashboard"[^>]*>Skip for now<\/a>/);
+    }
     const final = render(workspace("connected", true));
     expect(final).toContain('href="/dashboard"');
     expect(final).toContain("Finish setup");
-    expect(final).not.toContain("Go to inbox without AI");
+    expect(final).not.toContain("Skip for now");
+  });
+
+  it.each([
+    { path: "/dashboard", data: undefined, content: "Loading your workspace" },
+    { path: "/dashboard", data: null, content: "A space for your business." },
+    { path: "/onboarding/connect", data: workspace("pending"), content: "Skip for now" },
+    { path: "/onboarding/connect", data: workspace("connected", true), content: "Finish setup" },
+  ])("keeps navigation out of onboarding at $path ($content)", ({ path, data, content }) => {
+    context.pathname = path;
+    context.workspace = data;
+    const markup = renderToStaticMarkup(<FoundationWorkspace />);
+    expect(markup).toContain(content);
+    expect(markup).not.toContain('data-dashboard-shell="true"');
+  });
+
+  it("opens the actual dashboard with navigation even if WhatsApp is not connected", () => {
+    context.pathname = "/dashboard";
+    context.workspace = workspace("pending");
+    const markup = renderToStaticMarkup(<FoundationWorkspace />);
+    expect(markup).toContain('data-dashboard-shell="true"');
+    expect(markup).toContain("Dashboard overview");
+    expect(markup).not.toContain("Skip for now");
   });
 
   it("offers both methods in the connection step and gates pairing on consent", () => {

@@ -33,8 +33,8 @@ export function PageHeader({
 
 /* ── Stats ───────────────────────────────────────────────── */
 
-export function StatGrid({ children }: { children: React.ReactNode }) {
-  return <div className={styles.statGrid}>{children}</div>;
+export function StatGrid({ children, tourTarget }: { children: React.ReactNode; tourTarget?: string }) {
+  return <div className={styles.statGrid} data-dashboard-tour={tourTarget}>{children}</div>;
 }
 
 export function Stat({
@@ -75,6 +75,7 @@ export function Panel({
   children,
   flush = false,
   className,
+  tourTarget,
 }: {
   title?: string;
   description?: string;
@@ -82,11 +83,12 @@ export function Panel({
   children: React.ReactNode;
   flush?: boolean;
   className?: string;
+  tourTarget?: string;
 }) {
   return (
     <section className={className ? `${styles.panel} ${className}` : styles.panel}>
       {(title || action) && (
-        <header className={styles.panelHead}>
+        <header className={styles.panelHead} data-dashboard-tour={tourTarget}>
           <div className={styles.panelTitleWrap}>
             {title && <h2 className={styles.panelTitle}>{title}</h2>}
             {description && <p className={styles.panelDesc}>{description}</p>}

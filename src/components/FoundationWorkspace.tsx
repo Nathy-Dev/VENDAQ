@@ -20,14 +20,19 @@ export default function FoundationWorkspace() {
   const touchWorkspace = useMutation(api.productAnalytics.touchWorkspace);
   const pathname = usePathname();
   const screen = workspaceScreen(pathname);
+  const isOnboarding = screen === "setup" || screen === "connect";
   const [onboardingOrigin, setOnboardingOrigin] = useState<string | null>(null);
   const businessId = workspace?.businessId;
   useEffect(() => { if (businessId) void touchWorkspace({ businessId }); }, [touchWorkspace, businessId]);
   if (onboardingOrigin !== null && onboardingOrigin !== pathname) setOnboardingOrigin(null);
 
-  if (workspace === undefined) return <DashboardShell><div className={styles.loading} role="status"><span className={styles.spinner} aria-hidden="true" />Loading your workspace…</div></DashboardShell>;
-  if (!workspace || screen === "setup" || screen === "connect" || onboardingOrigin === pathname) {
-    return <DashboardShell><WorkspaceOnboarding workspace={workspace} onCreatingChange={(creating) => setOnboardingOrigin(creating ? pathname : null)} /></DashboardShell>;
+  if (workspace === undefined || !workspace || isOnboarding || onboardingOrigin === pathname) {
+    return (
+      <main className={styles.setupScreen}>
+        {workspace === undefined ? <div className={styles.loading} role="status"><span className={styles.spinner} aria-hidden="true" />Loading your workspace…</div> :
+          <WorkspaceOnboarding workspace={workspace} onCreatingChange={(creating) => setOnboardingOrigin(creating ? pathname : null)} />}
+      </main>
+    );
   }
 
   return (

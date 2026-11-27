@@ -9,6 +9,7 @@ import { api } from "../../convex/_generated/api";
 import { formatDate, formatMoney, initials } from "@/lib/workspace-ui";
 import type { Workspace } from "@/types/workspace";
 import { buttonClass, EmptyState, PageHeader, Panel, Pill, Stat, StatGrid } from "./dashboard-ui";
+import DashboardTour from "./DashboardTour";
 import { LoadingRows } from "./WorkspaceFeedback";
 import styles from "./FoundationWorkspace.module.css";
 
@@ -25,8 +26,8 @@ export default function WorkspaceOverview({ workspace }: { workspace: Workspace 
   return (
     <>
       <PageHeader eyebrow={workspace.name} title={firstName ? `Hey, ${firstName}.` : "Your day, at a glance."} description="A little less catching up. A little more moving forward."
-        actions={<Link href="/pipeline" className={buttonClass.secondary}><MessageCircle size={15} />Open inbox</Link>} />
-      <StatGrid>
+        actions={<><DashboardTour key={workspace.businessId} businessId={workspace.businessId} /><Link href="/pipeline" className={buttonClass.secondary}><MessageCircle size={15} />Open inbox</Link></>} />
+      <StatGrid tourTarget="metrics">
         <Stat label="Leads captured" value={metrics?.leadsCaptured ?? "N/A"} hint="Customer-initiated conversations" icon={UsersRound} />
         <Stat label="Actions to review" value={actions?.length ?? "N/A"} hint="Ready for your attention" icon={ListTodo} />
         <Stat label="Recorded orders" value={metrics?.orders ?? "N/A"} hint="Entered by you" icon={ShoppingBag} />
@@ -38,7 +39,7 @@ export default function WorkspaceOverview({ workspace }: { workspace: Workspace 
           {demo && !demo.completedAt && !demo.dismissedAt && <FirstFiveMinutes onComplete={() => void recordDemo({ businessId: workspace.businessId, outcome: "completed" })} onDismiss={() => void recordDemo({ businessId: workspace.businessId, outcome: "dismissed" })} />}
           {connected && !workspace.aiEnabled && <div className={styles.infoBanner}><MessageCircle size={18} /><div><strong>AI Assistant is off.</strong><br />WhatsApp messages still sync. <Link href="/pipeline" style={{ textDecoration: "underline", textUnderlineOffset: 3 }}>Open your inbox</Link></div></div>}
           {connected && workspace.aiEnabled && !workspace.hasBusinessSystemPrompt && <div className={styles.infoBanner}><Sparkles size={18} /><div><strong>Set up your reply playbook.</strong><br />If you want auto-replies, teach Pipelixr about your business and choose a reply scope. <Link href="/settings" style={{ textDecoration: "underline", textUnderlineOffset: 3 }}>Open settings</Link></div></div>}
-          <Panel title="Your next steps" description="Payment reminders first, then buying signals and quiet inquiries." flush action={<Link href="/revenue" className={buttonClass.ghost}>View all<ArrowRight size={13} /></Link>}>
+          <Panel title="Your next steps" description="Payment reminders first, then buying signals and quiet inquiries." tourTarget="actions" flush action={<Link href="/revenue" className={buttonClass.ghost}>View all<ArrowRight size={13} /></Link>}>
             {actions === undefined ? <div style={{ padding: 20 }}><LoadingRows label="Loading your actions" /></div> : actions.length === 0 ?
               <EmptyState icon={CheckCheck} title="You're all caught up" description="When a conversation needs attention, your next step appears here." action={<Link href="/pipeline" className={buttonClass.secondary}>Browse your inbox</Link>} /> :
               <ul className={styles.focusList}>{actions.slice(0, 5).map((action) => <li key={action.taskId}><Link href="/revenue" className={styles.focusRow}>
@@ -46,7 +47,7 @@ export default function WorkspaceOverview({ workspace }: { workspace: Workspace 
                 <div className={styles.focusTrailing}><Pill>{action.reason === "awaiting_payment" ? "Payment" : action.reason === "buying_signal" ? "Buying signal" : "Follow-up"}</Pill><ChevronRight size={15} /></div>
               </Link></li>)}</ul>}
           </Panel>
-          <Panel title="Recent conversations" description="Your latest customer messages, all in one place." flush action={<Link href="/pipeline" className={buttonClass.ghost}>See inbox<ArrowRight size={13} /></Link>}>
+          <Panel title="Recent conversations" description="Your latest customer messages, all in one place." tourTarget="conversations" flush action={<Link href="/pipeline" className={buttonClass.ghost}>See inbox<ArrowRight size={13} /></Link>}>
             {contacts === undefined ? <div className={styles.loading} role="status">Loading conversations…</div> : contacts.length === 0 ?
               <EmptyState icon={MessageCircle} title="A fresh start" description="New direct messages appear here after you connect WhatsApp and accept the data-processing terms." /> :
               <ul className={styles.focusList}>{contacts.slice(0, 4).map((contact) => <li key={contact.customerId}><Link href={`/pipeline?contact=${encodeURIComponent(contact.customerId)}`} className={styles.focusRow}>
@@ -56,7 +57,7 @@ export default function WorkspaceOverview({ workspace }: { workspace: Workspace 
           {metrics?.mayBeTruncated && <p className={styles.finePrint} role="status">This summary reached the {metrics.recordLimit}-record review limit and may be incomplete.</p>}
         </div>
         <aside className={styles.summaryRail} aria-label="Business summary">
-          <div className={styles.card}>
+          <div className={styles.card} data-dashboard-tour="workspace">
             <div className={styles.businessHeader}><span className={styles.avatar}>{initials(workspace.name)}</span><div><strong>{workspace.name}</strong><p>Your business workspace</p></div></div>
             <div className={styles.statusLine}><span>WhatsApp</span><Pill dot tone={connected ? "positive" : "neutral"}>{connected ? "Connected" : "Not connected"}</Pill></div>
             <div className={styles.quickLinks}><Link className={styles.quickLink} href="/settings"><Settings size={16} />Workspace settings<ChevronRight size={14} /></Link><Link className={styles.quickLink} href="/revenue"><ShoppingBag size={16} />Orders & outcomes<ChevronRight size={14} /></Link></div>
