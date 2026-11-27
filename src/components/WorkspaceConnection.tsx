@@ -5,7 +5,7 @@ import { useAction, useMutation } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import Image from "next/image";
 import QRCode from "react-qr-code";
-import { Link2, RefreshCw, ShieldCheck } from "lucide-react";
+import { Link2, ShieldCheck } from "lucide-react";
 import { api } from "../../convex/_generated/api";
 import type { Workspace } from "@/types/workspace";
 import { formatDate, titleCase } from "@/lib/workspace-ui";
@@ -58,7 +58,7 @@ export default function ConnectionPanel({ workspace, embedded = false }: { works
           if (result.error) setFeedback({ text: connectionErrorMessage(result.error), error: true });
         }
       } catch {
-        if (active && version === requestVersion.current) setFeedback({ text: "We couldn't check the connection. You can refresh it manually.", error: true });
+        if (active && version === requestVersion.current) setFeedback({ text: "We couldn't check the connection. We'll try again automatically.", error: true });
       } finally { polling = false; }
     }
     void poll();
@@ -96,22 +96,6 @@ export default function ConnectionPanel({ workspace, embedded = false }: { works
       setFeedback(result.error ? { text: connectionErrorMessage(result.error), error: true } : result.state === "connected" ? { text: "WhatsApp is connected." } : null);
     } catch {
       if (mounted.current) setFeedback({ text: "We couldn't start pairing. Your number has not been connected. Please try again later.", error: true });
-    } finally {
-      requestPending.current = false;
-      if (mounted.current) setBusy(false);
-    }
-  }
-
-  async function check() {
-    if (requestPending.current) return;
-    beginRequest();
-    try {
-      const result = await refresh({ businessId: workspace.businessId });
-      if (!mounted.current) return;
-      setPairing(result);
-      setFeedback(result.error ? { text: connectionErrorMessage(result.error), error: true } : { text: `Connection checked: ${titleCase(result.state)}.` });
-    } catch {
-      if (mounted.current) setFeedback({ text: "We couldn't refresh your connection. Please try again.", error: true });
     } finally {
       requestPending.current = false;
       if (mounted.current) setBusy(false);
@@ -182,18 +166,17 @@ export default function ConnectionPanel({ workspace, embedded = false }: { works
           </>}
           <div className={styles.actions}>
             {canPair && !qr && <button type="button" className={buttonClass.primary} disabled={busy || !acceptedRisk || (method === "phone" && !phoneNumber.trim())} onClick={() => void pair()}>{method === "phone" ? pairingCode ? "Get a new pairing code" : "Get pairing code" : "Show QR code"}</button>}
-            <button type="button" className={buttonClass.secondary} disabled={busy} onClick={() => void check()}><RefreshCw size={14} aria-hidden="true" />{busy ? "Checking…" : "Refresh status"}</button>
             {["connected", "pending", "provisioning", "error"].includes(state) && <button type="button" className={buttonClass.ghost} disabled={busy} onClick={() => setConfirmation(true)}>Revoke connection</button>}
           </div>
           {qr && <div className={styles.qr}>{qr.startsWith("data:image/png;base64,") ? <Image src={qr} alt="WhatsApp pairing QR code" width={224} height={224} unoptimized /> : <QRCode value={qr} size={224} title="WhatsApp pairing QR code" />}<p>In WhatsApp, open <strong>Linked devices → Link a device</strong> and scan this code. Keep it private.</p></div>}
           {pairingCode && <div className={styles.qr} aria-live="polite"><code className={styles.pairingCode}>{pairingCode}</code><p>In WhatsApp, open <strong>Linked devices → Link a device → Link with phone number instead</strong> and enter this code. Keep it private.</p></div>}
           {busy && !qr && !pairingCode && canPair && <p className={styles.helper} role="status">Working on your connection…</p>}
           {isPending && !busy && method === activeMethod && !qr && !pairingCode && <p className={styles.helper} role="status">{method === "phone" ? "No active pairing code. Request a new one if needed." : "Waiting for a QR code. The connection status updates automatically."}</p>}
-          {state === "provisioning" && <p className={styles.helper}>The connection is being prepared. Refresh the status in a moment.</p>}
+          {state === "provisioning" && <p className={styles.helper}>The connection is being prepared. Status updates automatically.</p>}
         </>
       )}
       {workspace.lastHealthAt && <p className={styles.helper}>Last checked {formatDate(workspace.lastHealthAt, workspace.timezone)}</p>}
-      {workspace.lastError && <p className={styles.helper}>The provider reported a connection issue. Refresh the status or ask your administrator to check the setup.</p>}
+      {workspace.lastError && <p className={styles.helper}>The provider reported a connection issue. If it persists, ask your administrator to check the setup.</p>}
       {feedback && <div className={styles.actions}><Notice feedback={feedback} /></div>}
       <ConfirmDialog open={confirmation} onClose={() => setConfirmation(false)} onConfirm={() => void disconnect()} busy={busy} title="Revoke this connection?" description="This disables the session credentials and stops processing through this connection. Your retained records remain subject to the retention policy. Reconnecting requires an administrator to reset the session." confirmLabel="Revoke connection" />
     </section>
@@ -204,7 +187,7 @@ function connectionErrorMessage(code: string): string {
   if (code === "INVALID_PAIRING_PHONE") return "Enter your WhatsApp number with its country code, for example +234 800 000 0000.";
   if (code === "PAIRING_CODE_UNAVAILABLE") return "The provider didn’t return a pairing code. Try again or scan a QR code instead.";
   if (code === "PAIRING_ARTIFACT_UNAVAILABLE") return "We couldn’t retrieve the code. Request a new one.";
-  if (code === "CONNECTION_IN_PROGRESS") return "Another pairing request is in progress. Wait a moment and refresh the status.";
+  if (code === "CONNECTION_IN_PROGRESS") return "Another pairing request is in progress. Status updates automatically.";
   if (code === "QR_TIMEOUT") return "This pairing attempt timed out. Request a new code to try again.";
   if (code === "PROVIDER_QUALIFICATION_REQUIRED") return "WhatsApp connection is temporarily unavailable while the provider setup is being verified.";
   if (code === "CONNECTION_SECURITY_UNAVAILABLE") return "Secure WhatsApp connection setup needs administrator attention. Your number has not been connected.";

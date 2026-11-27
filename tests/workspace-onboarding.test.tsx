@@ -9,6 +9,7 @@ vi.mock("../src/components/BusinessAssistantSettings", () => ({ default: ({ comp
 vi.mock("../src/components/WorkspaceGroups", () => ({ default: ({ embedded }: { embedded: boolean }) => <div data-embedded={embedded}>Group permissions</div> }));
 
 import WorkspaceOnboarding from "../src/components/WorkspaceOnboarding";
+import ConnectionPanel from "../src/components/WorkspaceConnection";
 
 function workspace(state: Workspace["state"], hasBusinessSystemPrompt = false, aiEnabled = false) {
   return { state, hasBusinessSystemPrompt, aiEnabled } as Workspace;
@@ -52,5 +53,11 @@ describe("workspace onboarding card", () => {
     expect(html).not.toContain('type="tel"');
     expect(html).toMatch(/<button[^>]+disabled=""[^>]*>Show QR code<\/button>/);
     expect(render(workspace("connected"))).not.toContain("Pairing method");
+  });
+
+  it("does not offer manual status refresh in onboarding or settings", () => {
+    const pending = workspace("pending");
+    expect(render(pending)).not.toContain("Refresh status");
+    expect(renderToStaticMarkup(<ConnectionPanel workspace={pending} />)).not.toContain("Refresh status");
   });
 });
