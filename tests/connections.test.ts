@@ -43,6 +43,76 @@ describe("read-only provider sessions", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it("validates the phone and requires consent and ownership before requesting a code", async () => {
+    enableProvider();
+    const harness = createHarness();
+    const source = await tenant(harness);
+    const stranger = await tenant(harness, "other-owner");
+    const args = { businessId: source.businessId, disclosureVersion: "phase-1-2026-10-27", acceptedRisk: true, method: "phone" as const, phoneNumber: "+234 800 000 0000" };
+    await expect(stranger.owner.action(api.connections.connect, args)).rejects.toThrow();
+    await expect(source.owner.action(api.connections.connect, { ...args, acceptedRisk: false })).rejects.toThrow("DISCLOSURE_REQUIRED");
+    await expect(source.owner.action(api.connections.connect, { ...args, phoneNumber: "08000000000" })).resolves.toMatchObject({ error: "INVALID_PAIRING_PHONE" });
+    await expect(source.owner.action(api.connections.connect, args)).resolves.toMatchObject({ state: "connected" });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("restores unexpired phone codes for the owner and switches methods on the same instance", async () => {
+    enableProvider();
+    const harness = createHarness();
+    const owner = harness.withIdentity({ subject: "google:phone-pair", issuer: "https://auth.example.test" });
+    const businessId = await owner.mutation(api.foundation.createBusiness, { name: "Phone pairing seller" });
+    const stranger = await tenant(harness, "phone-pair-stranger");
+    const args = { businessId, disclosureVersion: "phase-1-2026-10-27", acceptedRisk: true };
+    const phone = { method: "phone" as const, phoneNumber: "+234 (800) 000-0000" };
+    const calls: { path: string; init?: RequestInit }[] = [];
+    let connected = false;
+    let statusUnavailable = false;
+    let pairingCode = "ABCD-1234";
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const path = new URL(String(input)).pathname;
+      calls.push({ path, init });
+      if (path === "/instance/all") return Response.json({ data: [] });
+      if (path === "/instance/create") return Response.json({ data: { id: "phone-pair-instance" } });
+      if (path === "/instance/connect") return Response.json({ message: "success" });
+      if (path === "/instance/status") return Response.json({ data: { Connected: true, LoggedIn: connected } }, { status: statusUnavailable ? 503 : 200 });
+      if (path === "/instance/pair") return Response.json({ data: { PairingCode: pairingCode } });
+      if (path === "/instance/qr") return Response.json({ data: { Qrcode: "synthetic-qr-value" } });
+      throw new Error(`Unexpected provider operation: ${path}`);
+    });
+
+    const first = await owner.action(api.connections.connect, { ...args, ...phone });
+    expect(first).toMatchObject({ state: "pending", pairingMethod: "phone", pairingCode: "ABCD-1234", qr: null, error: null });
+    expect(first.pairingCodeExpiresAt).toBeGreaterThan(Date.now());
+    expect(calls.map(({ path }) => path)).toEqual(["/instance/all", "/instance/create", "/instance/connect", "/instance/status", "/instance/pair"]);
+    const session = await harness.query(internal.foundation.sessionByBusiness, { businessId });
+    expect(session?.pairingCodeCiphertext).toBeTruthy();
+    expect(JSON.stringify(session)).not.toContain("ABCD-1234");
+    expect(JSON.stringify(session)).not.toContain("2348000000000");
+    expect(JSON.parse(String(calls[4].init?.body))).toMatchObject({ phone: "2348000000000" });
+    expect(new Headers(calls[4].init?.headers).get("apikey")).toEqual(new Headers(calls[2].init?.headers).get("apikey"));
+    await expect(stranger.owner.action(api.connections.refresh, { businessId })).rejects.toThrow();
+    await expect(owner.action(api.connections.refresh, { businessId })).resolves.toEqual(first);
+    statusUnavailable = true;
+    await expect(owner.action(api.connections.refresh, { businessId })).resolves.toMatchObject({ state: "pending", pairingCode: "ABCD-1234", error: "PROVIDER_REQUEST_FAILED" });
+    statusUnavailable = false;
+    expect(calls.filter(({ path }) => path === "/instance/pair")).toHaveLength(1);
+    expect(calls.some(({ path }) => path === "/instance/qr")).toBe(false);
+
+    vi.setSystemTime(first.pairingCodeExpiresAt! + 1);
+    const expired = await owner.action(api.connections.refresh, { businessId });
+    expect(expired).toEqual({ state: "pending", pairingMethod: "phone", qr: null, error: null });
+    const qr = await owner.action(api.connections.connect, { ...args, method: "qr" });
+    expect(qr).toEqual({ state: "pending", qr: "synthetic-qr-value", error: null });
+    expect((await harness.query(internal.foundation.sessionByBusiness, { businessId }))?.pairingCodeCiphertext).toBeUndefined();
+
+    pairingCode = "ZXCV-9876";
+    await expect(owner.action(api.connections.connect, { ...args, ...phone })).resolves.toMatchObject({ state: "pending", pairingCode: "ZXCV-9876", qr: null });
+    expect(calls.filter(({ path }) => path === "/instance/create")).toHaveLength(1);
+    connected = true;
+    await expect(owner.action(api.connections.refresh, { businessId })).resolves.toEqual({ state: "connected", qr: null, error: null });
+    expect((await harness.query(internal.foundation.sessionByBusiness, { businessId }))?.pairingCodeCiphertext).toBeUndefined();
+  });
+
   it("serializes concurrent connects, encrypts credentials, and uses the documented Go QR shape", async () => {
     enableProvider();
     const harness = createHarness();

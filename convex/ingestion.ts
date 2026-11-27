@@ -36,13 +36,13 @@ export const enqueue = internalMutation({
             : event === "QRCode" || event === "PairSuccess"
               ? "pending" as const
               : null;
-      if (state) {
+      if (state && !(session.state === "connected" && (state === "pending" || event === "QRTimeout")) && !(session.pairingMethod === "phone" && event === "QRCode")) {
         await ctx.db.patch(session._id, {
           state,
           updatedAt: now,
           lastError: event === "QRTimeout" ? "QR_TIMEOUT" : undefined,
           nextHealthAt: now,
-          ...(state === "connected" || state === "disconnected" ? { qrCiphertext: undefined, qrExpiresAt: undefined } : {}),
+          ...(state !== "pending" ? { qrCiphertext: undefined, qrExpiresAt: undefined, pairingCodeCiphertext: undefined, pairingCodeExpiresAt: undefined } : {}),
           ...(args.payload.qrCiphertext ? { qrCiphertext: args.payload.qrCiphertext, qrExpiresAt: now + foundationPolicy().qrLifetimeMs } : {}),
         });
         await ctx.db.patch(session.businessId, { whatsappStatus: state === "connected" ? "connected" : state === "pending" ? "pending" : state === "error" ? "error" : "disconnected" });

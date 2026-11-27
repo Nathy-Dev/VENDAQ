@@ -157,7 +157,7 @@ export const sweep = internalMutation({
     for (const commitment of overdueCommitments) await ctx.db.patch(commitment._id, { state: "overdue", updatedAt: now });
     const healthDue = await ctx.db.query("whatsappSessions").withIndex("by_health_due", (builder) => builder.lte("nextHealthAt", now)).take(batchSize);
     for (const session of healthDue) {
-      await ctx.db.patch(session._id, { nextHealthAt: now + foundationPolicy().healthIntervalMs, ...((session.qrExpiresAt ?? Infinity) <= now ? { qrCiphertext: undefined, qrExpiresAt: undefined } : {}) });
+      await ctx.db.patch(session._id, { nextHealthAt: now + foundationPolicy().healthIntervalMs, ...((session.qrExpiresAt ?? Infinity) <= now ? { qrCiphertext: undefined, qrExpiresAt: undefined } : {}), ...((session.pairingCodeExpiresAt ?? Infinity) <= now ? { pairingCodeCiphertext: undefined, pairingCodeExpiresAt: undefined } : {}) });
       if (session.state !== "revoked" && session.providerInstanceId) await ctx.scheduler.runAfter(0, internal.connections.checkHealth, { sessionId: session._id, generation: session.generation });
       if (session.state === "connected" && session.providerInstanceId) await ctx.scheduler.runAfter(0, internal.directorySync.sync, { sessionId: session._id, generation: session.generation });
     }

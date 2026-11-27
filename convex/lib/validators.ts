@@ -2,6 +2,7 @@ import { v, type Infer } from "convex/values";
 
 export const mediaType = v.union(v.literal("text"), v.literal("image"), v.literal("video"), v.literal("audio"), v.literal("document"), v.literal("location"), v.literal("unsupported"));
 export const connectionState = v.union(v.literal("provisioning"), v.literal("pending"), v.literal("connected"), v.literal("disconnected"), v.literal("error"), v.literal("revoked"));
+export const pairingMethod = v.union(v.literal("qr"), v.literal("phone"));
 export const receiptState = v.union(v.literal("delivered"), v.literal("read"), v.literal("read_self"));
 export const normalizedEvent = v.union(
   v.object({ kind: v.literal("message"), messageId: v.string(), chat: v.string(), identityKey: v.string(), fromMe: v.boolean(), isGroup: v.boolean(), mentioned: v.boolean(), name: v.optional(v.string()), participantJid: v.optional(v.string()), participantName: v.optional(v.string()), aliasJids: v.optional(v.array(v.string())), text: v.string(), mediaType, mediaMimeType: v.optional(v.string()), mediaPayload: v.optional(v.string()), eventAt: v.number(), manualReview: v.boolean() }),
@@ -29,6 +30,9 @@ export const sessionFields = {
   operationVersion: v.optional(v.number()),
   createAttemptedAt: v.optional(v.number()),
   lastError: v.optional(v.string()),
+  pairingMethod: v.optional(pairingMethod),
+  pairingCodeCiphertext: v.optional(v.string()),
+  pairingCodeExpiresAt: v.optional(v.number()),
   qrCiphertext: v.optional(v.string()),
   qrExpiresAt: v.optional(v.number()),
   disconnectAttempts: v.optional(v.number()),

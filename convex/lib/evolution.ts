@@ -1,7 +1,7 @@
 import { foundationPolicy, assertNoOutbound } from "./policy";
 import { object, text } from "./events";
 
-const allowedOperations = new Set(["GET /instance/all", "POST /instance/create", "POST /instance/connect", "GET /instance/status", "GET /instance/qr", "POST /instance/disconnect", "GET /group/list", "GET /user/contacts", "POST /user/info"]);
+const allowedOperations = new Set(["GET /instance/all", "POST /instance/create", "POST /instance/connect", "POST /instance/pair", "GET /instance/status", "GET /instance/qr", "POST /instance/disconnect", "GET /group/list", "GET /user/contacts", "POST /user/info"]);
 
 function usesNgrokBrowserWarning(hostname: string): boolean {
   return hostname.endsWith(".ngrok-free.app") || hostname.endsWith(".ngrok-free.dev");
@@ -260,6 +260,13 @@ export function providerQr(result: unknown): string {
     data.Code ?? root.Code,
     180000,
   );
+}
+
+export function providerPairingCode(result: unknown): string | null {
+  const root = object(result);
+  const data = object(root.data);
+  const code = data.PairingCode ?? data.pairingCode ?? root.PairingCode ?? root.pairingCode;
+  return typeof code === "string" && /^[A-Z0-9]{4}-?[A-Z0-9]{4}$/.test(code) ? code : null;
 }
 
 export function providerErrorCode(error: unknown): string {

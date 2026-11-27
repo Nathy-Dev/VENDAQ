@@ -3,9 +3,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { Workspace } from "../src/types/workspace";
 
-vi.mock("convex/react", () => ({ useMutation: () => vi.fn() }));
+vi.mock("convex/react", () => ({ useAction: () => vi.fn(), useMutation: () => vi.fn() }));
 vi.mock("next/navigation", () => ({ usePathname: () => "/onboarding/connect", useRouter: () => ({ replace: vi.fn() }) }));
-vi.mock("../src/components/WorkspaceConnection", () => ({ default: ({ embedded }: { embedded: boolean }) => <div data-embedded={embedded}>Pairing controls</div> }));
 vi.mock("../src/components/BusinessAssistantSettings", () => ({ default: ({ compact }: { compact: boolean }) => <div data-embedded={compact}>Business playbook</div> }));
 vi.mock("../src/components/WorkspaceGroups", () => ({ default: ({ embedded }: { embedded: boolean }) => <div data-embedded={embedded}>Group permissions</div> }));
 
@@ -22,7 +21,7 @@ function render(data: Workspace | null) {
 describe("workspace onboarding card", () => {
   it.each([
     { data: null, heading: "A space for your business.", current: 1, content: "Business name" },
-    { data: workspace("pending"), heading: "Connect WhatsApp", current: 2, content: 'data-embedded="true">Pairing controls' },
+    { data: workspace("pending"), heading: "Connect WhatsApp", current: 2, content: "Pairing method" },
     { data: workspace("connected"), heading: "Teach Pipelixr", current: 3, content: 'data-embedded="true">Business playbook' },
     { data: workspace("connected", true), heading: "Choose your groups", current: 4, content: 'data-embedded="true">Group permissions' },
   ])("keeps step $current inside the branded card", ({ data, heading, current, content }) => {
@@ -44,5 +43,14 @@ describe("workspace onboarding card", () => {
     expect(final).toContain('href="/dashboard"');
     expect(final).toContain("Finish setup");
     expect(final).not.toContain("Go to inbox without AI");
+  });
+
+  it("offers both methods in the connection step and gates pairing on consent", () => {
+    const html = render(workspace("pending"));
+    expect(html).toContain("Scan QR code");
+    expect(html).toContain("Use pairing code");
+    expect(html).not.toContain('type="tel"');
+    expect(html).toMatch(/<button[^>]+disabled=""[^>]*>Show QR code<\/button>/);
+    expect(render(workspace("connected"))).not.toContain("Pairing method");
   });
 });

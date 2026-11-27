@@ -165,6 +165,15 @@
 .riskDisclosure { font-size: 12px; color: #525252; line-height: 1.8; background: #fafafa; border: 1px solid var(--dash-border); border-radius: 8px; padding: 15px; margin-bottom: 16px; }
 .riskDisclosure strong { color: #171717; font-weight: 600; }
 .riskDisclosure p + p { margin-top: 8px; }
+.pairingMethods { border: 0; margin: 0 0 14px; min-width: 0; padding: 0; }
+.pairingMethods legend { font-size: 12px; font-weight: 600; margin-bottom: 8px; }
+.pairingMethods > div { display: flex; flex-wrap: wrap; gap: 8px; }
+.pairingMethods label { display: inline-flex; align-items: center; gap: 7px; min-height: 40px; border: 1px solid var(--dash-border); border-radius: 8px; padding: 7px 11px; font-size: 12px; cursor: pointer; }
+.pairingMethods label:has(input:checked) { background: var(--dash-accent-soft); border-color: var(--dash-accent); }
+.pairingMethods label:has(input:disabled) { cursor: default; opacity: .65; }
+.pairingMethods input { accent-color: var(--dash-accent-fill); }
+.pairingPhone { margin-bottom: 14px; }
+.pairingCode { display: inline-block; user-select: all; font-size: clamp(18px, 5vw, 24px); font-weight: 600; letter-spacing: .12em; }
 .qr { padding: 20px; border: 1px solid var(--dash-border); border-radius: 10px; width: fit-content; margin: 20px auto 0; text-align: center; }
 .qr p { color: #737373; font-size: 11px; max-width: 240px; line-height: 1.8; margin-top: 14px; }
 .qr svg { display: block; max-width: 100%; height: auto; }

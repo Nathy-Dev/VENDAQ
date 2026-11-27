@@ -4,7 +4,7 @@ import { internal } from "./_generated/api";
 import { requireBusiness, requireIdentity } from "./lib/authorization";
 import { DISCLOSURE_VERSION, foundationPolicy } from "./lib/policy";
 import { activeMessageAiEpoch, canProcessInboxMessage, isAiAssistantEnabled } from "./lib/inboxAi";
-import { connectionState, sessionDocument } from "./lib/validators";
+import { connectionState, pairingMethod, sessionDocument } from "./lib/validators";
 import type { Id } from "./_generated/dataModel";
 import { TRIAL_DAYS } from "./lib/billingPlans";
 import { recordBusinessActivity, recordConnectionTransition } from "./productAnalytics";
@@ -187,29 +187,30 @@ export const sessionByProvider = internalQuery({
 });
 
 export const prepareSession = internalMutation({
-  args: { businessId: v.id("businesses"), tokenCiphertext: v.string(), tokenHash: v.string(), disclosureVersion: v.string() },
+  args: { businessId: v.id("businesses"), tokenCiphertext: v.string(), tokenHash: v.string(), disclosureVersion: v.string(), pairingMethod },
   returns: v.object({ sessionId: v.id("whatsappSessions"), claimed: v.boolean() }),
   handler: async (ctx, args) => {
     await requireBusiness(ctx, args.businessId);
     if (args.disclosureVersion !== DISCLOSURE_VERSION) throw new ConvexError({ code: "DISCLOSURE_REQUIRED" });
     const existing = await ctx.db.query("whatsappSessions").withIndex("by_business", (builder) => builder.eq("businessId", args.businessId)).unique();
     const now = Date.now();
+    const operationLeaseUntil = now + foundationPolicy().providerTimeoutMs * 5 + 5000;
     if (existing) {
       if (existing.state === "connected") return { sessionId: existing._id, claimed: false };
       if (existing.state === "revoked") throw new ConvexError({ code: "SESSION_REVOKED_REQUIRES_OPERATOR_RESET" });
       if ((existing.operationLeaseUntil ?? 0) > now) return { sessionId: existing._id, claimed: false };
       // Fence connection attempts without invalidating accepted message jobs.
-      await ctx.db.patch(existing._id, { operationLeaseUntil: now + foundationPolicy().providerTimeoutMs * 5, operationVersion: (existing.operationVersion ?? 0) + 1, disclosureVersion: args.disclosureVersion, updatedAt: now });
+      await ctx.db.patch(existing._id, { operationLeaseUntil, operationVersion: (existing.operationVersion ?? 0) + 1, disclosureVersion: args.disclosureVersion, updatedAt: now, pairingMethod: args.pairingMethod, qrCiphertext: undefined, qrExpiresAt: undefined, pairingCodeCiphertext: undefined, pairingCodeExpiresAt: undefined });
       return { sessionId: existing._id, claimed: true };
     }
-    const sessionId = await ctx.db.insert("whatsappSessions", { businessId: args.businessId, instanceName: `pipelixr-${args.businessId}`, generation: 1, state: "provisioning", tokenCiphertext: args.tokenCiphertext, tokenHash: args.tokenHash, disclosureVersion: args.disclosureVersion, consentAt: now, createdAt: now, updatedAt: now, nextHealthAt: now + foundationPolicy().healthIntervalMs, operationLeaseUntil: now + foundationPolicy().providerTimeoutMs * 5 });
+    const sessionId = await ctx.db.insert("whatsappSessions", { businessId: args.businessId, instanceName: `pipelixr-${args.businessId}`, generation: 1, state: "provisioning", tokenCiphertext: args.tokenCiphertext, tokenHash: args.tokenHash, disclosureVersion: args.disclosureVersion, consentAt: now, createdAt: now, updatedAt: now, pairingMethod: args.pairingMethod, nextHealthAt: now + foundationPolicy().healthIntervalMs, operationLeaseUntil });
     await ctx.db.patch(args.businessId, { disclosureVersion: args.disclosureVersion, onboardingStep: 2 });
     return { sessionId, claimed: true };
   },
 });
 
 export const updateSession = internalMutation({
-  args: { sessionId: v.id("whatsappSessions"), generation: v.number(), operationVersion: v.optional(v.number()), state: connectionState, providerInstanceId: v.optional(v.string()), code: v.optional(v.string()), health: v.optional(v.boolean()), qrCiphertext: v.optional(v.string()), completeOperation: v.optional(v.boolean()) }, returns: v.null(),
+  args: { sessionId: v.id("whatsappSessions"), generation: v.number(), operationVersion: v.optional(v.number()), state: connectionState, providerInstanceId: v.optional(v.string()), code: v.optional(v.string()), health: v.optional(v.boolean()), qrCiphertext: v.optional(v.string()), pairingCodeCiphertext: v.optional(v.string()), completeOperation: v.optional(v.boolean()) }, returns: v.null(),
   handler: async (ctx, args) => {
     const session = await ctx.db.get(args.sessionId);
     if (!session || session.generation !== args.generation || (args.operationVersion !== undefined && args.operationVersion !== (session.operationVersion ?? 0))) return null;
@@ -223,14 +224,19 @@ export const updateSession = internalMutation({
       if (args.providerInstanceId) await ctx.db.patch(session._id, { providerInstanceId: args.providerInstanceId });
       return null;
     }
+    if (session.state === "connected" && args.operationVersion !== undefined && !args.health && args.state !== "connected") {
+      if (args.completeOperation) await ctx.db.patch(session._id, { operationLeaseUntil: undefined });
+      return null;
+    }
     const now = Date.now();
     await ctx.db.patch(session._id, {
       state: args.state, updatedAt: now, lastError: args.code,
       ...(args.completeOperation ? { operationLeaseUntil: undefined } : {}),
       ...(args.providerInstanceId ? { providerInstanceId: args.providerInstanceId } : {}),
       ...(args.health ? { lastHealthAt: now, nextHealthAt: now + foundationPolicy().healthIntervalMs } : {}),
-      ...(args.qrCiphertext ? { qrCiphertext: args.qrCiphertext, qrExpiresAt: now + foundationPolicy().qrLifetimeMs } : {}),
-      ...(args.state === "connected" || args.state === "disconnected" ? { qrCiphertext: undefined, qrExpiresAt: undefined } : {}),
+      ...(args.qrCiphertext && session.pairingMethod !== "phone" ? { qrCiphertext: args.qrCiphertext, qrExpiresAt: now + foundationPolicy().qrLifetimeMs } : {}),
+      ...(args.pairingCodeCiphertext && session.pairingMethod === "phone" ? { pairingCodeCiphertext: args.pairingCodeCiphertext, pairingCodeExpiresAt: now + foundationPolicy().qrLifetimeMs } : {}),
+      ...(args.state !== "pending" ? { qrCiphertext: undefined, qrExpiresAt: undefined, pairingCodeCiphertext: undefined, pairingCodeExpiresAt: undefined } : {}),
     });
     await ctx.db.patch(session.businessId, { whatsappStatus: args.state === "connected" ? "connected" : args.state === "error" ? "error" : args.state === "pending" ? "pending" : "disconnected" });
     if (session.state !== args.state || args.code) await recordConnectionTransition(ctx, { businessId: session.businessId, sessionId: session._id, previousState: session.state, currentState: args.state, code: args.code, at: now });
@@ -273,7 +279,7 @@ export const revokeSession = mutation({
     await requireBusiness(ctx, args.businessId);
     const session = await ctx.db.query("whatsappSessions").withIndex("by_business", (builder) => builder.eq("businessId", args.businessId)).unique();
     if (!session || session.state === "revoked") return null;
-    await ctx.db.patch(session._id, { state: "revoked", updatedAt: Date.now(), qrCiphertext: undefined, qrExpiresAt: undefined, disconnectAttempts: 0, disconnectDueAt: Math.max(Date.now(), session.operationLeaseUntil ?? 0) + foundationPolicy().providerTimeoutMs });
+    await ctx.db.patch(session._id, { state: "revoked", updatedAt: Date.now(), qrCiphertext: undefined, qrExpiresAt: undefined, pairingCodeCiphertext: undefined, pairingCodeExpiresAt: undefined, disconnectAttempts: 0, disconnectDueAt: Math.max(Date.now(), session.operationLeaseUntil ?? 0) + foundationPolicy().providerTimeoutMs });
     await ctx.db.patch(args.businessId, { whatsappStatus: "disconnected", killSwitch: true });
     await ctx.scheduler.runAfter(Math.max(0, (session.operationLeaseUntil ?? 0) - Date.now()) + foundationPolicy().providerTimeoutMs, internal.connections.disconnectRevoked, { sessionId: session._id, generation: session.generation });
     return null;
@@ -377,6 +383,9 @@ export const resetRevokedSession = internalMutation({
       lastError: undefined,
       qrCiphertext: undefined,
       qrExpiresAt: undefined,
+      pairingMethod: undefined,
+      pairingCodeCiphertext: undefined,
+      pairingCodeExpiresAt: undefined,
       disconnectAttempts: undefined,
       disconnectDueAt: undefined,
       disconnectedAt: undefined,

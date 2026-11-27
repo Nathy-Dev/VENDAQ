@@ -29,9 +29,9 @@ Defaults: 256 KiB webhook bodies, 16,000-character text capture, five attempts, 
 
 Record the deployed build/version and a redacted copy/hash of its Swagger schema. With a disposable synthetic instance, verify:
 
-1. `apikey` semantics for `/instance/all`, `/instance/create`, `/instance/connect`, `/instance/status`, `/instance/qr` and `/instance/disconnect`.
+1. `apikey` semantics for `/instance/all`, `/instance/create`, `/instance/connect`, `/instance/status`, `/instance/qr`, `/instance/pair` and `/instance/disconnect`.
 2. Create fields (`name`, `token`), connect fields (`webhookUrl`, `subscribe`, `immediate`) and returned instance ID.
-3. Status fields `data.Connected` and `data.LoggedIn`; QR field `data.Qrcode` or the qualified equivalent.
+3. Status fields `data.Connected` and `data.LoggedIn`; QR field `data.Qrcode` and phone pairing response `data.PairingCode` or the qualified equivalents. Send the phone in international format as digits only.
 4. Webhook envelope `event`, `data`, `instanceId`, `instanceToken`; owner replies, multiple receipt IDs, LIDs and lifecycle event spellings.
 5. A 2xx acknowledgement after durable commit and provider retry behavior after deliberate non-2xx responses.
 
@@ -64,7 +64,7 @@ Do not run `convex/test.ts`; it is a preserved legacy live-provisioning probe an
 1. Sign in again so the session carries a canonical subject.
 2. Create a new foundation workspace or operator-map one reviewed legacy owner.
 3. Confirm connect is blocked while either provider qualification flag is false.
-4. Set both true only after step 4. Accept disclosure, connect and scan the disposable number's QR.
+4. Set both true only after step 4. Accept the disclosure and test both methods with a disposable number: scan a QR code, then on a fresh unlinked session enter a phone pairing code in WhatsApp's Linked devices. Verify that changing methods doesn't create another provider instance and that successful pairing advances onboarding.
 5. Send one synthetic direct text, one non-text item and one owner reply. Confirm one contact/conversation, manual-review metadata, no AI/task/send activity and no raw token/payload logs.
 6. Replay the same webhook 100 times. Confirm one stored message.
 7. Submit invalid token/instance and malformed authenticated events. Confirm 401 or minimized dead-letter state.
