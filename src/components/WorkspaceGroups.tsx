@@ -21,7 +21,7 @@ const modes: Array<{ value: GovernanceMode; label: string; help: string }> = [
   { value: "custom", label: "Custom safeguards", help: "Use your own simple group instructions." },
 ];
 
-export default function WorkspaceGroups({ workspace }: { workspace: Workspace }) {
+export default function WorkspaceGroups({ workspace, embedded = false }: { workspace: Workspace; embedded?: boolean }) {
   const groups = useQuery(api.groups.list, { businessId: workspace.businessId });
   const profile = useQuery(api.businessProfile.get, { businessId: workspace.businessId });
   const setEnabled = useMutation(api.groups.setEnabled);
@@ -75,7 +75,7 @@ export default function WorkspaceGroups({ workspace }: { workspace: Workspace })
   }
 
   return (
-    <section className={`${styles.card} ${styles.groupsCard}`}>
+    <section className={embedded ? styles.setupPanel : `${styles.card} ${styles.groupsCard}`}>
       <div className={styles.sectionHeading}>
         <div><h2>Groups & communities</h2><p>Choose each group and the simple level of help Pipelixr may provide. Every group starts silent.</p></div>
         <UsersRound size={18} aria-hidden="true" />

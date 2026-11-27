@@ -16,14 +16,14 @@ export default function BusinessAssistantSettings({ workspace, compact = false }
   const profile = useQuery(api.businessProfile.get, { businessId: workspace.businessId });
   const qualificationPolicy = useQuery(api.leadQualification.policy, { businessId: workspace.businessId });
   return <div className={styles.stack}>
-    <AiAssistantControl workspace={workspace} />
+    <AiAssistantControl workspace={workspace} embedded={compact} />
     {!profile || !qualificationPolicy
       ? <div className={styles.loading} role="status">Loading the reply playbook...</div>
       : <BusinessAssistantForm key={`${profile.updatedAt ?? 0}:${profile.customerAutoReplyEnabled}:${profile.groupAutoReplyEnabled}`} workspace={workspace} compact={compact} profile={profile} qualificationPolicy={qualificationPolicy} />}
   </div>;
 }
 
-function AiAssistantControl({ workspace }: { workspace: Workspace }) {
+function AiAssistantControl({ workspace, embedded }: { workspace: Workspace; embedded: boolean }) {
   const setEnabled = useMutation(api.businessProfile.setAssistantEnabled);
   const descriptionId = useId();
   const [busy, setBusy] = useState(false);
@@ -43,7 +43,7 @@ function AiAssistantControl({ workspace }: { workspace: Workspace }) {
     }
   }
 
-  return <section className={styles.card}>
+  return <section className={embedded ? styles.setupPanel : styles.card}>
     <div className={styles.sectionHeading}><div><h2>AI Assistant</h2><p>{workspace.aiEnabled ? "On · New messages can be processed by AI" : "Off · Human-only inbox"}</p></div><Bot size={18} aria-hidden="true" /></div>
     <label className={styles.checkLabel}>
       <input type="checkbox" role="switch" aria-label="AI Assistant" aria-describedby={descriptionId} checked={workspace.aiEnabled} disabled={busy} onChange={(event) => void change(event.target.checked)} />
@@ -252,7 +252,7 @@ function BusinessAssistantForm({ workspace, compact, profile, qualificationPolic
   }
 
   return <div className={styles.stack}>
-    <section className={styles.card}>
+    <section className={compact ? styles.setupPanel : styles.card}>
       <div className={styles.sectionHeading}><div><h2>Teach Pipelixr</h2><p>Prepare a business playbook and choose where Pipelixr may send replies when AI Assistant is on.</p></div><Bot size={18} aria-hidden="true" /></div>
       <div className={styles.infoBanner}><ShieldCheck size={17} aria-hidden="true" /><p>Only include business information you are comfortable using in customer conversations. Do not paste passwords, private keys, card details, or customer data.</p></div>
       <div className={styles.form}>
@@ -290,7 +290,7 @@ function BusinessAssistantForm({ workspace, compact, profile, qualificationPolic
             <div className={styles.field}><span>Details Pipelixr should confirm</span><div className={styles.qualificationFields}>{qualificationPolicy.availableFields.map((entry) => <label className={styles.checkLabel} key={entry.field}><input type="checkbox" checked={qualificationFields.includes(entry.field)} onChange={(event) => setQualificationFields((current) => event.target.checked ? [...new Set([...current, entry.field])] : current.filter((field) => field !== entry.field))} /><span><strong>{entry.label}</strong><p>{entry.question}</p></span></label>)}</div><span className={styles.fieldHelp}>Pipelixr asks at most one missing qualification question in a reply and does not keep repeating the same question.</span></div>
           </>}
         </fieldset>
-        <div className={styles.formFooter}><button type="button" className={buttonClass.primary} disabled={busy !== null || recording || systemPrompt.trim().length < 120} onClick={() => void saveProfile()}>{busy === "save" ? "Saving..." : "Save business knowledge & authorization"}</button></div>
+        <div className={styles.formFooter}><button type="button" className={buttonClass.primary} disabled={busy !== null || recording || systemPrompt.trim().length < 120} onClick={() => void saveProfile()}>{busy === "save" ? "Saving..." : compact ? "Save and continue" : "Save business knowledge & authorization"}</button></div>
         <Notice feedback={feedback?.scope === "save" ? feedback : null} />
       </div>
     </section>

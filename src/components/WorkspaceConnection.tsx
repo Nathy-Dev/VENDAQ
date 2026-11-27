@@ -12,7 +12,7 @@ import { buttonClass, Pill } from "./dashboard-ui";
 import { ConfirmDialog, Notice, type Feedback } from "./WorkspaceFeedback";
 import styles from "./FoundationWorkspace.module.css";
 
-export default function ConnectionPanel({ workspace }: { workspace: Workspace }) {
+export default function ConnectionPanel({ workspace, embedded = false }: { workspace: Workspace; embedded?: boolean }) {
   const connect = useAction(api.connections.connect);
   const refresh = useAction(api.connections.refresh);
   const resetRevoked = useAction(api.connections.resetRevoked);
@@ -120,7 +120,7 @@ export default function ConnectionPanel({ workspace }: { workspace: Workspace })
   }
 
   return (
-    <section className={styles.card}>
+    <section className={embedded ? styles.setupPanel : styles.card}>
       <div className={styles.connectionTop}>
         <span className={styles.connectionIcon}><Link2 size={19} aria-hidden="true" /></span>
         <div><h2>WhatsApp connection</h2><p>Pair a number you are authorized to manage. Reply permissions are configured separately.</p></div>
