@@ -193,11 +193,19 @@
 .setupCard h1 { font-size: 25px; font-weight: 600; letter-spacing: -.8px; margin-top: 24px; }
 .setupCard h1:focus { outline: none; }
 .setupCard > h1 + p { font-size: 13px; line-height: 1.8; color: var(--dash-text-muted); margin: 8px 0 25px; }
-.steps { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; font-size: 11px; color: var(--dash-text-muted); margin: 0 0 28px; padding: 0; list-style: none; }
-.steps li { display: flex; gap: 6px; align-items: center; white-space: nowrap; }
-.steps b { display: inline-flex; width: 22px; height: 22px; align-items: center; justify-content: center; border: 1px solid var(--dash-border); border-radius: 50%; font-size: 10px; font-weight: 500; }
-.steps li[aria-current="step"], .steps li[data-complete="true"] b { color: var(--dash-accent); }
-.steps li[aria-current="step"] b { background: var(--dash-accent-fill); color: #fff; border-color: var(--dash-accent-fill); }
+.setupProgress { margin-bottom: 28px; padding: 12px 10px 14px; border: 1px solid var(--dash-border); border-radius: 10px; background: #f8fbfa; }
+.progressHeader { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 8px; padding-inline: 3px; margin-bottom: 12px; font-size: 11px; font-weight: 600; }
+.progressHeader span:last-child { color: var(--dash-accent); font-variant-numeric: tabular-nums; }
+.steps { --step-marker-size: 28px; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); isolation: isolate; margin: 0; padding: 0; list-style: none; }
+.steps li { display: grid; position: relative; grid-template-rows: var(--step-marker-size) auto; justify-items: center; align-content: start; gap: 8px; min-width: 0; text-align: center; }
+.steps li:not(:last-child)::after { content: ""; position: absolute; inset-inline-start: 50%; top: calc(var(--step-marker-size) / 2 - 1px); width: 100%; height: 2px; background: linear-gradient(var(--dash-accent-fill), var(--dash-accent-fill)) left center / 0% 100% no-repeat var(--dash-border); transition: background-size 250ms ease; }
+.steps li[data-complete="true"]::after { background-size: 100% 100%; }
+.stepMarker { display: grid; position: relative; z-index: 1; place-items: center; width: var(--step-marker-size); height: var(--step-marker-size); border: 1px solid var(--dash-border); border-radius: 50%; background: #fff; color: var(--dash-text-muted); font-size: 11px; font-weight: 600; }
+.stepLabel { padding-inline: 2px; color: var(--dash-text-muted); font-size: 11px; line-height: 1.4; overflow-wrap: anywhere; }
+.steps li[data-complete="true"] .stepMarker { background: var(--dash-accent-soft); color: var(--dash-accent); border-color: var(--accent-border); }
+.steps li[data-complete="true"] .stepLabel { color: var(--dash-text); }
+.steps li[aria-current="step"] .stepMarker { background: var(--dash-accent-fill); color: #fff; border-color: var(--dash-accent-fill); box-shadow: 0 0 0 3px var(--accent-ring); }
+.steps li[aria-current="step"] .stepLabel { color: var(--dash-accent); font-weight: 650; }
 .setupPanel { min-width: 0; }
 .setupPanel h2 { font-size: 14px; font-weight: 600; letter-spacing: -.15px; }
 .setupCard .stack > .setupPanel + div { border-top: 1px solid var(--dash-border); padding-top: 20px; }
@@ -354,6 +362,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .voiceIcon, .voiceWave span, .streamingCursor { animation: none !important; }
+  .steps li:not(:last-child)::after { transition: none; }
 }
 
 .groupsCard { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; }

@@ -39,17 +39,23 @@ describe("workspace onboarding card", () => {
     { data: workspace("disconnected"), heading: "Connect WhatsApp", current: 2, content: "Choose a WhatsApp provider" },
     { data: workspace("connected"), heading: "Teach Pipelixr", current: 3, content: 'data-embedded="true">Business playbook' },
     { data: workspace("connected", true), heading: "Choose your groups", current: 4, content: 'data-embedded="true">Group permissions' },
-  ])("keeps step $current inside the branded card", ({ data, heading, current, content }) => {
+  ])("shows step $current on the onboarding timeline", ({ data, heading, current, content }) => {
     const html = render(data);
     expect(html).toMatch(/^<section[^>]+aria-labelledby="onboarding-title">/);
     expect(html).toContain("pipelixr</span>");
     expect(html).toContain(`<h1 id="onboarding-title" tabindex="-1">${heading}</h1>`);
     expect(html).toContain(content);
+    expect(html).toContain(`Step ${current} of 4`);
     const progress = html.match(/<ol[^>]+aria-label="Onboarding progress"[^>]*>.*?<\/ol>/)?.[0];
     const items = progress?.match(/<li[\s>][\s\S]*?<\/li>/g) ?? [];
     expect(items).toHaveLength(4);
+    expect(items.filter((item) => item.includes('aria-current="step"'))).toHaveLength(1);
     expect(items.findIndex((item) => item.includes('aria-current="step"'))).toBe(current - 1);
-    expect(items.filter((item) => item.includes('data-complete="true"'))).toHaveLength(current - 1);
+    for (const [index, item] of items.entries()) {
+      expect(item.includes('data-complete="true"')).toBe(index < current - 1);
+      expect(item).toContain(index < current - 1 ? "Completed: " : `Step ${index + 1}: `);
+      expect(item.includes('class="lucide lucide-check"')).toBe(index < current - 1);
+    }
   });
 
   it("requires a workspace name before offering the dashboard shortcut", () => {

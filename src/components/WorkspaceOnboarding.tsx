@@ -59,14 +59,20 @@ export default function WorkspaceOnboarding({ workspace, onCreatingChange }: { w
       <Brand />
       <h1 id="onboarding-title" ref={heading} tabIndex={-1}>{title}</h1>
       <p>{description}</p>
-      <ol className={styles.steps} aria-label="Onboarding progress">
-        {steps.map((step, index) => (
-          <li key={step.id} aria-current={index === stepIndex ? "step" : undefined} data-complete={index < stepIndex || undefined}>
-            <b aria-hidden="true">{index < stepIndex ? <Check size={12} /> : index + 1}</b>
-            <span className="sr-only">{index < stepIndex ? "Completed: " : `Step ${index + 1}: `}</span>{step.id === "groups" && workspace?.connectionProvider === "meta" ? "Finish setup" : step.label}
-          </li>
-        ))}
-      </ol>
+      <div className={styles.setupProgress}>
+        <div className={styles.progressHeader} aria-hidden="true"><span>Setup progress</span><span>Step {stepIndex + 1} of {steps.length}</span></div>
+        <ol className={styles.steps} role="list" aria-label="Onboarding progress">
+          {steps.map((step, index) => {
+            const completed = index < stepIndex;
+            return (
+              <li key={step.id} aria-current={index === stepIndex ? "step" : undefined} data-complete={completed || undefined}>
+                <span className={styles.stepMarker} aria-hidden="true">{completed ? <Check size={14} /> : index + 1}</span>
+                <span className={styles.stepLabel}><span className="sr-only">{completed ? "Completed: " : `Step ${index + 1}: `}</span>{step.id === "groups" && workspace?.connectionProvider === "meta" ? "Finish setup" : step.label}</span>
+              </li>
+            );
+          })}
+        </ol>
+      </div>
       {!workspace && <BusinessSetup onCreatingChange={onCreatingChange} onCreated={continueSetup} />}
       {workspace && stage === "connection" && <ConnectionPanel workspace={workspace} embedded />}
       {workspace && stage === "business_ai" && <BusinessAssistantSettings workspace={workspace} compact />}
