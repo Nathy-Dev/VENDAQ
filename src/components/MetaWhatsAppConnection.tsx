@@ -19,10 +19,10 @@ const coexistenceExtras = {
   sessionInfoVersion: "3",
   version: "v4",
 } as const;
-const metaSdkVersion = "v22.0";
+const metaSdkVersion = "v27.0";
 type MetaSdk = {
   init: (config: { appId: string; version: string; xfbml: boolean; autoLogAppEvents: boolean }) => void;
-  login: (callback: (response: { authResponse?: { code?: string } }) => void, options: { config_id: string; response_type: "code"; override_default_response_type: boolean; extras: typeof coexistenceExtras }) => void;
+  login: (callback: (response: { authResponse?: { code?: string } }) => void, options: { config_id: string; response_type: "code"; override_default_response_type: boolean; extras: string }) => void;
 };
 const origins = new Set(["https://www.facebook.com", "https://web.facebook.com", "https://m.facebook.com"]);
 const assetId = /^[1-9]\d{4,29}$/;
@@ -126,7 +126,7 @@ export default function MetaWhatsAppConnection({ workspace, config, embedded }: 
         window.clearTimeout(timer);
         timer = window.setTimeout(() => abort(code ? "Meta did not return the WhatsApp account details. Restart signup." : "Meta signup was closed or cancelled."), 4_000);
         submit();
-      }, { config_id: config.configId, response_type: "code", override_default_response_type: true, extras: { ...coexistenceExtras } });
+      }, { config_id: config.configId, response_type: "code", override_default_response_type: true, extras: JSON.stringify(coexistenceExtras) });
     } catch { abort("Could not open Meta. Allow popups and try again."); }
   }
 
