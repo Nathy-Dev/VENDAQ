@@ -14,9 +14,15 @@ import styles from "./FoundationWorkspace.module.css";
 
 type Config = NonNullable<FunctionReturnType<typeof api.metaConnections.config>>;
 type Assets = { wabaId: string; phoneId: string };
+const coexistenceExtras = {
+  featureType: "whatsapp_business_app_onboarding",
+  sessionInfoVersion: "3",
+  version: "v4",
+} as const;
+const metaSdkVersion = "v22.0";
 type MetaSdk = {
   init: (config: { appId: string; version: string; xfbml: boolean; autoLogAppEvents: boolean }) => void;
-  login: (callback: (response: { authResponse?: { code?: string } }) => void, options: { config_id: string; response_type: "code"; override_default_response_type: boolean; extras: { version: "v5" } }) => void;
+  login: (callback: (response: { authResponse?: { code?: string } }) => void, options: { config_id: string; response_type: "code"; override_default_response_type: boolean; extras: typeof coexistenceExtras }) => void;
 };
 const origins = new Set(["https://www.facebook.com", "https://web.facebook.com", "https://m.facebook.com"]);
 const assetId = /^[1-9]\d{4,29}$/;
@@ -31,9 +37,9 @@ export function parseMetaSignupMessage(event: Pick<MessageEvent, "origin" | "dat
     if (eventData.event === "CANCEL") return "cancel";
     if (["ERROR", "FINISH"].includes(eventData.event)) return "error";
     if (eventData.event !== "FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING") return null;
-    const { phone_number_id: phoneId, messaging_account_ids: accountIds, is_on_biz_app: coexistence } = eventData.data ?? {};
-    if (coexistence !== true || !Array.isArray(accountIds) || accountIds.length !== 1 || typeof accountIds[0] !== "string" || !assetId.test(accountIds[0]) || typeof phoneId !== "string" || !assetId.test(phoneId)) return "error";
-    return { wabaId: accountIds[0], phoneId };
+    const { waba_id: wabaId, phone_number_id: phoneId } = eventData.data ?? {};
+    if (typeof wabaId !== "string" || !assetId.test(wabaId) || typeof phoneId !== "string" || !assetId.test(phoneId)) return "error";
+    return { wabaId, phoneId };
   } catch { return null; }
 }
 
@@ -120,7 +126,7 @@ export default function MetaWhatsAppConnection({ workspace, config, embedded }: 
         window.clearTimeout(timer);
         timer = window.setTimeout(() => abort(code ? "Meta did not return the WhatsApp account details. Restart signup." : "Meta signup was closed or cancelled."), 4_000);
         submit();
-      }, { config_id: config.configId, response_type: "code", override_default_response_type: true, extras: { version: "v5" } });
+      }, { config_id: config.configId, response_type: "code", override_default_response_type: true, extras: { ...coexistenceExtras } });
     } catch { abort("Could not open Meta. Allow popups and try again."); }
   }
 
@@ -137,7 +143,7 @@ export default function MetaWhatsAppConnection({ workspace, config, embedded }: 
     {config && !connected && <Script id="meta-whatsapp-sdk" src="https://connect.facebook.net/en_US/sdk.js" strategy="afterInteractive" crossOrigin="anonymous" onReady={() => {
       const facebook = sdk();
       if (!facebook) { setFeedback({ text: "Meta could not load. Allow the Facebook SDK, then reload this page.", error: true }); return; }
-      try { facebook.init({ appId: config.appId, version: config.version, xfbml: false, autoLogAppEvents: false }); setReady(true); }
+      try { facebook.init({ appId: config.appId, version: metaSdkVersion, xfbml: false, autoLogAppEvents: false }); setReady(true); }
       catch { setFeedback({ text: "Meta could not initialize. Ask your administrator to verify the signup configuration.", error: true }); }
     }} onError={() => setFeedback({ text: "Meta could not load. Allow the Facebook SDK, then reload this page.", error: true })} />}
     <div className={styles.connectionTop}><span className={styles.connectionIcon}><Link2 size={19} aria-hidden="true" /></span><div><h2>WhatsApp Business connection</h2><p>Connect through Meta and keep using the same number in the WhatsApp Business app.</p></div><Pill dot tone={connected ? "positive" : workspace.state === "error" ? "danger" : "neutral"}>{titleCase(workspace.state)}</Pill></div>

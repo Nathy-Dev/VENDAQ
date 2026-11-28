@@ -104,10 +104,20 @@ describe("workspace onboarding card", () => {
     } finally { context.meta = null; }
   });
 
-  it("accepts only a Coexistence completion with valid assets from Meta", () => {
-    const data = JSON.stringify({ type: "WA_EMBEDDED_SIGNUP", event: "FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING", data: { messaging_account_ids: ["12345"], phone_number_id: "23456", is_on_biz_app: true } });
+  it("accepts only a v4 Coexistence completion with valid assets from Meta", () => {
+    const data = JSON.stringify({ type: "WA_EMBEDDED_SIGNUP", event: "FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING", data: { waba_id: "12345", phone_number_id: "23456", business_id: "34567" } });
     expect(parseMetaSignupMessage({ origin: "https://www.facebook.com", data })).toEqual({ wabaId: "12345", phoneId: "23456" });
     expect(parseMetaSignupMessage({ origin: "https://www.facebook.com.example.com", data })).toBeNull();
     expect(parseMetaSignupMessage({ origin: "https://www.facebook.com", data: data.replace("FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING", "FINISH") })).toBe("error");
+  });
+
+  it.each([
+    { waba_id: "12345" },
+    { phone_number_id: "23456" },
+    { waba_id: 12345, phone_number_id: "23456" },
+    { waba_id: "12345", phone_number_id: "023456" },
+  ])("rejects incomplete or invalid v4 assets: %j", (assets) => {
+    const data = JSON.stringify({ type: "WA_EMBEDDED_SIGNUP", event: "FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING", data: assets });
+    expect(parseMetaSignupMessage({ origin: "https://www.facebook.com", data })).toBe("error");
   });
 });
