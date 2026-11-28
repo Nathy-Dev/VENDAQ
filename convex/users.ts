@@ -10,7 +10,7 @@ export const upsertGoogleUser = mutation({
   handler: async (ctx) => {
     const identity = await requireIdentity(ctx);
     const googleSubject = identity.subject;
-    if (!/^google:.+$/.test(googleSubject) || identity.emailVerified !== true || !identity.email) {
+    if (!/^google:.+$/.test(googleSubject) || identity.email_verified !== true || !identity.email) {
       throw new ConvexError({ code: "UNVERIFIED_GOOGLE_IDENTITY" });
     }
     const existing = await ctx.db.query("users")
@@ -20,7 +20,7 @@ export const upsertGoogleUser = mutation({
     const profile = {
       email,
       name: identity.name,
-      image: identity.pictureUrl,
+      image: typeof identity.picture === "string" ? identity.picture : undefined,
       emailVerified: (existing?.email === email ? existing.emailVerified : undefined) ?? Date.now(),
     };
     if (existing) await ctx.db.patch(existing._id, profile);

@@ -14,13 +14,13 @@ const googleIdentity = {
   subject: "google:seller-one",
   issuer: "https://auth.example.test",
   email: "Seller@Example.test",
-  emailVerified: true,
+  email_verified: true,
   name: "Google seller",
-  pictureUrl: "https://images.example.test/seller",
+  picture: "https://images.example.test/seller",
 };
 const googleSignIn = {
   token: {},
-  user: { id: "auth-js-user", name: googleIdentity.name, image: googleIdentity.pictureUrl },
+  user: { id: "auth-js-user", name: googleIdentity.name, image: googleIdentity.picture },
   account: { provider: "google", providerAccountId: "seller-one", type: "oidc" as const },
   profile: { email: googleIdentity.email, email_verified: true },
   trigger: "signIn" as const,
@@ -49,7 +49,7 @@ describe("Google sign-in provisioning", () => {
       email: googleIdentity.email,
       email_verified: true,
       name: googleIdentity.name,
-      picture: googleIdentity.pictureUrl,
+      picture: googleIdentity.picture,
     });
     await expect(callbacks!.jwt!({ ...googleSignIn, token: {} })).rejects.toThrow("NETWORK_DISABLED_IN_TEST");
   });
@@ -62,7 +62,7 @@ describe("Google sign-in provisioning", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it("saves one user per Google subject and updates that row when the email changes", async () => {
+  it("provisions from raw custom-JWT claims and updates the same Google user when the email changes", async () => {
     const harness = createHarness();
     const google = harness.withIdentity(googleIdentity);
     await Promise.all([google.mutation(api.users.upsertGoogleUser, {}), google.mutation(api.users.upsertGoogleUser, {})]);
@@ -72,7 +72,7 @@ describe("Google sign-in provisioning", () => {
       email: "seller@example.test",
       emailVerified: Date.now(),
       name: googleIdentity.name,
-      image: googleIdentity.pictureUrl,
+      image: googleIdentity.picture,
     });
     expect(original).not.toHaveProperty("password");
 
@@ -90,8 +90,10 @@ describe("Google sign-in provisioning", () => {
     await expect(untrusted.mutation(api.users.upsertGoogleUser, {})).rejects.toThrow("UNAUTHENTICATED");
     const credentials = harness.withIdentity({ ...googleIdentity, subject: "credentials:seller-one" });
     await expect(credentials.mutation(api.users.upsertGoogleUser, {})).rejects.toThrow("UNVERIFIED_GOOGLE_IDENTITY");
-    const unverified = harness.withIdentity({ ...googleIdentity, emailVerified: false });
-    await expect(unverified.mutation(api.users.upsertGoogleUser, {})).rejects.toThrow("UNVERIFIED_GOOGLE_IDENTITY");
+    for (const email_verified of [false, "true", undefined]) {
+      const unverified = harness.withIdentity({ ...googleIdentity, email_verified });
+      await expect(unverified.mutation(api.users.upsertGoogleUser, {})).rejects.toThrow("UNVERIFIED_GOOGLE_IDENTITY");
+    }
     expect(await harness.run((ctx) => ctx.db.query("users").take(1))).toEqual([]);
   });
 

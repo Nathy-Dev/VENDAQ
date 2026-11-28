@@ -29,7 +29,7 @@ describe("admin console authorization", () => {
   it("requires an exact business-name confirmation and deletes the tenant in bounded jobs", async () => {
     vi.stubEnv("ADMIN_USER_IDS", "google:operator");
     const harness = createHarness();
-    const seller = harness.withIdentity({ subject: "google:delete-me", issuer: "https://auth.example.test", email: "seller@example.test", emailVerified: true });
+    const seller = harness.withIdentity({ subject: "google:delete-me", issuer: "https://auth.example.test", email: "seller@example.test", email_verified: true });
     const admin = harness.withIdentity({ subject: "google:operator", issuer: "https://auth.example.test" });
     await seller.mutation(api.users.upsertGoogleUser, {});
     const businessId = await seller.mutation(api.foundation.createBusiness, { name: "Delete Me Ltd" });
