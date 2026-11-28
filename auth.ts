@@ -5,6 +5,12 @@ import { ConvexHttpClient } from "convex/browser";
 import { api } from "./convex/_generated/api";
 import { mintConvexToken } from "./src/lib/convex-auth";
 
+declare module "next-auth" {
+  interface Session {
+    convexUserId?: string;
+  }
+}
+
 const convex = new ConvexHttpClient(
   process.env.NEXT_PUBLIC_CONVEX_URL || "https://dummy.convex.cloud"
 );
@@ -57,17 +63,34 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             name: user.name,
             image: user.image,
           });
-          await new ConvexHttpClient(convex.url, { auth: convexToken }).mutation(api.users.upsertGoogleUser, {});
+          token.convexUserId = await new ConvexHttpClient(convex.url, { auth: convexToken }).mutation(api.users.upsertGoogleUser, {});
           token.id = subject;
         } else if (account.provider === "credentials" && user.id) {
+          token.convexUserId = user.id;
           token.id = `credentials:${user.id}`;
+        } else {
+          return null;
         }
+        return token;
       }
-      return token;
+
+      if (typeof token.id !== "string" || !/^(google|credentials):.+$/.test(token.id) || typeof token.convexUserId !== "string" || !token.convexUserId) return null;
+      try {
+        const convexToken = await mintConvexToken(token.id, { userId: token.convexUserId });
+        const client = new ConvexHttpClient(convex.url, {
+          auth: convexToken,
+          fetch: (input, init) => fetch(input, { ...init, cache: "no-store", signal: AbortSignal.timeout(5000) }),
+        });
+        return await client.query(api.users.sessionActive, {}) ? token : null;
+      } catch {
+        console.error("Session validation unavailable");
+        return null;
+      }
     },
     async session({ session, token }) {
-      if (session.user && typeof token.id === "string" && /^(google|credentials):.+$/.test(token.id)) {
+      if (session.user && typeof token.id === "string" && /^(google|credentials):.+$/.test(token.id) && typeof token.convexUserId === "string") {
         session.user.id = token.id as string;
+        session.convexUserId = token.convexUserId;
       } else if (session.user) {
         session.user.id = "";
       }

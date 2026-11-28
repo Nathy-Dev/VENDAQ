@@ -1,14 +1,21 @@
-import { internalMutation, internalQuery, mutation } from "./_generated/server";
+import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { ConvexError, v } from "convex/values";
 import { normalizeEmail } from "./lib/authentication";
-import { requireIdentity } from "./lib/authorization";
+import { activeIdentity, trustedIdentity } from "./lib/authorization";
 import { foundationPolicy } from "./lib/policy";
+
+export const sessionActive = query({
+  args: {},
+  returns: v.boolean(),
+  handler: async (ctx): Promise<boolean> => (await activeIdentity(ctx)) !== null,
+});
 
 export const upsertGoogleUser = mutation({
   args: {},
-  returns: v.null(),
+  returns: v.id("users"),
   handler: async (ctx) => {
-    const identity = await requireIdentity(ctx);
+    const identity = await trustedIdentity(ctx);
+    if (!identity) throw new ConvexError({ code: "UNAUTHENTICATED" });
     const googleSubject = identity.subject;
     if (!/^google:.+$/.test(googleSubject) || identity.email_verified !== true || !identity.email) {
       throw new ConvexError({ code: "UNVERIFIED_GOOGLE_IDENTITY" });
@@ -23,9 +30,9 @@ export const upsertGoogleUser = mutation({
       image: typeof identity.picture === "string" ? identity.picture : undefined,
       emailVerified: (existing?.email === email ? existing.emailVerified : undefined) ?? Date.now(),
     };
-    if (existing) await ctx.db.patch(existing._id, profile);
-    else await ctx.db.insert("users", { ...profile, googleSubject });
-    return null;
+    if (!existing) return await ctx.db.insert("users", { ...profile, googleSubject });
+    await ctx.db.patch(existing._id, profile);
+    return existing._id;
   },
 });
 

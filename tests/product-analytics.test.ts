@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { api, internal } from "../convex/_generated/api";
-import { createHarness, tenant } from "./harness";
+import { createHarness, registeredGoogle, tenant } from "./harness";
 
 describe("product learning and incident measurement", () => {
   afterEach(() => vi.unstubAllEnvs());
@@ -25,7 +25,7 @@ describe("product learning and incident measurement", () => {
     vi.stubEnv("ADMIN_USER_IDS", "google:operator");
     const harness = createHarness();
     const source = await tenant(harness, "learning-seller");
-    const admin = harness.withIdentity({ subject: "google:operator", issuer: "https://auth.example.test" });
+    const admin = await registeredGoogle(harness, "operator");
     const now = Date.now();
     await harness.run(async (ctx) => {
       const metrics = await ctx.db.query("businessProductMetrics").withIndex("by_business", (builder) => builder.eq("businessId", source.businessId)).unique();

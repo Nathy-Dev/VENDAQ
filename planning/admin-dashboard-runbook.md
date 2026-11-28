@@ -19,6 +19,7 @@ If `ADMIN_USER_IDS` is absent or empty, the console fails closed for everyone. R
 - Deletion requires the admin to type the exact business name. It immediately disables automation and seller access, disables an active Paystack subscription, revokes the WhatsApp session, and removes tenant records in bounded background batches.
 - If Paystack cancellation or provider disconnection cannot be confirmed, deletion fails closed and leaves the workspace disabled for operator review.
 - Account deletion removes the local user record for both credentials and Google sign-ins. It does not delete the account at Google.
+- Dashboard sessions are bound to the local user record. After deletion, the old session no longer grants access, even if that Google account signs up again. Roll out the Convex functions and Next.js app together; existing sessions require a fresh sign-in once.
 - After deploying the Convex functions and then the web app, existing Google users appear in `users` the next time they sign in with Google. Their workspace ownership does not change.
 - Queries are bounded to protect production database reads. The UI shows a snapshot notice when a safety limit is reached.
 - Customer message bodies, WhatsApp tokens, Paystack secrets, payment references, and provider credentials are never returned.

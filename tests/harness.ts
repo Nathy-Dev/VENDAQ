@@ -10,8 +10,14 @@ const modules = import.meta.glob("../convex/**/*.*s");
 export const createHarness = () => convexTest(schema, modules);
 export type Harness = ReturnType<typeof createHarness>;
 
+export async function registeredGoogle(harness: Harness, label: string) {
+  const identity = { subject: `google:${label}`, issuer: "https://auth.example.test" };
+  const userId = await harness.withIdentity({ ...identity, email: `${label}@example.test`, email_verified: true }).mutation(api.users.upsertGoogleUser, {});
+  return harness.withIdentity({ ...identity, pipelixr_user_id: userId });
+}
+
 export async function tenant(harness: Harness, label = "seller-one") {
-  const owner = harness.withIdentity({ subject: `google:${label}`, issuer: "https://auth.example.test" });
+  const owner = await registeredGoogle(harness, label);
   const businessId = await owner.mutation(api.foundation.createBusiness, { name: label });
   const token = `synthetic-token-${label}`;
   const tokenHash = await sha256(token);

@@ -8,6 +8,7 @@ async function signingKey() {
 }
 
 export async function mintConvexToken(subject: string, claims?: {
+  userId?: string;
   email?: string | null;
   emailVerified?: boolean;
   name?: string | null;
@@ -17,6 +18,7 @@ export async function mintConvexToken(subject: string, claims?: {
   const kid = process.env.AUTH_JWT_KEY_ID;
   if (!issuer || !kid || !/^(google|credentials):.+$/.test(subject)) throw new Error("AUTH_BRIDGE_NOT_CONFIGURED");
   return new SignJWT({
+    ...(claims?.userId ? { pipelixr_user_id: claims.userId } : {}),
     ...(claims?.email ? { email: claims.email } : {}),
     ...(claims?.emailVerified ? { email_verified: true } : {}),
     ...(claims?.name ? { name: claims.name } : {}),

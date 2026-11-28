@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { api, internal } from "../convex/_generated/api";
 import { decryptSecret } from "../convex/lib/crypto";
 import { providerAccountAliases, providerConnectionState, providerContacts, providerDisplayName, providerGroups, providerIdentityMappings, providerInstances, providerQr, providerRequest } from "../convex/lib/evolution";
-import { createHarness, drain, message, tenant, webhook } from "./harness";
+import { createHarness, drain, message, registeredGoogle, tenant, webhook } from "./harness";
 
 function enableProvider() {
   vi.stubEnv("FOUNDATION_PROVIDER_ENABLED", "true");
@@ -35,7 +35,7 @@ describe("read-only provider sessions", () => {
     vi.stubEnv("SESSION_ENCRYPTION_KEYS", "{v1:invalid}");
     vi.stubEnv("SESSION_ENCRYPTION_KEY_VERSION", "v1");
     const harness = createHarness();
-    const owner = harness.withIdentity({ subject: "google:config-error", issuer: "https://auth.example.test" });
+    const owner = await registeredGoogle(harness, "config-error");
     const businessId = await owner.mutation(api.foundation.createBusiness, { name: "Config error seller" });
 
     await expect(owner.action(api.connections.connect, { businessId, disclosureVersion: "phase-1-2026-10-27", acceptedRisk: true })).resolves.toEqual({ state: "disconnected", qr: null, error: "CONNECTION_SECURITY_UNAVAILABLE" });
@@ -59,7 +59,7 @@ describe("read-only provider sessions", () => {
   it("restores unexpired phone codes for the owner and switches methods on the same instance", async () => {
     enableProvider();
     const harness = createHarness();
-    const owner = harness.withIdentity({ subject: "google:phone-pair", issuer: "https://auth.example.test" });
+    const owner = await registeredGoogle(harness, "phone-pair");
     const businessId = await owner.mutation(api.foundation.createBusiness, { name: "Phone pairing seller" });
     const stranger = await tenant(harness, "phone-pair-stranger");
     const args = { businessId, disclosureVersion: "phase-1-2026-10-27", acceptedRisk: true };
@@ -116,7 +116,7 @@ describe("read-only provider sessions", () => {
   it("serializes concurrent connects, encrypts credentials, and uses the documented Go QR shape", async () => {
     enableProvider();
     const harness = createHarness();
-    const owner = harness.withIdentity({ subject: "google:new", issuer: "https://auth.example.test" });
+    const owner = await registeredGoogle(harness, "new");
     const businessId = await owner.mutation(api.foundation.createBusiness, { name: "New seller" });
     const calls: { path: string; init?: RequestInit }[] = [];
     let connected = false;
@@ -157,7 +157,7 @@ describe("read-only provider sessions", () => {
   it("does not blindly recreate an instance after an unknown create outcome", async () => {
     enableProvider();
     const harness = createHarness();
-    const owner = harness.withIdentity({ subject: "google:new", issuer: "https://auth.example.test" });
+    const owner = await registeredGoogle(harness, "new");
     const businessId = await owner.mutation(api.foundation.createBusiness, { name: "New seller" });
     vi.mocked(fetch).mockImplementation(async (input) => {
       if (String(input).endsWith("/instance/all")) return Response.json({ data: [] });
@@ -173,7 +173,7 @@ describe("read-only provider sessions", () => {
   it("does not confuse another business with the same provider display name", async () => {
     enableProvider();
     const harness = createHarness();
-    const owner = harness.withIdentity({ subject: "google:same-name", issuer: "https://auth.example.test" });
+    const owner = await registeredGoogle(harness, "same-name");
     const businessId = await owner.mutation(api.foundation.createBusiness, { name: "Shared Store" });
     const calls: { path: string; init?: RequestInit }[] = [];
     vi.mocked(fetch).mockImplementation(async (input, init) => {
@@ -263,7 +263,7 @@ describe("read-only provider sessions", () => {
   it("keeps a new connection pending while QR generation is transient", async () => {
     enableProvider();
     const harness = createHarness();
-    const owner = harness.withIdentity({ subject: "google:transient-qr", issuer: "https://auth.example.test" });
+    const owner = await registeredGoogle(harness, "transient-qr");
     const businessId = await owner.mutation(api.foundation.createBusiness, { name: "Transient QR seller" });
     vi.mocked(fetch).mockImplementation(async (input) => {
       const path = new URL(String(input)).pathname;
