@@ -2,7 +2,7 @@ import { ConvexError, v } from "convex/values";
 import { query, mutation, internalQuery, internalMutation } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { requireBusiness, requireIdentity } from "./lib/authorization";
-import { DISCLOSURE_VERSION, foundationPolicy } from "./lib/policy";
+import { canChooseConnectionProvider, DISCLOSURE_VERSION, foundationPolicy } from "./lib/policy";
 import { activeMessageAiEpoch, canProcessInboxMessage, isAiAssistantEnabled } from "./lib/inboxAi";
 import { connectionState, metaSyncState, pairingMethod, sessionDocument } from "./lib/validators";
 import type { Id } from "./_generated/dataModel";
@@ -11,7 +11,7 @@ import { recordBusinessActivity, recordConnectionTransition } from "./productAna
 
 export const workspace = query({
   args: {},
-  returns: v.union(v.null(), v.object({ businessId: v.id("businesses"), name: v.string(), timezone: v.string(), retentionDays: v.number(), responseWindowMinutes: v.number(), state: connectionState, lastError: v.union(v.string(), v.null()), lastHealthAt: v.union(v.number(), v.null()), aiEnabled: v.boolean(), customerAutoReplyEnabled: v.boolean(), groupAutoReplyEnabled: v.boolean(), hasBusinessSystemPrompt: v.boolean(), launchReady: v.boolean(), connectionProvider: v.optional(v.union(v.literal("meta"), v.literal("evolution"))), meta: v.optional(v.object({ displayPhone: v.string(), contactsState: metaSyncState, historyState: metaSyncState, historyProgress: v.optional(v.number()) })) })),
+  returns: v.union(v.null(), v.object({ businessId: v.id("businesses"), name: v.string(), timezone: v.string(), retentionDays: v.number(), responseWindowMinutes: v.number(), state: connectionState, lastError: v.union(v.string(), v.null()), lastHealthAt: v.union(v.number(), v.null()), aiEnabled: v.boolean(), customerAutoReplyEnabled: v.boolean(), groupAutoReplyEnabled: v.boolean(), hasBusinessSystemPrompt: v.boolean(), launchReady: v.boolean(), canChooseConnectionProvider: v.boolean(), connectionProvider: v.optional(v.union(v.literal("meta"), v.literal("evolution"))), meta: v.optional(v.object({ displayPhone: v.string(), contactsState: metaSyncState, historyState: metaSyncState, historyProgress: v.optional(v.number()) })) })),
   handler: async (ctx) => {
     const identity = await requireIdentity(ctx);
     const business = await ctx.db.query("businesses").withIndex("by_owner", (builder) => builder.eq("ownerId", identity.subject)).unique();
@@ -23,7 +23,7 @@ export const workspace = query({
     const groupAutoReplyEnabled = business.groupAutoReplyEnabled ?? false;
     const meta = session?.meta;
     const connectionProvider = session ? session.provider ?? ("evolution" as const) : undefined;
-    return { businessId: business._id, name: business.name, timezone: business.timezone ?? "Africa/Lagos", retentionDays: business.messageRetentionDays ?? foundationPolicy().messageRetentionDays, responseWindowMinutes: business.responseWindowMinutes ?? foundationPolicy().responseWindowMinutes, state: session?.state ?? "disconnected", lastError: session?.lastError ?? null, lastHealthAt: session?.lastHealthAt ?? null, aiEnabled, customerAutoReplyEnabled, groupAutoReplyEnabled, hasBusinessSystemPrompt, launchReady: session?.state === "connected" && aiEnabled && business.killSwitch === false && hasBusinessSystemPrompt && (customerAutoReplyEnabled || (session.provider !== "meta" && groupAutoReplyEnabled)), ...(connectionProvider ? { connectionProvider } : {}), ...(meta ? { meta: { displayPhone: meta.displayPhone, contactsState: meta.contactsState, historyState: meta.historyState, historyProgress: meta.historyProgress } } : {}) };
+    return { businessId: business._id, name: business.name, timezone: business.timezone ?? "Africa/Lagos", retentionDays: business.messageRetentionDays ?? foundationPolicy().messageRetentionDays, responseWindowMinutes: business.responseWindowMinutes ?? foundationPolicy().responseWindowMinutes, state: session?.state ?? "disconnected", lastError: session?.lastError ?? null, lastHealthAt: session?.lastHealthAt ?? null, aiEnabled, customerAutoReplyEnabled, groupAutoReplyEnabled, hasBusinessSystemPrompt, launchReady: session?.state === "connected" && aiEnabled && business.killSwitch === false && hasBusinessSystemPrompt && (customerAutoReplyEnabled || (session.provider !== "meta" && groupAutoReplyEnabled)), canChooseConnectionProvider: canChooseConnectionProvider(session, Date.now()), ...(connectionProvider ? { connectionProvider } : {}), ...(meta ? { meta: { displayPhone: meta.displayPhone, contactsState: meta.contactsState, historyState: meta.historyState, historyProgress: meta.historyProgress } } : {}) };
   },
 });
 
@@ -199,8 +199,9 @@ export const prepareSession = internalMutation({
     const existing = await ctx.db.query("whatsappSessions").withIndex("by_business", (builder) => builder.eq("businessId", args.businessId)).unique();
     const now = Date.now();
     const operationLeaseUntil = now + foundationPolicy().providerTimeoutMs * 5 + 5000;
-    if (existing) {
-      if (existing.provider === "meta") throw new ConvexError({ code: "META_CONNECTION_EXISTS" });
+    const switchingFromMeta = existing?.provider === "meta";
+    if (switchingFromMeta && !canChooseConnectionProvider(existing, now)) throw new ConvexError({ code: "META_CONNECTION_EXISTS" });
+    if (existing && !switchingFromMeta) {
       if (existing.state === "connected") return { sessionId: existing._id, claimed: false };
       if (existing.state === "revoked") throw new ConvexError({ code: "SESSION_REVOKED_REQUIRES_OPERATOR_RESET" });
       if ((existing.operationLeaseUntil ?? 0) > now) return { sessionId: existing._id, claimed: false };
@@ -208,8 +209,10 @@ export const prepareSession = internalMutation({
       await ctx.db.patch(existing._id, { operationLeaseUntil, operationVersion: (existing.operationVersion ?? 0) + 1, disclosureVersion: args.disclosureVersion, updatedAt: now, pairingMethod: args.pairingMethod, qrCiphertext: undefined, qrExpiresAt: undefined, pairingCodeCiphertext: undefined, pairingCodeExpiresAt: undefined });
       return { sessionId: existing._id, claimed: true };
     }
-    const sessionId = await ctx.db.insert("whatsappSessions", { businessId: args.businessId, instanceName: `pipelixr-${args.businessId}`, generation: 1, state: "provisioning", tokenCiphertext: args.tokenCiphertext, tokenHash: args.tokenHash, disclosureVersion: args.disclosureVersion, consentAt: now, createdAt: now, updatedAt: now, pairingMethod: args.pairingMethod, nextHealthAt: now + foundationPolicy().healthIntervalMs, operationLeaseUntil });
-    await ctx.db.patch(args.businessId, { disclosureVersion: args.disclosureVersion, onboardingStep: 2 });
+    const fields = { businessId: args.businessId, instanceName: `pipelixr-${args.businessId}`, generation: (existing?.generation ?? 0) + 1, state: "provisioning" as const, tokenCiphertext: args.tokenCiphertext, tokenHash: args.tokenHash, disclosureVersion: args.disclosureVersion, consentAt: now, updatedAt: now, pairingMethod: args.pairingMethod, nextHealthAt: now + foundationPolicy().healthIntervalMs, operationLeaseUntil };
+    const sessionId = existing?._id ?? await ctx.db.insert("whatsappSessions", { ...fields, createdAt: now });
+    if (existing) await ctx.db.patch(sessionId, { ...fields, provider: undefined, metaAttemptClaimed: undefined, lastError: undefined, lastHealthAt: undefined });
+    await ctx.db.patch(args.businessId, { disclosureVersion: args.disclosureVersion, onboardingStep: 2, whatsappMode: "unofficial", ...(switchingFromMeta ? { killSwitch: true, customerAutoReplyEnabled: false, groupAutoReplyEnabled: false } : {}) });
     return { sessionId, claimed: true };
   },
 });

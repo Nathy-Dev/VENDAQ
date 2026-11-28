@@ -6,16 +6,16 @@ import { recordConnectionTransition } from "./productAnalytics";
 import { requireBusiness } from "./lib/authorization";
 import { decryptSecret, encryptSecret, randomToken, sha256 } from "./lib/crypto";
 import { text } from "./lib/events";
-import { exchangeMetaCode, graph, metaId, MetaError, metaSignupConfig, verifyMetaNumber, META_ATTEMPT_MS, META_DISCLOSURE, META_HEALTH_MS } from "./lib/meta";
+import { exchangeMetaCode, graph, metaId, MetaError, metaSignupConfig, metaSignupConfigValidator, verifyMetaNumber, META_ATTEMPT_MS, META_DISCLOSURE, META_HEALTH_MS } from "./lib/meta";
+import { canChooseConnectionProvider } from "./lib/policy";
 
 const sessionArgs = { sessionId: v.id("whatsappSessions"), generation: v.number() };
 const attemptArgs = { businessId: v.id("businesses"), attemptHash: v.string() };
-const signupConfig = v.object({ appId: v.string(), configId: v.string(), version: v.string() });
 const dormant = Number.MAX_SAFE_INTEGER;
 
 export const config = query({
   args: { businessId: v.id("businesses") },
-  returns: v.union(v.null(), signupConfig),
+  returns: v.union(v.null(), metaSignupConfigValidator),
   handler: async (ctx, { businessId }) => {
     await requireBusiness(ctx, businessId);
     return metaSignupConfig();
@@ -38,17 +38,17 @@ export const beginAttempt = internalMutation({
   handler: async (ctx, { businessId, attemptHash }) => {
     await requireBusiness(ctx, businessId);
     const existing = await ctx.db.query("whatsappSessions").withIndex("by_business", (builder) => builder.eq("businessId", businessId)).unique();
-    if (existing && existing.provider !== "meta" && (existing.state !== "disconnected" || existing.providerInstanceId)) throw new ConvexError({ code: "META_EXISTING_CONNECTION" });
     const now = Date.now();
+    if (existing && existing.provider !== "meta" && !canChooseConnectionProvider(existing, now)) throw new ConvexError({ code: "META_EXISTING_CONNECTION" });
     if (existing?.state === "connected" || (existing?.operationLeaseUntil ?? 0) > now) throw new ConvexError({ code: "META_CONNECTION_IN_PROGRESS" });
     const fields = {
       provider: "meta" as const, generation: (existing?.generation ?? 0) + 1, tokenHash: attemptHash, tokenCiphertext: "",
       state: "provisioning" as const, metaAttemptClaimed: false, operationLeaseUntil: now + META_ATTEMPT_MS,
-      disclosureVersion: META_DISCLOSURE, consentAt: now, updatedAt: now, nextHealthAt: dormant,
+      disclosureVersion: META_DISCLOSURE, consentAt: now, updatedAt: now, nextHealthAt: dormant, instanceName: `meta-${businessId}`,
     };
-    const sessionId = existing?._id ?? await ctx.db.insert("whatsappSessions", { ...fields, businessId, instanceName: `meta-${businessId}`, createdAt: now });
+    const sessionId = existing?._id ?? await ctx.db.insert("whatsappSessions", { ...fields, businessId, createdAt: now });
     if (existing) await ctx.db.patch(sessionId, { ...fields, lastError: undefined, pairingMethod: undefined, lastHealthAt: undefined });
-    await ctx.db.patch(businessId, { killSwitch: true, whatsappStatus: "pending" });
+    await ctx.db.patch(businessId, { killSwitch: true, whatsappStatus: "pending", ...(existing && existing.provider !== "meta" ? { customerAutoReplyEnabled: false, groupAutoReplyEnabled: false } : {}) });
     await ctx.scheduler.runAfter(META_ATTEMPT_MS, internal.metaConnections.setupFailed, { sessionId, generation: fields.generation, code: "META_SIGNUP_EXPIRED" });
     return null;
   },
@@ -121,7 +121,7 @@ export const setupFailed = internalMutation({
   args: { ...sessionArgs, code: v.string() }, returns: v.null(),
   handler: async (ctx, args) => {
     const session = await ctx.db.get(args.sessionId);
-    if (!session || session.generation !== args.generation || !["provisioning", "pending"].includes(session.state)) return null;
+    if (!session || session.provider !== "meta" || session.generation !== args.generation || !["provisioning", "pending"].includes(session.state)) return null;
     await ctx.db.patch(session._id, { state: "error", generation: session.generation + 1, lastError: args.code, operationLeaseUntil: undefined, tokenCiphertext: "", tokenHash: "", updatedAt: Date.now() });
     await ctx.db.patch(session.businessId, { whatsappStatus: "error" });
     return null;

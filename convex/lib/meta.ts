@@ -1,3 +1,4 @@
+import { v } from "convex/values";
 import { secretMatches } from "./crypto";
 import { object, text } from "./events";
 
@@ -5,6 +6,7 @@ export const META_DISCLOSURE = "meta-coexistence-v1";
 export const META_ATTEMPT_MS = 10 * 60_000;
 export const META_HEALTH_MS = 15 * 60_000;
 export const META_SERVICE_WINDOW_MS = 24 * 60 * 60_000;
+export const metaSignupConfigValidator = v.object({ appId: v.string(), configId: v.string(), version: v.string() });
 
 export function metaId(value: unknown): value is string {
   return typeof value === "string" && /^[1-9]\d{4,29}$/.test(value);

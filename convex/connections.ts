@@ -1,11 +1,13 @@
 import { v, type Infer, ConvexError } from "convex/values";
-import { action, internalAction, type ActionCtx } from "./_generated/server";
+import { action, internalAction, query, type ActionCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { connectionState, pairingMethod, sessionDocument } from "./lib/validators";
 import { decryptSecret, encryptSecret, randomToken, sha256 } from "./lib/crypto";
 import { logEvent } from "./lib/policy";
 import { object } from "./lib/events";
-import { providerRequest, providerDisplayName, providerInstanceId, providerInstances, providerConnectionState, providerErrorCode, providerQr, providerPairingCode } from "./lib/evolution";
+import { evolutionSignupError, providerRequest, providerDisplayName, providerInstanceId, providerInstances, providerConnectionState, providerErrorCode, providerQr, providerPairingCode } from "./lib/evolution";
+import { requireBusiness } from "./lib/authorization";
+import { metaSignupConfig, metaSignupConfigValidator } from "./lib/meta";
 
 const connectionResult = v.object({ state: connectionState, qr: v.union(v.string(), v.null()), error: v.union(v.string(), v.null()), pairingMethod: v.optional(pairingMethod), pairingCode: v.optional(v.string()), pairingCodeExpiresAt: v.optional(v.number()) });
 type ConnectionResult = Infer<typeof connectionResult>;
@@ -17,6 +19,15 @@ function connectionErrorCode(error: unknown): string {
 }
 
 const pairingSubscriptions = ["MESSAGE", "SEND_MESSAGE", "READ_RECEIPT", "CONNECTION", "QRCODE"];
+
+export const providers = query({
+  args: { businessId: v.id("businesses") },
+  returns: v.object({ meta: v.union(v.null(), metaSignupConfigValidator), evolution: v.boolean() }),
+  handler: async (ctx, { businessId }) => {
+    await requireBusiness(ctx, businessId);
+    return { meta: metaSignupConfig(), evolution: evolutionSignupError() === null };
+  },
+});
 
 async function pairingResult(session: SessionDocument): Promise<ConnectionResult> {
   const result: ConnectionResult = { state: session.state, qr: null, error: session.lastError ?? null };
@@ -97,7 +108,8 @@ export const connect = action({
     if (method === "phone" && (!args.phoneNumber || args.phoneNumber.length > 32 || !/^\+[1-9][0-9]{6,14}$/.test(phone))) {
       return { state: "disconnected", qr: null, error: "INVALID_PAIRING_PHONE" };
     }
-    if (process.env.FOUNDATION_PROVIDER_ENABLED !== "true" || process.env.FOUNDATION_PROVIDER_CONTRACT_VERIFIED !== "true") return { state: "disconnected", qr: null, error: "PROVIDER_QUALIFICATION_REQUIRED" };
+    const signupError = evolutionSignupError();
+    if (signupError) return { state: "disconnected", qr: null, error: signupError };
     let tokenCiphertext: string;
     let tokenHash: string;
     try {

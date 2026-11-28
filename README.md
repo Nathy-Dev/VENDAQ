@@ -10,7 +10,12 @@ The production billing subsystem is documented in the [billing production runboo
 
 Phases 4 through 6 add a ranked seller action queue, seller-recorded orders and outcomes, payment reminders, stalled-inquiry actions, conservative revenue measurement, a manual Status viewer list, and connection-risk readiness. Existing broad legacy modules remain fail-closed. No read marking, reactions, presence, customer messaging, automatic outreach, provider-confirmed sends, or independently confirmed recovered revenue is enabled.
 
-For the official WhatsApp Business Platform integration, see the [Meta Cloud API Coexistence runbook](planning/meta-whatsapp-runbook.md) for Embedded Signup, webhook setup, a live smoke test, and rollback. It does not migrate existing Evolution Go connections. For Evolution Go setup and qualification, follow the [Phase 1 runbook](planning/phase-1-runbook.md).
+Onboarding and **Settings → Connection** offer **Meta Cloud API** (recommended for eligible WhatsApp Business app numbers) and **Evolution Go** (unofficial QR or pairing-code setup). Options are enabled independently on the Convex deployment. Pipelixr does not automatically migrate or replace a provider that still has a connection or an in-progress setup.
+
+- **Meta Cloud API:** Complete the [Meta Cloud API Coexistence runbook](planning/meta-whatsapp-runbook.md), then enable signup with `META_WHATSAPP_ENABLED=true`. Outbound messaging has a separate gate.
+- **Evolution Go:** Configure the provider and webhook URL, then enable `FOUNDATION_PROVIDER_ENABLED` and `FOUNDATION_PROVIDER_CONTRACT_VERIFIED` after qualifying the deployed build using the [Phase 1 runbook](planning/phase-1-runbook.md).
+
+Deploy the Convex functions before releasing the matching frontend. Test each option with a separate pilot workspace and number. To switch an existing Evolution Go workspace, revoke it and reset it after the remote instance is removed. To switch an existing Meta workspace, disconnect the official link in the WhatsApp Business app and wait for Meta’s offboarding webhook to release the binding.
 
 The local development instructions below are retained from the Next.js scaffold. Connecting a provider or deploying remains a separately gated non-production operation; follow the Phase 1 runbook.
 

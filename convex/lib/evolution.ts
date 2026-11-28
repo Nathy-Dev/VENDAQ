@@ -9,12 +9,14 @@ function usesNgrokBrowserWarning(hostname: string): boolean {
 
 type ProviderRequestOptions = { token?: string; instanceId?: string; body?: Record<string, unknown>; timeoutMs?: number };
 
-async function executeProviderRequest(method: string, path: string, options: ProviderRequestOptions = {}): Promise<unknown> {
+function providerConfig() {
   if (process.env.FOUNDATION_PROVIDER_ENABLED !== "true") throw new Error("PROVIDER_DISABLED");
   const baseUrl = process.env.EVOLUTION_GO_URL;
   const apiKey = process.env.EVOLUTION_GO_API_KEY;
   if (!baseUrl || !apiKey) throw new Error("PROVIDER_NOT_CONFIGURED");
-  const url = new URL(baseUrl);
+  let url: URL;
+  try { url = new URL(baseUrl); }
+  catch { throw new Error("INVALID_PROVIDER_URL"); }
   const local = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
   if (url.protocol !== "https:" && !(local && process.env.ALLOW_LOCAL_PROVIDER_HTTP === "true")) throw new Error("INSECURE_PROVIDER_URL");
   if (url.username || url.password || url.search || url.hash) throw new Error("INVALID_PROVIDER_URL");
@@ -22,6 +24,19 @@ async function executeProviderRequest(method: string, path: string, options: Pro
   // The alternate global-key/header mode requires explicit build qualification.
   const mode = process.env.EVOLUTION_GO_AUTH_MODE ?? "instance-token";
   if (!["global-instance", "instance-token"].includes(mode)) throw new Error("INVALID_PROVIDER_AUTH_MODE");
+  return { url, apiKey, mode };
+}
+
+export function evolutionSignupError(): string | null {
+  if (process.env.FOUNDATION_PROVIDER_ENABLED !== "true" || process.env.FOUNDATION_PROVIDER_CONTRACT_VERIFIED !== "true") return "PROVIDER_QUALIFICATION_REQUIRED";
+  if (!process.env.CONVEX_SITE_URL) return "PROVIDER_NOT_CONFIGURED";
+  try { providerConfig(); }
+  catch (error) { return providerErrorCode(error); }
+  return null;
+}
+
+async function executeProviderRequest(method: string, path: string, options: ProviderRequestOptions = {}): Promise<unknown> {
+  const { url, apiKey, mode } = providerConfig();
   const response = await fetch(`${url.toString().replace(/\/$/, "")}${path}`, {
     method,
     headers: {

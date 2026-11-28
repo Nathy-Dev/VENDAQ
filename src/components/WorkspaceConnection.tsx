@@ -5,7 +5,7 @@ import { useAction, useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import Image from "next/image";
 import QRCode from "react-qr-code";
-import { Link2, ShieldCheck } from "lucide-react";
+import { ChevronLeft, ChevronRight, Link2, ShieldCheck, Smartphone } from "lucide-react";
 import { api } from "../../convex/_generated/api";
 import type { Workspace } from "@/types/workspace";
 import { formatDate, titleCase } from "@/lib/workspace-ui";
@@ -15,14 +15,63 @@ import styles from "./FoundationWorkspace.module.css";
 import MetaWhatsAppConnection from "./MetaWhatsAppConnection";
 
 export default function ConnectionPanel({ workspace, embedded = false }: { workspace: Workspace; embedded?: boolean }) {
-  const config = useQuery(api.metaConnections.config, { businessId: workspace.businessId });
-  if (workspace.connectionProvider === "meta" || (config && (!workspace.connectionProvider || (workspace.connectionProvider === "evolution" && workspace.state === "disconnected")))) {
-    return <MetaWhatsAppConnection key={workspace.businessId} workspace={workspace} config={config ?? null} embedded={embedded} />;
-  }
-  return <EvolutionConnectionPanel workspace={workspace} embedded={embedded} />;
+  return <ProviderConnection key={workspace.businessId} workspace={workspace} embedded={embedded} />;
 }
 
-function EvolutionConnectionPanel({ workspace, embedded }: { workspace: Workspace; embedded: boolean }) {
+type Provider = NonNullable<Workspace["connectionProvider"]>;
+const providerOptions = [
+  { id: "meta", name: "Meta Cloud API", badge: "Recommended", description: "Meta’s official connection for eligible WhatsApp Business app numbers. Keep using the app while Pipelixr syncs one-to-one chats.", icon: ShieldCheck },
+  { id: "evolution", name: "Evolution Go", badge: "Unofficial", description: "Link by QR code or pairing code, with optional group replies. Using this unofficial connection can put your number at risk of restrictions.", icon: Smartphone },
+] as const;
+
+function ProviderConnection({ workspace, embedded }: { workspace: Workspace; embedded: boolean }) {
+  const availability = useQuery(api.connections.providers, { businessId: workspace.businessId });
+  const [selection, setSelection] = useState<Provider | null>(null);
+  const panel = useRef<HTMLDivElement>(null);
+  const moveFocus = useRef(false);
+  const canChoose = workspace.canChooseConnectionProvider;
+  const provider = canChoose ? selection : workspace.connectionProvider ?? "evolution";
+  const setupWorkspace = canChoose && provider !== workspace.connectionProvider
+    ? { ...workspace, state: "disconnected" as const, lastError: null, lastHealthAt: null }
+    : workspace;
+  const changeProvider = canChoose ? () => choose(null) : undefined;
+  const pickerHeading = useId();
+
+  useEffect(() => {
+    if (!moveFocus.current) return;
+    moveFocus.current = false;
+    panel.current?.querySelector<HTMLElement>("h2")?.focus();
+  }, [provider]);
+
+  function choose(next: Provider | null) {
+    moveFocus.current = true;
+    setSelection(next);
+  }
+
+  return <div ref={panel}>
+    {provider === "meta" ? <MetaWhatsAppConnection workspace={setupWorkspace} config={availability?.meta} embedded={embedded} onChangeProvider={changeProvider} /> :
+      provider === "evolution" ? <EvolutionConnectionPanel workspace={setupWorkspace} pairingAvailable={availability?.evolution} embedded={embedded} onChangeProvider={changeProvider} /> :
+      <section className={embedded ? styles.setupPanel : styles.card} aria-labelledby={pickerHeading}>
+        <div className={styles.connectionTop}><span className={styles.connectionIcon}><Link2 size={19} aria-hidden="true" /></span><div><h2 id={pickerHeading} tabIndex={-1}>Choose a WhatsApp provider</h2><p>Use one provider per workspace. Reply permissions are set separately.</p></div></div>
+        {!availability ? <p className={styles.helper} role="status">Checking available providers…</p> : <>
+          <ul className={styles.providerList}>
+            {providerOptions.map((option) => {
+              const available = Boolean(availability[option.id]);
+              const Icon = option.icon;
+              return <li key={option.id}><button type="button" className={styles.providerOption} disabled={!available} onClick={() => choose(option.id)}>
+                <Icon size={19} aria-hidden="true" />
+                <span><span className={styles.providerTitle}>{option.name}<Pill tone={option.id === "meta" && available ? "positive" : "neutral"}>{option.badge}</Pill></span><span className={styles.providerDescription}>{option.description}</span>{!available && <span className={styles.providerUnavailable}>Unavailable on this workspace</span>}</span>
+                {available && <ChevronRight size={16} aria-hidden="true" />}
+              </button></li>;
+            })}
+          </ul>
+          {!availability.meta && !availability.evolution && <p className={styles.helper}>No provider is ready yet. You can set up the rest of your workspace or contact support.</p>}
+        </>}
+      </section>}
+  </div>;
+}
+
+function EvolutionConnectionPanel({ workspace, embedded, pairingAvailable, onChangeProvider }: { workspace: Workspace; embedded: boolean; pairingAvailable: boolean | undefined; onChangeProvider?: () => void }) {
   const connect = useAction(api.connections.connect);
   const refresh = useAction(api.connections.refresh);
   const resetRevoked = useAction(api.connections.resetRevoked);
@@ -41,7 +90,8 @@ function EvolutionConnectionPanel({ workspace, embedded }: { workspace: Workspac
   const state = workspace.state;
   const activeMethod = pairing?.pairingMethod ?? "qr";
   const method = selectedMethod ?? activeMethod;
-  const canPair = state !== "connected" && state !== "revoked";
+  const canPair = pairingAvailable === true && state !== "connected" && state !== "revoked";
+  const canRevoke = ["connected", "pending", "provisioning", "error"].includes(state) || (state === "disconnected" && !workspace.canChooseConnectionProvider);
   const isPending = state === "pending" && pairing?.state !== "connected";
   const qr = isPending && method === "qr" ? pairing?.qr : null;
   const pairingCode = isPending && method === "phone" ? pairing?.pairingCode : null;
@@ -136,7 +186,7 @@ function EvolutionConnectionPanel({ workspace, embedded }: { workspace: Workspac
       if (!mounted.current) return;
       setFeedback(result.error
         ? { text: connectionErrorMessage(result.error), error: true }
-        : { text: "The old connection was cleared safely. Accept the risk notice and connect WhatsApp again." });
+        : { text: "The old connection was cleared safely. You can now pair again or change providers." });
     } catch {
       if (mounted.current) setFeedback({ text: "We couldn't reset this connection safely. Please try again later.", error: true });
     } finally {
@@ -149,13 +199,16 @@ function EvolutionConnectionPanel({ workspace, embedded }: { workspace: Workspac
     <section className={embedded ? styles.setupPanel : styles.card}>
       <div className={styles.connectionTop}>
         <span className={styles.connectionIcon}><Link2 size={19} aria-hidden="true" /></span>
-        <div><h2>WhatsApp connection</h2><p>Pair a number you are authorized to manage. Reply permissions are configured separately.</p></div>
+        <div><h2 tabIndex={-1}>Evolution Go connection</h2><p>Pair a number you are authorized to manage. Reply permissions are configured separately.</p></div>
         <Pill dot tone={state === "connected" ? "positive" : state === "error" ? "danger" : "neutral"}>{titleCase(state)}</Pill>
       </div>
+      {onChangeProvider && <button type="button" className={`${buttonClass.ghost} ${styles.providerBack}`} onClick={onChangeProvider} disabled={busy}><ChevronLeft size={15} aria-hidden="true" />Change provider</button>}
       <div className={styles.riskDisclosure}>
-        <p>Pipelixr uses Evolution Go. Auto-replies are off by default and rate-limited when enabled.</p>
-        <p>Eligible incoming messages are kept for {workspace.retentionDays} days. Auto-replies require separate customer or group consent.</p>
+        <p><strong>Unofficial integration.</strong> Evolution Go links WhatsApp as a device. WhatsApp may restrict or ban your number for using an unofficial integration.</p>
+        <p>Eligible incoming messages are kept for {workspace.retentionDays} days. Automatic replies are authorized separately.</p>
       </div>
+      {state !== "connected" && state !== "revoked" && pairingAvailable === false && <p className={styles.helper} role="status">Evolution Go pairing isn’t currently available. Ask your workspace administrator or contact support.</p>}
+      {state === "disconnected" && canRevoke && <p className={styles.helper}>To use another provider, revoke this connection and reset it after the old Evolution Go instance is removed.</p>}
       {state === "revoked" ? <><div className={styles.infoBanner}><ShieldCheck size={17} aria-hidden="true" /><p>This connection was revoked. Reset it to create fresh credentials and pair again. The reset stays blocked if the old provider instance still exists.</p></div><div className={styles.actions}><button type="button" className={buttonClass.primary} disabled={busy} onClick={() => void resetConnection()}>{busy ? "Resetting…" : "Reset connection"}</button></div></> : (
         <>
           {canPair && <>
@@ -175,7 +228,7 @@ function EvolutionConnectionPanel({ workspace, embedded }: { workspace: Workspac
           </>}
           <div className={styles.actions}>
             {canPair && !qr && <button type="button" className={buttonClass.primary} disabled={busy || !acceptedRisk || (method === "phone" && !phoneNumber.trim())} onClick={() => void pair()}>{method === "phone" ? pairingCode ? "Get a new pairing code" : "Get pairing code" : "Show QR code"}</button>}
-            {["connected", "pending", "provisioning", "error"].includes(state) && <button type="button" className={buttonClass.ghost} disabled={busy} onClick={() => setConfirmation(true)}>Revoke connection</button>}
+            {canRevoke && <button type="button" className={buttonClass.ghost} disabled={busy} onClick={() => setConfirmation(true)}>Revoke connection</button>}
           </div>
           {qr && <div className={styles.qr}>{qr.startsWith("data:image/png;base64,") ? <Image src={qr} alt="WhatsApp pairing QR code" width={224} height={224} unoptimized /> : <QRCode value={qr} size={224} title="WhatsApp pairing QR code" />}<p>In WhatsApp, open <strong>Linked devices → Link a device</strong> and scan this code. Keep it private.</p></div>}
           {pairingCode && <div className={styles.qr} aria-live="polite"><code className={styles.pairingCode}>{pairingCode}</code><p>In WhatsApp, open <strong>Linked devices → Link a device → Link with phone number instead</strong> and enter this code. Keep it private.</p></div>}
@@ -198,7 +251,7 @@ function connectionErrorMessage(code: string): string {
   if (code === "PAIRING_ARTIFACT_UNAVAILABLE") return "We couldn’t retrieve the code. Request a new one.";
   if (code === "CONNECTION_IN_PROGRESS") return "Another pairing request is in progress. Status updates automatically.";
   if (code === "QR_TIMEOUT") return "This pairing attempt timed out. Request a new code to try again.";
-  if (code === "PROVIDER_QUALIFICATION_REQUIRED") return "WhatsApp connection is temporarily unavailable while the provider setup is being verified.";
+  if (["PROVIDER_QUALIFICATION_REQUIRED", "PROVIDER_NOT_CONFIGURED", "PROVIDER_DISABLED", "INSECURE_PROVIDER_URL", "INVALID_PROVIDER_URL", "INVALID_PROVIDER_AUTH_MODE"].includes(code)) return "Evolution Go pairing is currently unavailable. Ask your workspace administrator or contact support.";
   if (code === "CONNECTION_SECURITY_UNAVAILABLE") return "Secure WhatsApp connection setup needs administrator attention. Your number has not been connected.";
   if (code === "PROVIDER_AUTH_FAILED") return "The WhatsApp provider rejected the connection credentials. Please try again after the provider setup is updated.";
   if (["PROVIDER_REQUEST_FAILED", "PROVIDER_UNAVAILABLE"].includes(code)) return "The WhatsApp provider could not be reached. Please try again shortly.";

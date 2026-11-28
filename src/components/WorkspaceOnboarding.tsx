@@ -18,7 +18,7 @@ import styles from "./FoundationWorkspace.module.css";
 
 const steps = [
   { id: "business", label: "Your business", title: "A space for your business.", description: "Start with your business name. Next you will connect WhatsApp and teach Pipelixr how to represent you." },
-  { id: "connection", label: "Connect WhatsApp", title: "Connect WhatsApp", description: "Pair the WhatsApp number you use for this business. You’ll choose reply permissions separately." },
+  { id: "connection", label: "Connect WhatsApp", title: "Connect WhatsApp", description: "Connect the WhatsApp number you use for this business. You’ll choose reply permissions separately." },
   { id: "business_ai", label: "Teach Pipelixr", title: "Teach Pipelixr", description: "Tell Pipelixr about your business and review the playbook it will use. You decide whether it can reply automatically." },
   { id: "groups", label: "Groups", title: "Choose your groups", description: "Choose which groups Pipelixr can help with, or leave them all off. You can change this later in Settings." },
 ] as const;
@@ -26,7 +26,10 @@ const steps = [
 export default function WorkspaceOnboarding({ workspace, onCreatingChange }: { workspace: Workspace | null; onCreatingChange: (creating: boolean) => void }) {
   const stage = workspace ? launchOnboardingStage(workspace) : "business";
   const stepIndex = steps.findIndex((step) => step.id === stage);
-  const { title, description } = steps[stepIndex];
+  const metaFinish = stage === "groups" && workspace?.connectionProvider === "meta";
+  const { title, description } = metaFinish
+    ? { title: "You’re ready to go", description: "Your WhatsApp Business number is connected through Meta. You can review your conversations in the dashboard." }
+    : steps[stepIndex];
   const heading = useRef<HTMLHeadingElement>(null);
   const previousStage = useRef(stage);
   const exitRequested = useRef(false);
@@ -60,7 +63,7 @@ export default function WorkspaceOnboarding({ workspace, onCreatingChange }: { w
         {steps.map((step, index) => (
           <li key={step.id} aria-current={index === stepIndex ? "step" : undefined} data-complete={index < stepIndex || undefined}>
             <b aria-hidden="true">{index < stepIndex ? <Check size={12} /> : index + 1}</b>
-            <span className="sr-only">{index < stepIndex ? "Completed: " : `Step ${index + 1}: `}</span>{step.label}
+            <span className="sr-only">{index < stepIndex ? "Completed: " : `Step ${index + 1}: `}</span>{step.id === "groups" && workspace?.connectionProvider === "meta" ? "Finish setup" : step.label}
           </li>
         ))}
       </ol>

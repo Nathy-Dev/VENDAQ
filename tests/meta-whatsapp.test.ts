@@ -17,6 +17,14 @@ beforeEach(() => {
 
 function seconds(at = Date.now()) { return String(Math.floor(at / 1000)); }
 
+function enableEvolution() {
+  vi.stubEnv("FOUNDATION_PROVIDER_ENABLED", "true");
+  vi.stubEnv("FOUNDATION_PROVIDER_CONTRACT_VERIFIED", "true");
+  vi.stubEnv("EVOLUTION_GO_URL", "https://provider.example.test");
+  vi.stubEnv("EVOLUTION_GO_API_KEY", "synthetic-global-key");
+  vi.stubEnv("CONVEX_SITE_URL", "https://convex.example.test");
+}
+
 function envelope<Value extends object>(field: string, value: Value, account = wabaId, phone = phoneId) {
   return { object: "whatsapp_business_account", entry: [{ id: account, time: Number(seconds()), changes: [{ field, value: { metadata: { phone_number_id: phone }, ...value } }] }] };
 }
@@ -68,6 +76,86 @@ async function conversation(source: Awaited<ReturnType<typeof seller>>) {
 }
 
 describe("Meta WhatsApp Coexistence", () => {
+  it("offers public Meta signup configuration independently from Evolution Go", async () => {
+    const harness = createHarness();
+    const source = await seller(harness);
+    const args = { businessId: source.businessId };
+    const meta = { appId: "88220000003", configId: "88220000004", version: "v27.0" };
+    await expect(source.owner.query(api.connections.providers, args)).resolves.toEqual({ meta, evolution: false });
+    enableEvolution();
+    await expect(source.owner.query(api.connections.providers, args)).resolves.toEqual({ meta, evolution: true });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("holds the provider during Meta signup, then lets the owner pair with Evolution after cancelling", async () => {
+    enableEvolution();
+    const harness = createHarness();
+    const source = await seller(harness);
+    const args = { businessId: source.businessId };
+    const evolutionArgs = { ...args, disclosureVersion: "phase-1-2026-10-27", acceptedRisk: true };
+    expect(await source.owner.query(api.foundation.workspace)).toMatchObject({ canChooseConnectionProvider: true });
+
+    const attempt = await source.owner.action(api.metaConnections.begin, { ...args, accepted: true });
+    const initial = await harness.query(internal.foundation.sessionByBusiness, args);
+    expect(await source.owner.query(api.foundation.workspace)).toMatchObject({ canChooseConnectionProvider: false, connectionProvider: "meta" });
+    await expect(source.owner.action(api.connections.connect, evolutionArgs)).rejects.toThrow("META_CONNECTION_EXISTS");
+    expect(fetch).not.toHaveBeenCalled();
+
+    await source.owner.mutation(api.metaConnections.cancel, { ...args, attempt });
+    expect(await source.owner.query(api.foundation.workspace)).toMatchObject({ canChooseConnectionProvider: true });
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const { pathname } = new URL(String(input));
+      if (pathname === "/instance/all") return Response.json({ data: [] });
+      if (pathname === "/instance/create") return Response.json({ data: { id: "switch-evolution" } });
+      if (pathname === "/instance/connect") return Response.json({ message: "success" });
+      if (pathname === "/instance/status") return Response.json({ data: { Connected: false, LoggedIn: false } });
+      if (pathname === "/instance/qr") return Response.json({ data: { Qrcode: "synthetic-pairing-qr" } });
+      throw new Error("Unexpected Evolution Go request");
+    });
+    await expect(source.owner.action(api.connections.connect, evolutionArgs)).resolves.toMatchObject({ state: "pending", error: null });
+    expect(await harness.query(internal.foundation.sessionByBusiness, args)).toMatchObject({ _id: initial?._id, generation: (initial?.generation ?? 0) + 1, providerInstanceId: "switch-evolution" });
+    await expect(source.owner.action(api.metaConnections.begin, { ...args, accepted: true })).rejects.toThrow("META_EXISTING_CONNECTION");
+    await drain(harness);
+    expect(await source.owner.query(api.foundation.workspace)).toMatchObject({ state: "pending", canChooseConnectionProvider: false, connectionProvider: "evolution" });
+  });
+
+  it("does not switch away from a Meta account that remains linked", async () => {
+    enableEvolution();
+    const harness = createHarness();
+    const source = await connect(harness);
+    const args = { businessId: source.businessId };
+    await source.owner.mutation(api.metaConnections.disconnect, args);
+    expect(await source.owner.query(api.foundation.workspace)).toMatchObject({ state: "disconnected", canChooseConnectionProvider: false, connectionProvider: "meta" });
+    await expect(source.owner.action(api.connections.connect, { ...args, acceptedRisk: true, disclosureVersion: "phase-1-2026-10-27" })).rejects.toThrow("META_CONNECTION_EXISTS");
+
+    expect((await post(harness, envelope("account_update", { event: "PARTNER_REMOVED", waba_info: { waba_id: wabaId } }))).status).toBe(200);
+    expect(await source.owner.query(api.foundation.workspace)).toMatchObject({ state: "disconnected", canChooseConnectionProvider: true });
+    await drain(harness);
+  });
+
+  it("only lets a previously paired Evolution workspace choose Meta after a verified reset", async () => {
+    enableEvolution();
+    const harness = createHarness();
+    const source = await tenant(harness, "switch-from-evolution");
+    const args = { businessId: source.businessId };
+    const startMeta = () => source.owner.action(api.metaConnections.begin, { ...args, accepted: true });
+    await harness.run((ctx) => ctx.db.patch(source.sessionId, { state: "disconnected" }));
+    expect(await source.owner.query(api.foundation.workspace)).toMatchObject({ canChooseConnectionProvider: false });
+    await expect(startMeta()).rejects.toThrow("META_EXISTING_CONNECTION");
+
+    await source.owner.mutation(api.foundation.revokeSession, args);
+    vi.mocked(fetch).mockResolvedValueOnce(Response.json({ data: [{ id: source.instanceId }] }));
+    await expect(source.owner.action(api.connections.resetRevoked, args)).resolves.toMatchObject({ error: "PROVIDER_INSTANCE_STILL_EXISTS" });
+    await expect(startMeta()).rejects.toThrow("META_EXISTING_CONNECTION");
+
+    vi.mocked(fetch).mockResolvedValueOnce(Response.json({ data: [] }));
+    await expect(source.owner.action(api.connections.resetRevoked, args)).resolves.toMatchObject({ state: "disconnected", error: null });
+    expect(await source.owner.query(api.foundation.workspace)).toMatchObject({ canChooseConnectionProvider: true });
+    await expect(startMeta()).resolves.toEqual(expect.any(String));
+    expect(await harness.query(internal.foundation.sessionByBusiness, args)).toMatchObject({ _id: source.sessionId, generation: 3, provider: "meta", state: "provisioning" });
+    await drain(harness);
+  });
+
   it("requires owner consent, exchanges only once, encrypts the token and starts the two sync requests", async () => {
     const harness = createHarness();
     const source = await seller(harness);
@@ -207,7 +295,7 @@ describe("Meta WhatsApp Coexistence", () => {
     const source = await seller(harness);
     const attempt = await source.owner.action(api.metaConnections.begin, { businessId: source.businessId, accepted: true });
     await drain(harness);
-    expect(await source.owner.query(api.foundation.workspace)).toMatchObject({ state: "error", lastError: "META_SIGNUP_EXPIRED" });
+    expect(await source.owner.query(api.foundation.workspace)).toMatchObject({ state: "error", lastError: "META_SIGNUP_EXPIRED", canChooseConnectionProvider: true });
     await expect(source.owner.action(api.metaConnections.complete, { businessId: source.businessId, attempt, code: "mock-exchange-code", wabaId, phoneId })).rejects.toThrow("META_SIGNUP_EXPIRED");
     expect(fetch).not.toHaveBeenCalled();
   });

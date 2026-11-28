@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Script from "next/script";
 import { useAction, useMutation } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
-import { Link2 } from "lucide-react";
+import { ChevronLeft, Link2 } from "lucide-react";
 import { api } from "../../convex/_generated/api";
 import type { Workspace } from "@/types/workspace";
 import { titleCase } from "@/lib/workspace-ui";
@@ -43,7 +43,7 @@ export function parseMetaSignupMessage(event: Pick<MessageEvent, "origin" | "dat
   } catch { return null; }
 }
 
-export default function MetaWhatsAppConnection({ workspace, config, embedded }: { workspace: Workspace; config: Config | null; embedded: boolean }) {
+export default function MetaWhatsAppConnection({ workspace, config, embedded, onChangeProvider }: { workspace: Workspace; config: Config | null | undefined; embedded: boolean; onChangeProvider?: () => void }) {
   const begin = useAction(api.metaConnections.begin);
   const complete = useAction(api.metaConnections.complete);
   const cancel = useMutation(api.metaConnections.cancel);
@@ -146,7 +146,8 @@ export default function MetaWhatsAppConnection({ workspace, config, embedded }: 
       try { facebook.init({ appId: config.appId, version: metaSdkVersion, xfbml: false, autoLogAppEvents: false }); setReady(true); }
       catch { setFeedback({ text: "Meta could not initialize. Ask your administrator to verify the signup configuration.", error: true }); }
     }} onError={() => setFeedback({ text: "Meta could not load. Allow the Facebook SDK, then reload this page.", error: true })} />}
-    <div className={styles.connectionTop}><span className={styles.connectionIcon}><Link2 size={19} aria-hidden="true" /></span><div><h2>WhatsApp Business connection</h2><p>Connect through Meta and keep using the same number in the WhatsApp Business app.</p></div><Pill dot tone={connected ? "positive" : workspace.state === "error" ? "danger" : "neutral"}>{titleCase(workspace.state)}</Pill></div>
+    <div className={styles.connectionTop}><span className={styles.connectionIcon}><Link2 size={19} aria-hidden="true" /></span><div><h2 tabIndex={-1}>Meta Cloud API connection</h2><p>Connect through Meta and keep using the same number in the WhatsApp Business app.</p></div><Pill dot tone={connected ? "positive" : workspace.state === "error" ? "danger" : "neutral"}>{titleCase(workspace.state)}</Pill></div>
+    {onChangeProvider && !attempt && <button type="button" className={`${buttonClass.ghost} ${styles.providerBack}`} onClick={onChangeProvider} disabled={busy}><ChevronLeft size={15} aria-hidden="true" />Change provider</button>}
     {workspace.meta && connected && <div className={styles.infoBanner} role="status"><p><strong>{workspace.meta.displayPhone}</strong> · Contacts: {titleCase(workspace.meta.contactsState)} · History: {workspace.meta.historyState === "declined" ? "Not shared" : workspace.meta.historyState === "complete" ? "Received by Pipelixr" : titleCase(workspace.meta.historyState)}{workspace.meta.historyState !== "complete" && workspace.meta.historyProgress !== undefined ? ` (${workspace.meta.historyProgress}%)` : ""}. Keep the WhatsApp Business app open during sync.</p></div>}
     {!connected && <div className={styles.riskDisclosure}><p>Each workspace connects one Meta Messaging account and one existing WhatsApp Business number. Meta may unlink companion devices during setup; group chats and statuses do not sync.</p><p>Meta lets you choose whether to share your chat history. Pipelixr retains eligible messages for {workspace.retentionDays} days and never auto-replies to imported history.</p></div>}
     {!connected && !!config && !attempt && !provisioning && <label className={styles.checkLabel}><input type="checkbox" checked={accepted} onChange={(event) => setAccepted(event.target.checked)} disabled={busy} /><span>I manage this number and authorize Pipelixr to process its WhatsApp messages.</span></label>}
@@ -155,7 +156,8 @@ export default function MetaWhatsAppConnection({ workspace, config, embedded }: 
       {(connected || provisioning || workspace.state === "error") && <button type="button" className={buttonClass.ghost} onClick={() => setConfirm(true)} disabled={busy}>{provisioning ? "Cancel setup" : "Disconnect from Pipelixr"}</button>}
     </div>
     {busy && <p className={styles.helper} role="status">Working on your Meta connection…</p>}
-    {!config && !connected && <p className={styles.helper}>Meta signup is not currently enabled for this deployment.</p>}
+    {config === null && !connected && <p className={styles.helper}>Meta signup isn’t currently available. Ask your workspace administrator or contact support.</p>}
+    {!connected && !provisioning && workspace.meta && <p className={styles.helper}>To choose another provider, first remove the link in WhatsApp Business → Settings → Account → Business Platform → Disconnect Account.</p>}
     {!ready && config && !connected && <p className={styles.helper}>If Meta does not load, <a href="/onboarding/connect">open the connection page directly</a> and allow popups.</p>}
     {workspace.lastError && !feedback && <p className={styles.helper} role="status">{signupError(workspace.lastError)}</p>}
     {feedback && <Notice feedback={feedback} />}

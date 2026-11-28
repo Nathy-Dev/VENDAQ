@@ -33,7 +33,8 @@ describe("public UI", () => {
     expect(html).toContain("You control customer authorization and every enabled group");
     expect(html).toContain("Complete Teach Pipelixr");
     expect(html).toContain("groups stay silent until enabled individually");
-    expect(html).toContain("an unofficial provider");
+    expect(html).toContain("official Meta Cloud API");
+    expect(html).toContain("Evolution Go is an unofficial provider");
     expect(html).toContain("Unclear, unsupported, or sensitive cases can be held for review");
   });
 

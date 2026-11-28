@@ -13,6 +13,23 @@ function enableProvider() {
 }
 
 describe("read-only provider sessions", () => {
+  it("reports deployment availability without exposing credentials or contacting providers", async () => {
+    const harness = createHarness();
+    const source = await tenant(harness);
+    const stranger = await tenant(harness, "other-provider-options");
+    const args = { businessId: source.businessId };
+    vi.stubEnv("META_WHATSAPP_ENABLED", "false");
+    await expect(source.owner.query(api.connections.providers, args)).resolves.toEqual({ meta: null, evolution: false });
+    await expect(stranger.owner.query(api.connections.providers, args)).rejects.toThrow("NOT_FOUND");
+    await expect(harness.query(api.connections.providers, args)).rejects.toThrow("UNAUTHENTICATED");
+
+    enableProvider();
+    await expect(source.owner.query(api.connections.providers, args)).resolves.toEqual({ meta: null, evolution: true });
+    vi.stubEnv("EVOLUTION_GO_URL", "http://provider.example.test");
+    await expect(source.owner.query(api.connections.providers, args)).resolves.toEqual({ meta: null, evolution: false });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it("prioritizes saved contact names and resolves phone/LID account aliases", () => {
     expect(providerContacts({ data: [{ Jid: "2348000000001@s.whatsapp.net", FullName: "Saved Name", FirstName: "Saved", PushName: "Push Name", BusinessName: "Business Name" }] })).toEqual([{ jid: "2348000000001@s.whatsapp.net", name: "Saved Name" }]);
     const userInfo = { data: { Users: { "2348000000000@s.whatsapp.net": { LID: "987654321@lid" } } } };

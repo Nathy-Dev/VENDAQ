@@ -1,7 +1,14 @@
 import { ConvexError } from "convex/values";
+import type { Doc } from "../_generated/dataModel";
 
 export const PHASE = 6;
 export const DISCLOSURE_VERSION = "phase-1-2026-10-27";
+
+export function canChooseConnectionProvider(session: Doc<"whatsappSessions"> | null, now: number): boolean {
+  if (!session) return true;
+  const inactive = session.state === "disconnected" || session.state === "error";
+  return inactive && !session.providerInstanceId && !session.meta && !session.createAttemptedAt && (session.operationLeaseUntil ?? 0) <= now;
+}
 
 export function setting(name: string, fallback: number, minimum = 1, maximum = 1_000_000_000): number {
   const value = Number(process.env[name] ?? fallback);

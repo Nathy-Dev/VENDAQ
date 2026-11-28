@@ -162,6 +162,15 @@
 .connectionTop h2 { font-size: 14px; }
 .connectionTop p { font-size: 11px; margin-top: 3px; color: var(--dash-text-muted); }
 .connectionIcon { display: flex; align-items: center; justify-content: center; width: 42px; height: 42px; background: #f7f7f7; border: 1px solid var(--dash-border); border-radius: 10px; }
+.providerList { display: grid; gap: 10px; list-style: none; padding: 0; margin: 0; }
+.providerOption { display: grid; width: 100%; grid-template-columns: 19px minmax(0, 1fr) 16px; align-items: start; gap: 12px; padding: 14px; text-align: left; background: #fff; border: 1px solid var(--dash-border); border-radius: 8px; }
+.providerOption > svg { margin-top: 3px; color: var(--dash-text-muted); }
+.providerOption:not(:disabled):hover, .providerOption:focus-visible { border-color: var(--dash-accent); background: var(--dash-accent-soft); }
+.providerOption:disabled { cursor: not-allowed; background: #fafafa; }
+.providerTitle { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 13px; font-weight: 600; }
+.providerDescription, .providerUnavailable { display: block; color: var(--dash-text-muted); font-size: 12px; line-height: 1.6; margin-top: 4px; }
+.providerUnavailable { font-weight: 600; }
+.providerBack { margin-bottom: 12px; }
 .riskDisclosure { font-size: 12px; color: #525252; line-height: 1.8; background: #fafafa; border: 1px solid var(--dash-border); border-radius: 8px; padding: 15px; margin-bottom: 16px; }
 .riskDisclosure strong { color: #171717; font-weight: 600; }
 .riskDisclosure p + p { margin-top: 8px; }

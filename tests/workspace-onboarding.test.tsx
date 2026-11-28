@@ -1,11 +1,12 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getFunctionName, type FunctionReference } from "convex/server";
 import type { Workspace } from "../src/types/workspace";
 
-const context = vi.hoisted(() => ({ pathname: "/onboarding/connect", workspace: null as Workspace | null | undefined, meta: null as { appId: string; configId: string; version: string } | null }));
-vi.mock("convex/react", () => ({ useAction: () => vi.fn(), useMutation: () => vi.fn(), useQuery: (ref: FunctionReference<"query">) => getFunctionName(ref) === "metaConnections:config" ? context.meta : context.workspace }));
+type Providers = { meta: { appId: string; configId: string; version: string } | null; evolution: boolean };
+const context = vi.hoisted(() => ({ pathname: "/onboarding/connect", workspace: null as Workspace | null | undefined, providers: undefined as Providers | undefined }));
+vi.mock("convex/react", () => ({ useAction: () => vi.fn(), useMutation: () => vi.fn(), useQuery: (ref: FunctionReference<"query">) => getFunctionName(ref) === "connections:providers" ? context.providers : context.workspace }));
 vi.mock("next/navigation", () => ({ usePathname: () => context.pathname, useRouter: () => ({ replace: vi.fn() }) }));
 vi.mock("../src/components/DashboardShell", () => ({ default: ({ children }: { children: React.ReactNode }) => <div data-dashboard-shell="true">Workspace navigation{children}</div> }));
 vi.mock("../src/components/WorkspaceOverview", () => ({ default: () => <div>Dashboard overview</div> }));
@@ -21,8 +22,11 @@ import ConnectionPanel from "../src/components/WorkspaceConnection";
 import FoundationWorkspace from "../src/components/FoundationWorkspace";
 import { parseMetaSignupMessage } from "../src/components/MetaWhatsAppConnection";
 
+const metaConfig = { appId: "12345", configId: "23456", version: "v27.0" };
+beforeEach(() => { context.providers = { meta: metaConfig, evolution: true }; });
+
 function workspace(state: Workspace["state"], hasBusinessSystemPrompt = false, aiEnabled = false) {
-  return { state, hasBusinessSystemPrompt, aiEnabled } as Workspace;
+  return { state, hasBusinessSystemPrompt, aiEnabled, canChooseConnectionProvider: state === "disconnected", connectionProvider: state === "disconnected" ? undefined : "evolution" } as Workspace;
 }
 
 function render(data: Workspace | null) {
@@ -32,7 +36,7 @@ function render(data: Workspace | null) {
 describe("workspace onboarding card", () => {
   it.each([
     { data: null, heading: "A space for your business.", current: 1, content: "Business name" },
-    { data: workspace("pending"), heading: "Connect WhatsApp", current: 2, content: "Pairing method" },
+    { data: workspace("disconnected"), heading: "Connect WhatsApp", current: 2, content: "Choose a WhatsApp provider" },
     { data: workspace("connected"), heading: "Teach Pipelixr", current: 3, content: 'data-embedded="true">Business playbook' },
     { data: workspace("connected", true), heading: "Choose your groups", current: 4, content: 'data-embedded="true">Group permissions' },
   ])("keeps step $current inside the branded card", ({ data, heading, current, content }) => {
@@ -41,7 +45,8 @@ describe("workspace onboarding card", () => {
     expect(html).toContain("pipelixr</span>");
     expect(html).toContain(`<h1 id="onboarding-title" tabindex="-1">${heading}</h1>`);
     expect(html).toContain(content);
-    const items = html.match(/<li[\s>][\s\S]*?<\/li>/g) ?? [];
+    const progress = html.match(/<ol[^>]+aria-label="Onboarding progress"[^>]*>.*?<\/ol>/)?.[0];
+    const items = progress?.match(/<li[\s>][\s\S]*?<\/li>/g) ?? [];
     expect(items).toHaveLength(4);
     expect(items.findIndex((item) => item.includes('aria-current="step"'))).toBe(current - 1);
     expect(items.filter((item) => item.includes('data-complete="true"'))).toHaveLength(current - 1);
@@ -95,13 +100,60 @@ describe("workspace onboarding card", () => {
     expect(renderToStaticMarkup(<ConnectionPanel workspace={pending} />)).not.toContain("Refresh status");
   });
 
-  it("offers Meta onboarding for a new workspace when enabled", () => {
-    context.meta = { appId: "12345", configId: "23456", version: "v27.0" };
-    try {
-      const html = render(workspace("disconnected"));
-      expect(html).toContain("Connect WhatsApp Business");
+  it("offers both providers in onboarding and settings without starting either flow", () => {
+    const fresh = workspace("disconnected");
+    for (const html of [render(fresh), renderToStaticMarkup(<ConnectionPanel workspace={fresh} />)]) {
+      expect(html).toContain("Choose a WhatsApp provider");
+      expect(html).toContain("Meta Cloud API");
+      expect(html).toContain("Recommended");
+      expect(html).toContain("Evolution Go");
+      expect(html).toContain("Unofficial");
+      expect(html).not.toContain('disabled=""');
+      expect(html).not.toContain("Connect WhatsApp Business");
       expect(html).not.toContain("Scan QR code");
-    } finally { context.meta = null; }
+    }
+  });
+
+  it.each([
+    { meta: metaConfig, evolution: false, disabled: ["Evolution Go"] },
+    { meta: null, evolution: true, disabled: ["Meta Cloud API"] },
+    { meta: null, evolution: false, disabled: ["Meta Cloud API", "Evolution Go"] },
+  ])("disables only unavailable providers ($disabled)", ({ disabled, ...providers }) => {
+    context.providers = providers;
+    const html = render(workspace("disconnected"));
+    const buttons = html.match(/<button[^>]+disabled=""[^>]*>.*?<\/button>/g) ?? [];
+    expect(buttons).toHaveLength(disabled.length);
+    for (const [index, name] of disabled.entries()) expect(buttons[index]).toContain(name);
+    expect(html.includes("No provider is ready yet")).toBe(disabled.length === 2);
+  });
+
+  it("waits for availability without defaulting to a provider", () => {
+    context.providers = undefined;
+    const html = render(workspace("disconnected"));
+    expect(html).toContain("Checking available providers");
+    expect(html).not.toContain("Evolution Go");
+    expect(html).not.toContain("Meta Cloud API");
+  });
+
+  it.each([
+    { state: "pending", provider: "meta", heading: "Meta Cloud API connection", action: "Cancel setup" },
+    { state: "disconnected", provider: "meta", heading: "Meta Cloud API connection", action: "Connect WhatsApp Business" },
+    { state: "pending", provider: "evolution", heading: "Evolution Go connection", action: "Show QR code" },
+    { state: "revoked", provider: "evolution", heading: "Evolution Go connection", action: "Reset connection" },
+    { state: "disconnected", provider: "evolution", heading: "Evolution Go connection", action: "Revoke connection" },
+  ] as const)("preserves the $state $provider session instead of offering a replacement", ({ state, provider, heading, action }) => {
+    const html = render({ ...workspace(state), connectionProvider: provider, canChooseConnectionProvider: false });
+    expect(html).toContain(heading);
+    expect(html).toContain(action);
+    expect(html).not.toContain("Choose a WhatsApp provider");
+    expect(html).not.toContain("Change provider");
+  });
+
+  it("does not ask Meta users to set up groups", () => {
+    const html = render({ ...workspace("connected", true), connectionProvider: "meta" });
+    expect(html).toContain("You’re ready to go");
+    expect(html).toContain("Finish setup");
+    expect(html).not.toContain("Group permissions");
   });
 
   it("accepts only a v4 Coexistence completion with valid assets from Meta", () => {
