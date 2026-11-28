@@ -56,6 +56,7 @@ async function repairProviderCredential(ctx: ActionCtx, session: SessionDocument
 }
 
 async function resetRevokedSession(ctx: ActionCtx, session: SessionDocument): Promise<ConnectionResult> {
+  if (session.provider === "meta") return { state: session.state, qr: null, error: "META_CONNECTION_EXISTS" };
   if (session.state !== "revoked") return { state: session.state, qr: null, error: "SESSION_RESET_NOT_ALLOWED" };
   try {
     const instances = providerInstances(await providerRequest("GET", "/instance/all"));
@@ -200,7 +201,7 @@ export const refresh = action({
   args: { businessId: v.id("businesses") }, returns: connectionResult,
   handler: async (ctx, args): Promise<ConnectionResult> => {
     const owned = await ctx.runQuery(internal.foundation.ownedSession, { businessId: args.businessId });
-    if (!owned) return { state: "disconnected", qr: null, error: null };
+    if (!owned || owned.provider === "meta") return { state: "disconnected", qr: null, error: null };
     if (owned.state !== "revoked" && owned.providerInstanceId) await ctx.runAction(internal.connections.checkHealth, { sessionId: owned._id, generation: owned.generation });
     const session = await ctx.runQuery(internal.foundation.ownedSession, { businessId: args.businessId });
     if (!session) return { state: "disconnected", qr: null, error: null };
@@ -212,7 +213,7 @@ export const checkHealth = internalAction({
   args: { sessionId: v.id("whatsappSessions"), generation: v.number() }, returns: v.null(),
   handler: async (ctx, args): Promise<null> => {
     const session = await ctx.runQuery(internal.foundation.sessionById, { sessionId: args.sessionId });
-    if (!session || session.generation !== args.generation || session.state === "revoked" || !session.providerInstanceId || (session.operationLeaseUntil ?? 0) > Date.now()) return null;
+    if (!session || session.provider === "meta" || session.generation !== args.generation || session.state === "revoked" || !session.providerInstanceId || (session.operationLeaseUntil ?? 0) > Date.now()) return null;
     const operationVersion = session.operationVersion ?? 0;
     try {
       let token = await decryptSecret(session.tokenCiphertext, `business:${session.businessId}:session-token`);
@@ -259,7 +260,7 @@ export const disconnectRevoked = internalAction({
   args: { sessionId: v.id("whatsappSessions"), generation: v.number() }, returns: v.null(),
   handler: async (ctx, args): Promise<null> => {
     const session = await ctx.runMutation(internal.foundation.claimDisconnect, args);
-    if (!session) return null;
+    if (!session || session.provider === "meta") return null;
     try {
       // An unresolved create may have succeeded remotely. Leave it visible for
       // operator reconciliation rather than falsely claiming it was disconnected.

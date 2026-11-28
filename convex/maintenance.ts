@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { internalMutation } from "./_generated/server";
 import { components, internal } from "./_generated/api";
+import { META_HEALTH_MS } from "./lib/meta";
 import { foundationPolicy, logEvent } from "./lib/policy";
 
 export const cancelCustomerTasks = internalMutation({
@@ -133,6 +134,15 @@ export const sweep = internalMutation({
   handler: async (ctx) => {
     const now = Date.now();
     const batchSize = foundationPolicy().batchSize;
+    const staleDispatches = await ctx.db.query("assistantDispatches").withIndex("by_meta_check", (builder) => builder.gt("metaCheckAt", 0).lte("metaCheckAt", now)).take(batchSize);
+    for (const dispatch of staleDispatches) {
+      if (dispatch.state === "reserved") {
+        await ctx.db.patch(dispatch._id, { metaCheckAt: now + 60_000 });
+        await ctx.scheduler.runAfter(0, internal.assistantReply.submit, { dispatchId: dispatch._id });
+      } else if (dispatch.state === "submitting") {
+        await ctx.runMutation(internal.assistantReply.finish, { dispatchId: dispatch._id, state: "unknown", errorCode: "META_SEND_UNCONFIRMED" });
+      } else await ctx.db.patch(dispatch._id, { metaCheckAt: undefined });
+    }
     const abandoned = await ctx.db.query("inboundEvents").withIndex("by_due", (builder) => builder.eq("state", "processing").lte("dueAt", now)).take(batchSize);
     for (const event of abandoned) {
       if (event.attempts >= (event.retryLimit ?? foundationPolicy().retryAttempts)) {
@@ -157,6 +167,15 @@ export const sweep = internalMutation({
     for (const commitment of overdueCommitments) await ctx.db.patch(commitment._id, { state: "overdue", updatedAt: now });
     const healthDue = await ctx.db.query("whatsappSessions").withIndex("by_health_due", (builder) => builder.lte("nextHealthAt", now)).take(batchSize);
     for (const session of healthDue) {
+      if (session.provider === "meta") {
+        await ctx.db.patch(session._id, { nextHealthAt: session.state === "connected" ? now + META_HEALTH_MS : Number.MAX_SAFE_INTEGER });
+        if (session.state === "connected") {
+          const args = { sessionId: session._id, generation: session.generation };
+          await ctx.scheduler.runAfter(0, internal.metaConnections.health, args);
+          if (session.meta?.contactsState === "pending" || session.meta?.historyState === "pending") await ctx.scheduler.runAfter(0, internal.metaConnections.sync, args);
+        }
+        continue;
+      }
       await ctx.db.patch(session._id, { nextHealthAt: now + foundationPolicy().healthIntervalMs, ...((session.qrExpiresAt ?? Infinity) <= now ? { qrCiphertext: undefined, qrExpiresAt: undefined } : {}), ...((session.pairingCodeExpiresAt ?? Infinity) <= now ? { pairingCodeCiphertext: undefined, pairingCodeExpiresAt: undefined } : {}) });
       if (session.state !== "revoked" && session.providerInstanceId) await ctx.scheduler.runAfter(0, internal.connections.checkHealth, { sessionId: session._id, generation: session.generation });
       if (session.state === "connected" && session.providerInstanceId) await ctx.scheduler.runAfter(0, internal.directorySync.sync, { sessionId: session._id, generation: session.generation });

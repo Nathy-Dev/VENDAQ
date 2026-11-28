@@ -8,9 +8,13 @@ import type { NormalizedEvent } from "./lib/validators";
 import { businessAiOptions, streamBusinessSystemPrompt, transcribeBusinessDescription } from "./businessProfileHttp";
 import { verifyPaystackSignature, paystackTimestamp, safeProviderString, type ProviderObject } from "./lib/paystack";
 import { sha256 as digestSha256 } from "./lib/crypto";
+import { receive as receiveMetaWebhook, verify as verifyMetaWebhook } from "./metaHttp";
 
 // This is the only active HTTP router during the foundation phase.
 const http = httpRouter();
+
+http.route({ path: "/api/webhook/meta/whatsapp", method: "GET", handler: verifyMetaWebhook });
+http.route({ path: "/api/webhook/meta/whatsapp", method: "POST", handler: receiveMetaWebhook });
 
 http.route({
   path: "/api/webhook/evolution", method: "POST",
@@ -26,7 +30,7 @@ http.route({
       const source = await ctx.runQuery(internal.foundation.sessionByProvider, { providerInstanceId, receivedAt });
       const session = source?.session;
       const tokenHash = await sha256(token);
-      if (!session || session.state === "revoked" || !secretMatches(session.tokenHash, tokenHash)) return Response.json({ error: "INVALID_WEBHOOK_AUTH" }, { status: 401, headers });
+      if (!session || session.provider === "meta" || session.state === "revoked" || !secretMatches(session.tokenHash, tokenHash)) return Response.json({ error: "INVALID_WEBHOOK_AUTH" }, { status: 401, headers });
       let payload: NormalizedEvent;
       let quarantineCode: string | undefined;
       try {

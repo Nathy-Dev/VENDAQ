@@ -15,7 +15,15 @@ const nextConfig: NextConfig = {
       { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
       { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" },
     ];
-    return [{ source: "/(.*)", headers: securityHeaders }];
+    const metaHeaders = [
+      { key: "Cross-Origin-Opener-Policy", value: "same-origin-allow-popups" },
+      { key: "Content-Security-Policy", value: securityHeaders[0].value.replace(scriptPolicy, `${scriptPolicy} https://connect.facebook.net`).replace("https://api.cloudinary.com;", "https://api.cloudinary.com https://www.facebook.com https://graph.facebook.com https://connect.facebook.net;").replace("frame-src https://checkout.paystack.com;", "frame-src https://checkout.paystack.com https://www.facebook.com https://web.facebook.com;") },
+    ];
+    return [
+      { source: "/(.*)", headers: securityHeaders },
+      { source: "/onboarding/connect", headers: metaHeaders },
+      { source: "/settings", headers: metaHeaders },
+    ];
   },
 };
 

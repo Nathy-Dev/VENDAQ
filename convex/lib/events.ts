@@ -129,7 +129,13 @@ export function semanticEventKey(event: NormalizedEvent): string {
 }
 
 export async function readBoundedJson(request: Request): Promise<Record<string, unknown>> {
-  const maximum = foundationPolicy().maxWebhookBytes;
+  const bytes = await readBoundedBytes(request, foundationPolicy().maxWebhookBytes);
+  const parsed: unknown = JSON.parse(new TextDecoder().decode(bytes));
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("INVALID_JSON");
+  return object(parsed);
+}
+
+export async function readBoundedBytes(request: Request, maximum: number): Promise<ArrayBuffer> {
   const declared = Number(request.headers.get("content-length") ?? 0);
   if (declared > maximum) throw new Error("PAYLOAD_TOO_LARGE");
   if (!request.headers.get("content-type")?.toLowerCase().startsWith("application/json")) throw new Error("INVALID_CONTENT_TYPE");
@@ -147,7 +153,5 @@ export async function readBoundedJson(request: Request): Promise<Record<string, 
   const bytes = new Uint8Array(size);
   let offset = 0;
   for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
-  const parsed: unknown = JSON.parse(new TextDecoder().decode(bytes));
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("INVALID_JSON");
-  return object(parsed);
+  return bytes.buffer;
 }

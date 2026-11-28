@@ -5,15 +5,27 @@ export const connectionState = v.union(v.literal("provisioning"), v.literal("pen
 export const pairingMethod = v.union(v.literal("qr"), v.literal("phone"));
 export const receiptState = v.union(v.literal("delivered"), v.literal("read"), v.literal("read_self"));
 export const normalizedEvent = v.union(
-  v.object({ kind: v.literal("message"), messageId: v.string(), chat: v.string(), identityKey: v.string(), fromMe: v.boolean(), isGroup: v.boolean(), mentioned: v.boolean(), name: v.optional(v.string()), participantJid: v.optional(v.string()), participantName: v.optional(v.string()), aliasJids: v.optional(v.array(v.string())), text: v.string(), mediaType, mediaMimeType: v.optional(v.string()), mediaPayload: v.optional(v.string()), eventAt: v.number(), manualReview: v.boolean() }),
+  v.object({ kind: v.literal("message"), messageId: v.string(), chat: v.string(), identityKey: v.string(), fromMe: v.boolean(), isGroup: v.boolean(), mentioned: v.boolean(), name: v.optional(v.string()), participantJid: v.optional(v.string()), participantName: v.optional(v.string()), aliasJids: v.optional(v.array(v.string())), text: v.string(), mediaType, mediaMimeType: v.optional(v.string()), mediaPayload: v.optional(v.string()), eventAt: v.number(), manualReview: v.boolean(), historical: v.optional(v.boolean()) }),
   v.object({ kind: v.literal("receipt"), chat: v.string(), sender: v.string(), identityKey: v.string(), messageIds: v.array(v.string()), state: receiptState, eventAt: v.number() }),
   v.object({ kind: v.literal("connection"), event: v.string(), eventAt: v.optional(v.number()), qrCiphertext: v.optional(v.string()) }),
   v.object({ kind: v.literal("ignored"), reason: v.string() }),
+  v.object({ kind: v.literal("metaContact"), identityKey: v.string(), chat: v.string(), name: v.string(), eventAt: v.number(), removed: v.boolean() }),
+  v.object({ kind: v.literal("metaStatus"), messageId: v.string(), status: v.union(v.literal("sent"), v.literal("delivered"), v.literal("read"), v.literal("failed")), at: v.number(), dispatchRef: v.string(), errorCode: v.optional(v.number()) }),
 );
 export type NormalizedEvent = Infer<typeof normalizedEvent>;
 
+export const metaSyncState = v.union(v.literal("pending"), v.literal("requested"), v.literal("received"), v.literal("complete"), v.literal("declined"), v.literal("unconfirmed"));
+
 export const sessionFields = {
   businessId: v.id("businesses"),
+  provider: v.optional(v.literal("meta")),
+  metaAttemptClaimed: v.optional(v.boolean()),
+  meta: v.optional(v.object({
+    wabaId: v.string(), displayPhone: v.string(),
+    contactsState: metaSyncState, historyState: metaSyncState,
+    contactsRequestId: v.optional(v.string()), historyRequestId: v.optional(v.string()),
+    historyProgress: v.optional(v.number()),
+  })),
   instanceName: v.string(),
   providerInstanceId: v.optional(v.string()),
   generation: v.number(),

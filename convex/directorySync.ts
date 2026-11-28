@@ -27,7 +27,7 @@ export const authorize = internalQuery({
   })),
   handler: async (ctx, args) => {
     const session = await ctx.db.get(args.sessionId);
-    if (!session || session.generation !== args.generation || session.state !== "connected" || !session.providerInstanceId) return null;
+    if (!session || session.provider === "meta" || session.generation !== args.generation || session.state !== "connected" || !session.providerInstanceId) return null;
     const business = await ctx.db.get(session.businessId);
     if (!business || business.foundationVersion !== 1) return null;
     return {

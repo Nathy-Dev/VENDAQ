@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { downloadMetaMedia } from "./lib/meta";
 import { internalAction, internalMutation, internalQuery } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { decryptSecret } from "./lib/crypto";
@@ -11,7 +12,7 @@ import { groupMayAutoReply } from "./lib/groupGovernance";
 
 const candidate = v.object({
   interactionId: v.id("interactions"), businessId: v.id("businesses"), customerId: v.id("customers"),
-  sessionId: v.id("whatsappSessions"), providerInstanceId: v.string(), tokenCiphertext: v.string(), mediaPayload: v.string(), mediaMimeType: v.string(),
+  sessionId: v.id("whatsappSessions"), providerInstanceId: v.string(), tokenCiphertext: v.string(), mediaPayload: v.string(), mediaMimeType: v.string(), meta: v.boolean(),
 });
 
 export const prepare = internalQuery({
@@ -28,7 +29,7 @@ export const prepare = internalQuery({
       const group = await ctx.db.query("managedGroups").withIndex("by_business_group", (builder) => builder.eq("businessId", business._id).eq("groupJid", customer.phone)).unique();
       if (!group || !groupMayAutoReply(group, interaction)) return null;
     }
-    return { interactionId: interaction._id, businessId: business._id, customerId: customer._id, sessionId: session._id, providerInstanceId: session.providerInstanceId, tokenCiphertext: session.tokenCiphertext, mediaPayload: args.mediaPayload, mediaMimeType: args.mediaMimeType ?? "audio/ogg" };
+    return { interactionId: interaction._id, businessId: business._id, customerId: customer._id, sessionId: session._id, providerInstanceId: session.providerInstanceId, tokenCiphertext: session.tokenCiphertext, mediaPayload: args.mediaPayload, mediaMimeType: args.mediaMimeType ?? "audio/ogg", meta: session.provider === "meta" };
   },
 });
 
@@ -112,7 +113,7 @@ export const transcribe = internalAction({
       const model = resolveTranscriptionModel(process.env.OPENAI_TRANSCRIPTION_MODEL);
       const token = await decryptSecret(current.tokenCiphertext, `business:${current.businessId}:session-token`);
       const message = JSON.parse(current.mediaPayload) as Record<string, unknown>;
-      const audio = await downloadAuthorizedInboundAudio({ token, instanceId: current.providerInstanceId, message, canProcess });
+      const audio = current.meta ? await downloadMetaMedia({ token, phoneId: current.providerInstanceId, id: message.id, kind: "audio", canProcess }) : await downloadAuthorizedInboundAudio({ token, instanceId: current.providerInstanceId, message, canProcess });
       const mimeType = (audio.mimetype || current.mediaMimeType).split(";")[0].trim().toLowerCase() || "audio/ogg";
       const result = await transcribeWithOpenAI({
         audio: new Blob([audio.bytes.slice().buffer], { type: mimeType }),

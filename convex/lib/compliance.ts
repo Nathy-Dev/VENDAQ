@@ -71,7 +71,7 @@ export async function canSendServiceMessage(ctx: QueryCtx | MutationCtx, custome
     .withIndex("by_customer", (builder) => builder.eq("customerId", customer._id))
     .order("desc")
     .first();
-  return inbound?.businessId === customer.businessId && inbound.role === "customer";
+  return inbound?.businessId === customer.businessId && inbound.role === "customer" && !inbound.metaHistorical;
 }
 
 export async function canSendMarketingMessage(ctx: QueryCtx | MutationCtx, customer: Doc<"customers">): Promise<boolean> {

@@ -10,7 +10,7 @@ The production billing subsystem is documented in the [billing production runboo
 
 Phases 4 through 6 add a ranked seller action queue, seller-recorded orders and outcomes, payment reminders, stalled-inquiry actions, conservative revenue measurement, a manual Status viewer list, and connection-risk readiness. Existing broad legacy modules remain fail-closed. No read marking, reactions, presence, customer messaging, automatic outreach, provider-confirmed sends, or independently confirmed recovered revenue is enabled.
 
-No deployment or migration was performed. Evolution Go dispatch remains blocked because provider-side repeat-send idempotency and timeout reconciliation are not qualified. Configure and qualify the non-production target using [planning/phase-1-runbook.md](planning/phase-1-runbook.md) before connecting WhatsApp.
+For the official WhatsApp Business Platform integration, see the [Meta Cloud API Coexistence runbook](planning/meta-whatsapp-runbook.md) for Embedded Signup, webhook setup, a live smoke test, and rollback. It does not migrate existing Evolution Go connections. For Evolution Go setup and qualification, follow the [Phase 1 runbook](planning/phase-1-runbook.md).
 
 The local development instructions below are retained from the Next.js scaffold. Connecting a provider or deploying remains a separately gated non-production operation; follow the Phase 1 runbook.
 

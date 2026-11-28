@@ -1,10 +1,11 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
+import { getFunctionName, type FunctionReference } from "convex/server";
 import type { Workspace } from "../src/types/workspace";
 
-const context = vi.hoisted(() => ({ pathname: "/onboarding/connect", workspace: null as Workspace | null | undefined }));
-vi.mock("convex/react", () => ({ useAction: () => vi.fn(), useMutation: () => vi.fn(), useQuery: () => context.workspace }));
+const context = vi.hoisted(() => ({ pathname: "/onboarding/connect", workspace: null as Workspace | null | undefined, meta: null as { appId: string; configId: string; version: string } | null }));
+vi.mock("convex/react", () => ({ useAction: () => vi.fn(), useMutation: () => vi.fn(), useQuery: (ref: FunctionReference<"query">) => getFunctionName(ref) === "metaConnections:config" ? context.meta : context.workspace }));
 vi.mock("next/navigation", () => ({ usePathname: () => context.pathname, useRouter: () => ({ replace: vi.fn() }) }));
 vi.mock("../src/components/DashboardShell", () => ({ default: ({ children }: { children: React.ReactNode }) => <div data-dashboard-shell="true">Workspace navigation{children}</div> }));
 vi.mock("../src/components/WorkspaceOverview", () => ({ default: () => <div>Dashboard overview</div> }));
@@ -18,6 +19,7 @@ vi.mock("../src/components/WorkspaceGroups", () => ({ default: ({ embedded }: { 
 import WorkspaceOnboarding from "../src/components/WorkspaceOnboarding";
 import ConnectionPanel from "../src/components/WorkspaceConnection";
 import FoundationWorkspace from "../src/components/FoundationWorkspace";
+import { parseMetaSignupMessage } from "../src/components/MetaWhatsAppConnection";
 
 function workspace(state: Workspace["state"], hasBusinessSystemPrompt = false, aiEnabled = false) {
   return { state, hasBusinessSystemPrompt, aiEnabled } as Workspace;
@@ -91,5 +93,21 @@ describe("workspace onboarding card", () => {
     const pending = workspace("pending");
     expect(render(pending)).not.toContain("Refresh status");
     expect(renderToStaticMarkup(<ConnectionPanel workspace={pending} />)).not.toContain("Refresh status");
+  });
+
+  it("offers Meta onboarding for a new workspace when enabled", () => {
+    context.meta = { appId: "12345", configId: "23456", version: "v27.0" };
+    try {
+      const html = render(workspace("disconnected"));
+      expect(html).toContain("Connect WhatsApp Business");
+      expect(html).not.toContain("Scan QR code");
+    } finally { context.meta = null; }
+  });
+
+  it("accepts only a Coexistence completion with valid assets from Meta", () => {
+    const data = JSON.stringify({ type: "WA_EMBEDDED_SIGNUP", event: "FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING", data: { messaging_account_ids: ["12345"], phone_number_id: "23456", is_on_biz_app: true } });
+    expect(parseMetaSignupMessage({ origin: "https://www.facebook.com", data })).toEqual({ wabaId: "12345", phoneId: "23456" });
+    expect(parseMetaSignupMessage({ origin: "https://www.facebook.com.example.com", data })).toBeNull();
+    expect(parseMetaSignupMessage({ origin: "https://www.facebook.com", data: data.replace("FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING", "FINISH") })).toBe("error");
   });
 });

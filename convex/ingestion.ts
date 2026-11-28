@@ -1,5 +1,5 @@
 import { ConvexError, v, type Infer } from "convex/values";
-import { internalAction, internalMutation } from "./_generated/server";
+import { internalAction, internalMutation, type MutationCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { eventDocument, normalizedEvent } from "./lib/validators";
 import { foundationPolicy, logEvent } from "./lib/policy";
@@ -11,12 +11,17 @@ import { recordBusinessActivity, recordConnectionTransition, recordResponseTime 
 import { COMMUNICATION_POLICY_VERSION, isMarketingOptInKeyword, isOptOutKeyword } from "./lib/compliance";
 import { activeMessageAiEpoch, canProcessInboxMessage } from "./lib/inboxAi";
 
+const enqueueArgs = v.object({ sessionId: v.id("whatsappSessions"), generation: v.number(), tokenHash: v.string(), eventKey: v.string(), correlationId: v.string(), payload: normalizedEvent, receivedAt: v.optional(v.number()), observedAiEpoch: v.optional(v.union(v.number(), v.null())), quarantineCode: v.optional(v.string()) });
+
 export const enqueue = internalMutation({
-  args: { sessionId: v.id("whatsappSessions"), generation: v.number(), tokenHash: v.string(), eventKey: v.string(), correlationId: v.string(), payload: normalizedEvent, receivedAt: v.optional(v.number()), observedAiEpoch: v.optional(v.union(v.number(), v.null())), quarantineCode: v.optional(v.string()) },
+  args: enqueueArgs.fields,
   returns: v.object({ eventId: v.id("inboundEvents"), duplicate: v.boolean(), correlationId: v.string() }),
-  handler: async (ctx, args) => {
+  handler: enqueueEvent,
+});
+
+async function enqueueEvent(ctx: MutationCtx, args: Infer<typeof enqueueArgs>, meta = false) {
     const session = await ctx.db.get(args.sessionId);
-    if (!session || session.state === "revoked" || session.generation !== args.generation || session.tokenHash !== args.tokenHash) throw new ConvexError({ code: "INVALID_WEBHOOK_AUTH" });
+    if (!session || (session.provider === "meta") !== meta || session.state === "revoked" || session.generation !== args.generation || session.tokenHash !== args.tokenHash) throw new ConvexError({ code: "INVALID_WEBHOOK_AUTH" });
     const business = await ctx.db.get(session.businessId);
     if (!business || business.foundationVersion !== 1) throw new ConvexError({ code: "INVALID_WEBHOOK_AUTH" });
     const now = Date.now();
@@ -55,12 +60,12 @@ export const enqueue = internalMutation({
     }
     const existing = await ctx.db.query("inboundEvents").withIndex("by_session_key", (builder) => builder.eq("sessionId", session._id).eq("eventKey", eventKey)).unique();
     if (existing) return { eventId: existing._id, duplicate: true, correlationId: existing.correlationId };
-    const identityKey = args.payload.kind === "message" || args.payload.kind === "receipt" ? args.payload.identityKey : undefined;
+    const identityKey = args.payload.kind === "message" || args.payload.kind === "receipt" || args.payload.kind === "metaContact" ? args.payload.identityKey : undefined;
     const suppression = identityKey ? await ctx.db.query("privacySuppressions").withIndex("by_business_identity", (builder) => builder.eq("businessId", session.businessId).eq("identityKey", identityKey)).unique() : null;
     // Never persist a new content copy after this contact requested deletion.
     const payload = suppression ? { kind: "ignored" as const, reason: "CONTACT_DELETED" } : { ...args.payload };
-    const eligibleEpoch = payload.kind === "message" && args.receivedAt !== undefined ? activeMessageAiEpoch(business, Math.min(payload.eventAt, args.receivedAt)) : null;
-    const aiProcessingEpoch = args.observedAiEpoch === eligibleEpoch ? eligibleEpoch : null;
+    const eligibleEpoch = payload.kind === "message" && !payload.historical && args.receivedAt !== undefined ? activeMessageAiEpoch(business, Math.min(payload.eventAt, args.receivedAt)) : null;
+    const aiProcessingEpoch = meta ? session.state === "connected" ? eligibleEpoch : null : args.observedAiEpoch === eligibleEpoch ? eligibleEpoch : null;
     if (payload.kind === "message" && aiProcessingEpoch === null) delete payload.mediaPayload;
     const eventId = await ctx.db.insert("inboundEvents", { businessId: session.businessId, sessionId: session._id, generation: session.generation, eventKey, correlationId: args.correlationId, payload, ...(identityKey ? { identityKey } : {}), state: "pending", attempts: 0, receivedAt: args.receivedAt ?? now, aiProcessingEpoch, dueAt: now, expiresAt: now + foundationPolicy().eventRetentionDays * 86400000 });
     if (args.quarantineCode) {
@@ -70,8 +75,21 @@ export const enqueue = internalMutation({
       const scheduledId = await ctx.scheduler.runAfter(0, internal.ingestion.runEvent, { eventId });
       await ctx.db.patch(eventId, { scheduledId });
     }
-    logEvent("webhook_committed", { correlationId: args.correlationId, businessId: session.businessId, eventId });
+    if (!meta) logEvent("webhook_committed", { correlationId: args.correlationId, businessId: session.businessId, eventId });
     return { eventId, duplicate: false, correlationId: args.correlationId };
+}
+
+const metaQueueItem = v.object({ eventKey: v.string(), payload: normalizedEvent });
+
+export const enqueueMeta = internalMutation({
+  args: { sessionId: v.id("whatsappSessions"), generation: v.number(), tokenHash: v.string(), correlationId: v.string(), receivedAt: v.number(), events: v.array(metaQueueItem) },
+  returns: v.null(),
+  handler: async (ctx, { events, ...source }) => {
+    const session = await ctx.db.get(source.sessionId);
+    if (session?.provider !== "meta" || session.generation !== source.generation || !["pending", "connected"].includes(session.state)) return null;
+    if ((await ctx.db.get(session.businessId))?.foundationVersion !== 1) return null;
+    for (const event of events) await enqueueEvent(ctx, { ...source, ...event }, true);
+    return null;
   },
 });
 
@@ -80,6 +98,11 @@ export const claimEvent = internalMutation({
   handler: async (ctx, args) => {
     const event = await ctx.db.get(args.eventId);
     if (!event || event.state !== "pending" || event.dueAt > Date.now()) return null;
+    const session = await ctx.db.get(event.sessionId);
+    if (session?.provider === "meta" && session.generation === event.generation && session.state === "pending") {
+      await ctx.db.patch(event._id, { dueAt: Date.now() + 15_000 });
+      return null;
+    }
     if (!event.payload || event.expiresAt <= Date.now() || event.attempts >= (event.retryLimit ?? foundationPolicy().retryAttempts)) {
       await ctx.db.patch(event._id, { state: "dead_letter", errorCode: "EVENT_EXPIRED_OR_EXHAUSTED", payload: undefined });
       return null;
@@ -97,7 +120,7 @@ export const applyEvent = internalMutation({
     const session = await ctx.db.get(event.sessionId);
     const business = await ctx.db.get(event.businessId);
     const payload = event.payload;
-    if (!session || !business || business.foundationVersion !== 1 || session.businessId !== business._id || session.state === "revoked" || session.generation !== event.generation || !payload || event.expiresAt <= Date.now()) {
+    if (!session || !business || business.foundationVersion !== 1 || session.businessId !== business._id || session.state === "revoked" || (session.provider === "meta" && session.state !== "connected") || session.generation !== event.generation || !payload || event.expiresAt <= Date.now()) {
       await ctx.db.patch(event._id, { state: "ignored", errorCode: "STALE_OR_REVOKED", payload: undefined, completedAt: Date.now() });
       return null;
     }
@@ -105,12 +128,23 @@ export const applyEvent = internalMutation({
       const suppression = await ctx.db.query("privacySuppressions").withIndex("by_business_identity", (builder) => builder.eq("businessId", business._id).eq("identityKey", payload.identityKey)).unique();
       // Reject old replay after both inbox and conversation retention expire.
       const tooOld = payload.eventAt + (business.messageRetentionDays ?? foundationPolicy().messageRetentionDays) * 86400000 <= Date.now();
-      if (!payload.identityKey || suppression || payload.eventAt < session.consentAt || tooOld) {
+      if (!payload.identityKey || suppression || (!payload.historical && payload.eventAt < (session.provider === "meta" ? Math.floor(session.consentAt / 1000) * 1000 : session.consentAt)) || tooOld) {
         await ctx.db.patch(event._id, { state: "ignored", errorCode: suppression ? "CONTACT_DELETED" : "BEFORE_CONSENT", payload: undefined, completedAt: Date.now() });
         return null;
       }
-      const messageKey = `${session._id}:${event.eventKey}`;
+      const messageKey = session.provider === "meta" ? `meta:${session.providerInstanceId}:${payload.messageId}` : `${session._id}:${event.eventKey}`;
       const existingMessage = await ctx.db.query("interactions").withIndex("by_business_event", (builder) => builder.eq("businessId", business._id).eq("providerEventKey", messageKey)).unique();
+      const liveMetaInbound = session.provider === "meta" && !payload.fromMe && !payload.historical && payload.mediaType !== "unsupported";
+      const metaInboundAt = Math.min(payload.eventAt, event.receivedAt);
+      if (existingMessage?.metaHistorical && liveMetaInbound && existingMessage.role === "customer" && existingMessage.conversationId) {
+        const conversation = await ctx.db.get(existingMessage.conversationId);
+        const customer = await ctx.db.get(existingMessage.customerId);
+        if (conversation && customer?.deletedAt === undefined && customer?.identityKey === payload.identityKey && (conversation.metaInboundGeneration !== session.generation || metaInboundAt >= (conversation.metaInboundAt ?? 0))) {
+          await ctx.db.patch(conversation._id, { metaInboundGeneration: session.generation, metaInboundAt, metaInboundId: existingMessage._id });
+          if (!isOptOutKeyword(payload.text)) await ctx.db.patch(customer._id, { firstInboundAt: customer.firstInboundAt ?? metaInboundAt, lastInboundAt: Math.max(customer.lastInboundAt ?? 0, metaInboundAt) });
+          else await ctx.db.patch(customer._id, { communicationState: "opted_out", optedOutAt: metaInboundAt, optOutSource: "customer_keyword", marketingConsentAt: undefined });
+        }
+      }
       if (!existingMessage) {
         const aliases = payload.isGroup ? [] : [...new Set([payload.chat, ...(payload.aliasJids ?? [])])];
         let canonicalChat = payload.chat;
@@ -133,9 +167,14 @@ export const applyEvent = internalMutation({
         let customer = await ctx.db.query("customers").withIndex("by_business_identity", (builder) => builder.eq("businessId", business._id).eq("identityKey", canonicalIdentityKey)).unique();
         if (!customer) customer = await ctx.db.query("customers").withIndex("by_business_phone", (builder) => builder.eq("businessId", business._id).eq("phone", canonicalChat)).unique();
         if (!customer && canonicalChat !== payload.chat) customer = await ctx.db.query("customers").withIndex("by_business_identity", (builder) => builder.eq("businessId", business._id).eq("identityKey", payload.identityKey)).unique();
+        const canonicalSuppression = canonicalIdentityKey !== payload.identityKey ? await ctx.db.query("privacySuppressions").withIndex("by_business_identity", (builder) => builder.eq("businessId", business._id).eq("identityKey", canonicalIdentityKey)).unique() : null;
+        if (canonicalSuppression || customer?.deletedAt !== undefined) {
+          await ctx.db.patch(event._id, { state: "ignored", errorCode: "CONTACT_DELETED", payload: undefined, completedAt: Date.now() });
+          return null;
+        }
         if (!customer) {
           const preferredName = savedName || payload.name;
-          const customerId = await ctx.db.insert("customers", { businessId: business._id, phone: canonicalChat, ...(preferredName ? { name: preferredName } : {}), identityKey: canonicalIdentityKey, totalValue: 0, lastInteraction: payload.eventAt, isGroup: payload.isGroup, ...(payload.fromMe ? { lastOutboundAt: payload.eventAt } : { firstInboundAt: payload.eventAt, lastInboundAt: payload.eventAt }), leadSource: payload.fromMe ? "imported" : "dm", funnelStage: payload.fromMe ? "viewer" : "engaged", tags: ["captured", ...(payload.isGroup ? ["group"] : [])] });
+          const customerId = await ctx.db.insert("customers", { businessId: business._id, phone: canonicalChat, ...(preferredName ? { name: preferredName } : {}), identityKey: canonicalIdentityKey, totalValue: 0, lastInteraction: payload.eventAt, isGroup: payload.isGroup, ...(payload.historical ? {} : payload.fromMe ? { lastOutboundAt: payload.eventAt } : { firstInboundAt: payload.eventAt, lastInboundAt: payload.eventAt }), leadSource: payload.fromMe || payload.historical ? "imported" : "dm", funnelStage: payload.fromMe || payload.historical ? "viewer" : "engaged", tags: ["captured", ...(payload.isGroup ? ["group"] : [])] });
           customer = await ctx.db.get(customerId);
         }
         if (!customer || customer.deletedAt !== undefined) throw new Error("INVALID_CUSTOMER_STATE");
@@ -143,8 +182,8 @@ export const applyEvent = internalMutation({
           await ctx.db.patch(customer._id, { phone: canonicalChat, identityKey: canonicalIdentityKey, ...(savedName ? { name: savedName } : {}), isGroup: payload.isGroup });
         }
         await ctx.db.patch(customer._id, { expiresAt: Math.max(customer.lastInteraction, payload.eventAt) + (business.messageRetentionDays ?? foundationPolicy().messageRetentionDays) * 86400000 });
-        await ctx.db.patch(customer._id, { lastInteraction: Math.max(customer.lastInteraction, payload.eventAt), ...(payload.fromMe ? { lastOutboundAt: Math.max(customer.lastOutboundAt ?? 0, payload.eventAt) } : { firstInboundAt: customer.firstInboundAt === undefined ? payload.eventAt : Math.min(customer.firstInboundAt, payload.eventAt), lastInboundAt: Math.max(customer.lastInboundAt ?? 0, payload.eventAt), leadSource: "dm" }), ...(!savedName && !payload.fromMe && payload.name && !customer.name ? { name: payload.name } : {}) });
-        if (!payload.fromMe && !payload.isGroup && payload.mediaType === "text" && payload.text.trim()) {
+        await ctx.db.patch(customer._id, { lastInteraction: Math.max(customer.lastInteraction, payload.eventAt), ...(payload.historical ? {} : payload.fromMe ? { lastOutboundAt: Math.max(customer.lastOutboundAt ?? 0, payload.eventAt) } : { firstInboundAt: customer.firstInboundAt === undefined ? payload.eventAt : Math.min(customer.firstInboundAt, payload.eventAt), lastInboundAt: Math.max(customer.lastInboundAt ?? 0, payload.eventAt), leadSource: "dm" }), ...(!savedName && !payload.fromMe && payload.name && !customer.name ? { name: payload.name } : {}) });
+        if (!payload.historical && !payload.fromMe && !payload.isGroup && payload.mediaType === "text" && payload.text.trim()) {
           const optedOut = isOptOutKeyword(payload.text);
           const optedIn = isMarketingOptInKeyword(payload.text);
           const serviceAlreadyRecorded = customer.serviceConsentAt !== undefined;
@@ -170,7 +209,7 @@ export const applyEvent = internalMutation({
         if (!conversation) throw new Error("INVALID_CONVERSATION_STATE");
         if (conversation.customerId !== customer._id || conversation.identityKey !== canonicalIdentityKey) await ctx.db.patch(conversation._id, { customerId: customer._id, identityKey: canonicalIdentityKey });
         const lastOwnerAt = Math.max(conversation.lastOwnerAt ?? 0, payload.fromMe ? payload.eventAt : 0);
-        await ctx.db.patch(conversation._id, { revision: conversation.revision + 1, lastEventAt: Math.max(conversation.lastEventAt, payload.eventAt), messageCount: conversation.messageCount + 1, ...(payload.fromMe ? { lastOwnerAt } : { lastInboundAt: Math.max(conversation.lastInboundAt ?? 0, payload.eventAt) }) });
+        await ctx.db.patch(conversation._id, { revision: conversation.revision + 1, lastEventAt: Math.max(conversation.lastEventAt, payload.eventAt), messageCount: conversation.messageCount + 1, ...(payload.historical ? {} : payload.fromMe ? { lastOwnerAt } : { lastInboundAt: Math.max(conversation.lastInboundAt ?? 0, payload.eventAt) }) });
         // Predictions are immutable evidence on customer messages. Owner messages
         // are response evidence only and never enter classifier evaluation.
         const messageAiAllowed = canProcessInboxMessage(business, { timestamp: payload.eventAt, aiProcessingEpoch: event.aiProcessingEpoch });
@@ -182,6 +221,14 @@ export const applyEvent = internalMutation({
         }
         const expiresAt = payload.eventAt + (business.messageRetentionDays ?? foundationPolicy().messageRetentionDays) * 86400000;
         const interactionId = await ctx.db.insert("interactions", { businessId: business._id, customerId: customer._id, conversationId: conversation._id, sessionId: session._id, role: payload.fromMe ? "owner" : "customer", content: payload.text, timestamp: payload.eventAt, receivedAt: event.receivedAt, aiProcessingEpoch: messageAiAllowed ? event.aiProcessingEpoch : null, providerEventKey: messageKey, whatsappMessageId: payload.messageId, ...(payload.mediaType !== "unsupported" ? { messageType: payload.mediaType } : {}), manualReviewRequired: payload.manualReview, isGroup: payload.isGroup, wasMentioned: payload.mentioned, ...(payload.participantJid ? { participantJid: payload.participantJid } : {}), ...(payload.participantName ? { participantName: payload.participantName } : {}), ...(classification ? { classifierLabel: classification.label, classifierVersion: classification.version, classifierConfidence: classification.confidence, classifierRuleIds: classification.ruleIds, classifiedAt: Date.now() } : {}), expiresAt });
+        if (payload.historical) {
+          await ctx.db.patch(interactionId, { metaHistorical: true });
+          await ctx.db.patch(event._id, { state: "processed", payload: undefined, completedAt: Date.now() });
+          return null;
+        }
+        if (liveMetaInbound && (conversation.metaInboundGeneration !== session.generation || metaInboundAt >= (conversation.metaInboundAt ?? 0))) {
+          await ctx.db.patch(conversation._id, { metaInboundGeneration: session.generation, metaInboundAt, metaInboundId: interactionId });
+        }
         await recordBusinessActivity(ctx, business._id, payload.eventAt);
         if (payload.fromMe) await recordResponseTime(ctx, { businessId: business._id, conversationId: conversation._id, responseInteractionId: interactionId, responseAt: payload.eventAt, source: "owner" });
         if (payload.isGroup) await ctx.scheduler.runAfter(0, internal.groups.upsertDiscovered, { businessId: business._id, groupJid: payload.chat, ...(payload.name ? { groupName: payload.name } : {}) });
@@ -241,6 +288,17 @@ export const applyEvent = internalMutation({
         if (phase3Pending.length === foundationPolicy().batchSize || legacyPending.length === foundationPolicy().batchSize) await ctx.scheduler.runAfter(0, internal.maintenance.cancelCustomerTasks, { customerId: customer._id, since: payload.eventAt });
         if (!payload.fromMe && !payload.isGroup && classification?.label === "inquiry") await createStalledInquiryTask(ctx, { businessId: business._id, customerId: customer._id, conversationId: conversation._id, interactionId });
       }
+    } else if (payload.kind === "metaContact") {
+      const alias = await ctx.db.query("contactAliases").withIndex("by_business_jid", (builder) => builder.eq("businessId", business._id).eq("jid", payload.chat)).unique();
+      const suppression = await ctx.db.query("privacySuppressions").withIndex("by_business_identity", (builder) => builder.eq("businessId", business._id).eq("identityKey", alias?.canonicalIdentityKey ?? payload.identityKey)).unique();
+      if (!suppression && payload.eventAt >= (alias?.metaContactAt ?? 0)) {
+        if (alias) await ctx.db.patch(alias._id, { name: payload.removed ? undefined : payload.name, metaContactAt: payload.eventAt, updatedAt: Date.now() });
+        else await ctx.db.insert("contactAliases", { businessId: business._id, jid: payload.chat, canonicalJid: payload.chat, canonicalIdentityKey: payload.identityKey, ...(payload.removed ? {} : { name: payload.name }), metaContactAt: payload.eventAt, updatedAt: Date.now() });
+        const contact = await ctx.db.query("customers").withIndex("by_business_identity", (builder) => builder.eq("businessId", business._id).eq("identityKey", alias?.canonicalIdentityKey ?? payload.identityKey)).unique();
+        if (contact && contact.deletedAt === undefined && (!payload.removed || contact.name === alias?.name)) await ctx.db.patch(contact._id, { name: payload.removed ? undefined : payload.name });
+      }
+    } else if (payload.kind === "metaStatus") {
+      await ctx.runMutation(internal.assistantReply.applyMetaStatus, { sessionId: session._id, generation: session.generation, messageId: payload.messageId, status: payload.status, at: payload.at, dispatchRef: payload.dispatchRef, errorCode: payload.errorCode });
     } else if (payload.kind === "receipt") {
       const suppression = await ctx.db.query("privacySuppressions").withIndex("by_business_identity", (builder) => builder.eq("businessId", business._id).eq("identityKey", payload.identityKey)).unique();
       // ReadSelf is the seller's device, not evidence that a buyer read a message.

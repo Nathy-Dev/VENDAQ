@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
-import { useAction, useMutation } from "convex/react";
+import { useAction, useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import Image from "next/image";
 import QRCode from "react-qr-code";
@@ -12,8 +12,17 @@ import { formatDate, titleCase } from "@/lib/workspace-ui";
 import { buttonClass, Pill } from "./dashboard-ui";
 import { ConfirmDialog, Notice, type Feedback } from "./WorkspaceFeedback";
 import styles from "./FoundationWorkspace.module.css";
+import MetaWhatsAppConnection from "./MetaWhatsAppConnection";
 
 export default function ConnectionPanel({ workspace, embedded = false }: { workspace: Workspace; embedded?: boolean }) {
+  const config = useQuery(api.metaConnections.config, { businessId: workspace.businessId });
+  if (workspace.connectionProvider === "meta" || (config && (!workspace.connectionProvider || (workspace.connectionProvider === "evolution" && workspace.state === "disconnected")))) {
+    return <MetaWhatsAppConnection key={workspace.businessId} workspace={workspace} config={config ?? null} embedded={embedded} />;
+  }
+  return <EvolutionConnectionPanel workspace={workspace} embedded={embedded} />;
+}
+
+function EvolutionConnectionPanel({ workspace, embedded }: { workspace: Workspace; embedded: boolean }) {
   const connect = useAction(api.connections.connect);
   const refresh = useAction(api.connections.refresh);
   const resetRevoked = useAction(api.connections.resetRevoked);

@@ -4,14 +4,14 @@ import { internal } from "./_generated/api";
 import { requireBusiness, requireIdentity } from "./lib/authorization";
 import { DISCLOSURE_VERSION, foundationPolicy } from "./lib/policy";
 import { activeMessageAiEpoch, canProcessInboxMessage, isAiAssistantEnabled } from "./lib/inboxAi";
-import { connectionState, pairingMethod, sessionDocument } from "./lib/validators";
+import { connectionState, metaSyncState, pairingMethod, sessionDocument } from "./lib/validators";
 import type { Id } from "./_generated/dataModel";
 import { TRIAL_DAYS } from "./lib/billingPlans";
 import { recordBusinessActivity, recordConnectionTransition } from "./productAnalytics";
 
 export const workspace = query({
   args: {},
-  returns: v.union(v.null(), v.object({ businessId: v.id("businesses"), name: v.string(), timezone: v.string(), retentionDays: v.number(), responseWindowMinutes: v.number(), state: connectionState, lastError: v.union(v.string(), v.null()), lastHealthAt: v.union(v.number(), v.null()), aiEnabled: v.boolean(), customerAutoReplyEnabled: v.boolean(), groupAutoReplyEnabled: v.boolean(), hasBusinessSystemPrompt: v.boolean(), launchReady: v.boolean() })),
+  returns: v.union(v.null(), v.object({ businessId: v.id("businesses"), name: v.string(), timezone: v.string(), retentionDays: v.number(), responseWindowMinutes: v.number(), state: connectionState, lastError: v.union(v.string(), v.null()), lastHealthAt: v.union(v.number(), v.null()), aiEnabled: v.boolean(), customerAutoReplyEnabled: v.boolean(), groupAutoReplyEnabled: v.boolean(), hasBusinessSystemPrompt: v.boolean(), launchReady: v.boolean(), connectionProvider: v.optional(v.union(v.literal("meta"), v.literal("evolution"))), meta: v.optional(v.object({ displayPhone: v.string(), contactsState: metaSyncState, historyState: metaSyncState, historyProgress: v.optional(v.number()) })) })),
   handler: async (ctx) => {
     const identity = await requireIdentity(ctx);
     const business = await ctx.db.query("businesses").withIndex("by_owner", (builder) => builder.eq("ownerId", identity.subject)).unique();
@@ -21,7 +21,9 @@ export const workspace = query({
     const aiEnabled = isAiAssistantEnabled(business);
     const customerAutoReplyEnabled = business.customerAutoReplyEnabled ?? false;
     const groupAutoReplyEnabled = business.groupAutoReplyEnabled ?? false;
-    return { businessId: business._id, name: business.name, timezone: business.timezone ?? "Africa/Lagos", retentionDays: business.messageRetentionDays ?? foundationPolicy().messageRetentionDays, responseWindowMinutes: business.responseWindowMinutes ?? foundationPolicy().responseWindowMinutes, state: session?.state ?? "disconnected", lastError: session?.lastError ?? null, lastHealthAt: session?.lastHealthAt ?? null, aiEnabled, customerAutoReplyEnabled, groupAutoReplyEnabled, hasBusinessSystemPrompt, launchReady: session?.state === "connected" && aiEnabled && business.killSwitch === false && hasBusinessSystemPrompt && (customerAutoReplyEnabled || groupAutoReplyEnabled) };
+    const meta = session?.meta;
+    const connectionProvider = session ? session.provider ?? ("evolution" as const) : undefined;
+    return { businessId: business._id, name: business.name, timezone: business.timezone ?? "Africa/Lagos", retentionDays: business.messageRetentionDays ?? foundationPolicy().messageRetentionDays, responseWindowMinutes: business.responseWindowMinutes ?? foundationPolicy().responseWindowMinutes, state: session?.state ?? "disconnected", lastError: session?.lastError ?? null, lastHealthAt: session?.lastHealthAt ?? null, aiEnabled, customerAutoReplyEnabled, groupAutoReplyEnabled, hasBusinessSystemPrompt, launchReady: session?.state === "connected" && aiEnabled && business.killSwitch === false && hasBusinessSystemPrompt && (customerAutoReplyEnabled || (session.provider !== "meta" && groupAutoReplyEnabled)), ...(connectionProvider ? { connectionProvider } : {}), ...(meta ? { meta: { displayPhone: meta.displayPhone, contactsState: meta.contactsState, historyState: meta.historyState, historyProgress: meta.historyProgress } } : {}) };
   },
 });
 
@@ -92,12 +94,14 @@ export const messages = query({
         if (linked && linked.deletedAt === undefined && !linkedCustomers.some((current) => current._id === linked._id)) linkedCustomers.push(linked);
       }
     }
-    const batches = await Promise.all(linkedCustomers.map((linked) => ctx.db.query("interactions").withIndex("by_customer", (builder) => builder.eq("customerId", linked._id)).order("desc").take(100)));
+    const batches = await Promise.all(linkedCustomers.map((linked) => ctx.db.query("interactions").withIndex("by_customer_timestamp", (builder) => builder.eq("customerId", linked._id)).order("desc").take(100)));
     const messages = batches.flat().filter((message) => message.businessId === args.businessId).sort((a, b) => b.timestamp - a.timestamp).slice(0, 100);
     return await Promise.all(messages.map(async (message) => {
-      const feedback = message.assistantDispatchId ? await ctx.db.query("assistantReplyFeedback").withIndex("by_interaction", (builder) => builder.eq("interactionId", message._id)).unique() : null;
+      const dispatch = message.assistantDispatchId ? await ctx.db.get(message.assistantDispatchId) : null;
+      const assistantGenerated = !!dispatch && (dispatch.kind ?? "assistant_reply") === "assistant_reply";
+      const feedback = assistantGenerated ? await ctx.db.query("assistantReplyFeedback").withIndex("by_interaction", (builder) => builder.eq("interactionId", message._id)).unique() : null;
       const canStillProcess = canProcessInboxMessage(business, message);
-      return { messageId: message._id, role: message.role, text: message.content, timestamp: message.timestamp, manualReview: message.manualReviewRequired ?? false, type: message.messageType ?? "unsupported", transcript: message.transcript ?? null, transcriptionState: message.transcriptionState === "pending" && !canStillProcess ? null : message.transcriptionState ?? null, imageAnalysisState: message.imageAnalysisState === "pending" && !canStillProcess ? null : message.imageAnalysisState ?? null, assistantGenerated: message.assistantDispatchId !== undefined, replyFeedback: feedback?.rating ?? null };
+      return { messageId: message._id, role: message.role, text: message.content, timestamp: message.timestamp, manualReview: message.manualReviewRequired ?? false, type: message.messageType ?? "unsupported", transcript: message.transcript ?? null, transcriptionState: message.transcriptionState === "pending" && !canStillProcess ? null : message.transcriptionState ?? null, imageAnalysisState: message.imageAnalysisState === "pending" && !canStillProcess ? null : message.imageAnalysisState ?? null, assistantGenerated, replyFeedback: feedback?.rating ?? null };
     }));
   },
 });
@@ -196,6 +200,7 @@ export const prepareSession = internalMutation({
     const now = Date.now();
     const operationLeaseUntil = now + foundationPolicy().providerTimeoutMs * 5 + 5000;
     if (existing) {
+      if (existing.provider === "meta") throw new ConvexError({ code: "META_CONNECTION_EXISTS" });
       if (existing.state === "connected") return { sessionId: existing._id, claimed: false };
       if (existing.state === "revoked") throw new ConvexError({ code: "SESSION_REVOKED_REQUIRES_OPERATOR_RESET" });
       if ((existing.operationLeaseUntil ?? 0) > now) return { sessionId: existing._id, claimed: false };
@@ -279,6 +284,7 @@ export const revokeSession = mutation({
     await requireBusiness(ctx, args.businessId);
     const session = await ctx.db.query("whatsappSessions").withIndex("by_business", (builder) => builder.eq("businessId", args.businessId)).unique();
     if (!session || session.state === "revoked") return null;
+    if (session.provider === "meta") throw new ConvexError({ code: "USE_META_DISCONNECT" });
     await ctx.db.patch(session._id, { state: "revoked", updatedAt: Date.now(), qrCiphertext: undefined, qrExpiresAt: undefined, pairingCodeCiphertext: undefined, pairingCodeExpiresAt: undefined, disconnectAttempts: 0, disconnectDueAt: Math.max(Date.now(), session.operationLeaseUntil ?? 0) + foundationPolicy().providerTimeoutMs });
     await ctx.db.patch(args.businessId, { whatsappStatus: "disconnected", killSwitch: true });
     await ctx.scheduler.runAfter(Math.max(0, (session.operationLeaseUntil ?? 0) - Date.now()) + foundationPolicy().providerTimeoutMs, internal.connections.disconnectRevoked, { sessionId: session._id, generation: session.generation });

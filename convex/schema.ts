@@ -161,6 +161,7 @@ export default defineSchema({
     canonicalJid: v.string(),
     canonicalIdentityKey: v.optional(v.string()),
     name: v.optional(v.string()),
+    metaContactAt: v.optional(v.number()),
     updatedAt: v.number(),
   }).index("by_business_jid", ["businessId", "jid"])
     .index("by_business", ["businessId"])
@@ -213,6 +214,7 @@ export default defineSchema({
     conversationId: v.optional(v.id("conversations")),
     sessionId: v.optional(v.id("whatsappSessions")),
     providerEventKey: v.optional(v.string()),
+    metaHistorical: v.optional(v.boolean()),
     receivedAt: v.optional(v.number()),
     aiProcessingEpoch: v.optional(v.union(v.number(), v.null())),
     expiresAt: v.optional(v.number()),
@@ -257,6 +259,7 @@ export default defineSchema({
     assistantDispatchId: v.optional(v.id("assistantDispatches")),
   }).index("by_business", ["businessId"])
     .index("by_customer", ["customerId"])
+    .index("by_customer_timestamp", ["customerId", "timestamp"])
     .index("by_whatsapp_id", ["whatsappMessageId"])
     .index("by_business_event", ["businessId", "providerEventKey"])
     .index("by_conversation", ["conversationId", "timestamp"])
@@ -517,10 +520,15 @@ export default defineSchema({
     interactionId: v.id("interactions"),
     customerId: v.id("customers"),
     sessionId: v.id("whatsappSessions"),
+    metaGeneration: v.optional(v.number()),
+    metaRequestKey: v.optional(v.string()),
+    metaCheckAt: v.optional(v.number()),
+    metaDeliveryState: v.optional(v.union(v.literal("sent"), v.literal("delivered"), v.literal("read"), v.literal("failed"))),
+    metaDeliveryAt: v.optional(v.number()),
     target: v.string(),
     isGroup: v.boolean(),
     content: v.string(),
-    kind: v.optional(v.union(v.literal("assistant_reply"), v.literal("owner_rescue"))),
+    kind: v.optional(v.union(v.literal("assistant_reply"), v.literal("owner_rescue"), v.literal("seller_reply"))),
     ownerRescueId: v.optional(v.id("ownerRescueRequests")),
     qualificationQuestionField: v.optional(v.union(
       v.literal("need"),
@@ -545,6 +553,9 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   }).index("by_interaction", ["interactionId"])
+    .index("by_business_meta_request", ["businessId", "metaRequestKey"])
+    .index("by_meta_check", ["metaCheckAt"])
+    .index("by_customer_kind", ["customerId", "kind"])
     .index("by_business", ["businessId"])
     .index("by_state_updated", ["state", "updatedAt"])
     .index("by_owner_rescue", ["ownerRescueId", "createdAt"])
@@ -627,6 +638,7 @@ export default defineSchema({
   whatsappSessions: defineTable(sessionFields)
     .index("by_business", ["businessId"])
     .index("by_provider", ["providerInstanceId"])
+    .index("by_meta_waba", ["meta.wabaId"])
     .index("by_health_due", ["nextHealthAt"])
     .index("by_disconnect_due", ["state", "disconnectDueAt"]),
   inboundEvents: defineTable(eventFields)
@@ -640,6 +652,8 @@ export default defineSchema({
     businessId: v.id("businesses"), customerId: v.id("customers"), identityKey: v.string(),
     revision: v.number(), lastEventAt: v.number(), lastInboundAt: v.optional(v.number()),
     lastOwnerAt: v.optional(v.number()), messageCount: v.number(),
+    metaInboundAt: v.optional(v.number()), metaInboundGeneration: v.optional(v.number()),
+    metaInboundId: v.optional(v.id("interactions")),
     // Durable model history lives in the Agent component. This optional link is
     // additive so existing production conversations remain valid.
     agentThreadId: v.optional(v.string()),

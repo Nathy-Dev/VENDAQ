@@ -69,10 +69,10 @@ export default function WorkspaceOnboarding({ workspace, onCreatingChange }: { w
       {workspace && stage === "business_ai" && <BusinessAssistantSettings workspace={workspace} compact />}
       {workspace && stage !== "groups" && <div className={styles.setupFooter}><Link href="/dashboard" replace onNavigate={leaveSetup} className={buttonClass.secondary}>Skip for now</Link><p className={styles.helper}>You can finish setting up later.</p></div>}
       {workspace && stage === "groups" && <>
-        <WorkspaceGroups workspace={workspace} embedded />
+        {workspace.connectionProvider === "meta" ? <p className={styles.helper}>This Meta connection syncs individual chats only. You can continue using groups in your WhatsApp Business app.</p> : <WorkspaceGroups workspace={workspace} embedded />}
         <div className={styles.setupFooter}>
           <Link href="/dashboard" replace onNavigate={leaveSetup} className={buttonClass.primary}>Finish setup<ArrowRight size={14} aria-hidden="true" /></Link>
-          <p className={styles.helper}>Pipelixr only replies after you explicitly authorize customer replies or enable individual groups.</p>
+          <p className={styles.helper}>{workspace.connectionProvider === "meta" ? "Automatic replies stay off until you explicitly authorize them." : "Pipelixr only replies after you explicitly authorize customer replies or enable individual groups."}</p>
         </div>
       </>}
     </section>

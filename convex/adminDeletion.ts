@@ -32,7 +32,9 @@ export const beginAccountDeletion = internalMutation({
     const now = Date.now();
     await ctx.db.patch(business._id, { foundationVersion: 0, killSwitch: true, aiEnabled: false, customerAutoReplyEnabled: false, groupAutoReplyEnabled: false, whatsappStatus: "disconnected" });
     const session = await ctx.db.query("whatsappSessions").withIndex("by_business", (builder) => builder.eq("businessId", business._id)).unique();
-    if (session && session.state !== "revoked") {
+    if (session?.provider === "meta") {
+      await ctx.db.patch(session._id, { state: "revoked", generation: session.generation + 1, tokenCiphertext: "", tokenHash: "", updatedAt: now, disconnectedAt: now, nextHealthAt: Number.MAX_SAFE_INTEGER });
+    } else if (session && session.state !== "revoked") {
       const disconnectDueAt = Math.max(now, session.operationLeaseUntil ?? 0) + 1_000;
       await ctx.db.patch(session._id, { state: "revoked", updatedAt: now, qrCiphertext: undefined, qrExpiresAt: undefined, pairingCodeCiphertext: undefined, pairingCodeExpiresAt: undefined, disconnectAttempts: 0, disconnectDueAt });
       await ctx.scheduler.runAfter(Math.max(0, disconnectDueAt - now), internal.connections.disconnectRevoked, { sessionId: session._id, generation: session.generation });
